@@ -197,7 +197,8 @@ Production deployment kit (systemd, nginx TLS sample, backup tool) & \ok~impleme
 Password reset flow (token-based, session-revoking) & \ok~implemented \\
 API rate limiting (general + per-feature strict budgets) & \ok~implemented \\
 Pagination (admin users, task lists, activity events) & \ok~implemented \\
-Server-side sanitization of rich text & \risk~missing \\
+Server-side sanitization of rich text (allowlist, unit-tested) & \ok~implemented \\
+Media garbage collection tool (\file{npm run media:gc}) & \ok~implemented \\
 Real-time board updates (SSE/WebSocket) & \risk~missing \\
 \bottomrule
 \end{tabularx}
@@ -728,25 +729,28 @@ to the sequence-derived ID space.
 
 \begin{itemize}
   \item \textbf{Rich-text descriptions} are entered in a contenteditable
-  editor and sanitized on the client with an allowlist sanitizer
-  (\file{sanitizeDesc}): only formatting tags survive, \file{<script>} and
-  event handlers are stripped, links get \file{rel="noopener noreferrer"},
-  and embedded \file{<img>}/\file{<video>} sources must point at
+  editor and sanitized \emph{on both sides}: the client applies an allowlist
+  sanitizer before display, and since v1.2 the server applies its own
+  allowlist sanitizer (\file{src/lib/sanitize.ts}, unit-tested) before
+  persistence --- a crafted API call can no longer store unsafe HTML.
+  Only formatting tags survive; \file{<script>} and event handlers are
+  stripped, links get \file{rel="noopener noreferrer"} with http(s)-only
+  \file{href}, and embedded \file{<img>}/\file{<video>} sources must point at
   \file{/media/uploads/*}. Legacy plain-text descriptions are auto-upgraded.
-  The sanitizer is client-side only; server-side sanitization is a listed gap
-  (Section~\ref{sec:gaps}).
-  \item \textbf{Comments} are stored per ticket (\file{task_comments}) with
+  \item \textbf{Comments} are stored per ticket (\file{task\_comments}) with
   \file{@mention} support in the composer (member autocomplete popup).
+  Comment bodies are rendered as plain text (escaped), so they carry no HTML
+  risk.
   \item \textbf{Activity feed.} Every mutation writes a row to
-  \file{activity_log} (seven event types). The feed endpoint resolves
+  \file{activity\_log} (seven event types). The feed endpoint resolves
   assignee IDs into display names and is rendered as the right-hand column of
   the ticket modal. The daily digest and weekly report query the same table.
   \item \textbf{Media.} \file{POST /api/projects/:id/media} accepts multipart
   uploads; the MIME type is checked against a whitelist (png, jpg, gif, webm,
   mp4, mov), the size against 100\,MB, and the file is stored under a random
   UUID name in \file{data/uploads}, served back at \file{/media/uploads/*}.
-  There is no orphan cleanup: deleting a ticket does not remove its embedded
-  files (Section~\ref{sec:gaps}).
+  \file{npm run media:gc} removes uploads that no ticket description
+  references anymore (7-day grace period).
 \end{itemize}
 
 % ============================================================
@@ -1003,22 +1007,16 @@ refetching, which is irrelevant at LAN latency.
 \toprule
 \textbf{Weakness} & \textbf{Severity} & \textbf{Detail / recommended fix}\\
 \midrule
-Client-side-only description sanitization & Medium & The server stores what it receives; a crafted API call could persist unsafe HTML. Fix: run the same allowlist sanitizer server-side before insert/update.\\
-\addlinespace
-No HTTPS on the Node process itself & Medium & Solved operationally by the provided nginx TLS sample; the Node process stays on loopback HTTP.\\
-\addlinespace
 In-memory rate limiting / scheduler & Low & Both are single-node by design; horizontal scaling requires a shared store and a cron replacement. Documented, not a problem at current scale.\\
 \addlinespace
 No real-time updates & Low & Boards refresh manually; SSE would be the natural next step.\\
-\addlinespace
-Orphaned media files & Low & Attachments of deleted tickets remain on disk. Fix: periodic reconciliation of \file{data/uploads} against referenced URLs.\\
 \addlinespace
 Single light theme, no a11y audit & Low & Cosmetic/accessibility; CSS variables make theming cheap.\\
 \addlinespace
 No e-mail verification / 2FA & Low & Invitation flow proves e-mail ownership at creation; verification and 2FA are Better Auth plugin territory if needed.\\
 \bottomrule
 \end{tabularx}
-\caption{Remaining known weaknesses after the v1.1 hardening round.}
+\caption{Remaining known weaknesses after the v1.2 hardening round.}
 \label{tab:weaknesses}
 \end{table}
 
@@ -1125,10 +1123,8 @@ they are not mistaken for oversights:
 \begin{enumerate}
   \item \textbf{Add a private git remote} (the local repository exists; push
   it off-machine for disaster recovery).
-  \item \textbf{Server-side sanitization} of rich text before persistence.
   \item \textbf{Real-time board invalidation} (SSE) so open boards update
   without manual refresh.
-  \item \textbf{Media garbage collection} for unreferenced uploads.
   \item \textbf{Decide the global-Admin access model}: implicit
   all-project access (today) vs. explicit memberships with only
   \file{SUPER_ADMIN} exempt. The admin UI is already prepared for either.
@@ -1170,6 +1166,8 @@ v0.1--v0.5 & --- & Architecture drafts (see \file{DOC/main (1).tex}): Cloudflare
 v1.0 & \today & First documentation of the \emph{implemented} system: self-hosted Hono + SQLite pivot; vanilla SPA shell with persistent sidebar; admin panel migrated in-app (react-admin and Vite removed, 153 packages dropped); account invitations with public sign-up disabled; bidirectional user/project access management; global search with normalization, description matching and fuzzy suggestions; My Tickets cross-project view; real ticket counts; full security assessment and roadmap.\\
 \addlinespace
 v1.1 & \today & Reliability round: automated test suite (27 node:test API/unit tests, zero extra dependencies; server made importable for in-process testing); git repository initialized; CI pipeline (typecheck + tests + audit); production deployment kit (systemd unit, nginx TLS sample, \file{npm run backup}); token-based password reset with session revocation and no account enumeration; API rate limiting (general + strict invitation/reset budgets); pagination on users, tasks and activity events. Documentation updated accordingly; remaining weaknesses all re-classified as low/medium.\\
+\addlinespace
+v1.2 & \today & Security hardening round: server-side allowlist sanitizer for rich-text descriptions (10 unit tests + API-level regression test; crafted API calls can no longer persist unsafe HTML); \file{npm run media:gc} orphaned-upload cleanup tool with 7-day grace period. Test count now 38; remaining weaknesses are all low severity.\\
 \bottomrule
 \end{tabularx}
 \caption{Document version history.}

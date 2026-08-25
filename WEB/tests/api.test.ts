@@ -172,6 +172,19 @@ describe("tickets", () => {
     const rows = await res.json();
     assert.ok(rows.length <= 2);
   });
+
+  it("sanitizes unsafe description HTML on the server", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: adminCookie,
+      body: {
+        title: "Sanitize check",
+        description: '<p onclick="x">ok</p><script>alert(1)</script><img src="https://evil.com/x.png">',
+      },
+    });
+    assert.equal(create.status, 201);
+    const task = await create.json();
+    assert.equal(task.description, "<p>ok</p>alert(1)");
+  });
 });
 
 describe("invitations", () => {

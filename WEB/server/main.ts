@@ -21,6 +21,7 @@ import { canTransition, INSTANT_NOTIFY_STATUSES, STATUSES, type Status } from ".
 import { notifyStatusChanged } from "../src/lib/notify";
 import { validateInvitation, markInvitationAccepted, hashInviteToken, generateInviteToken } from "../src/lib/invite";
 import { searchAll } from "../src/lib/search";
+import { sanitizeDescHtml } from "../src/lib/sanitize";
 import {
   hasPendingAccountInvite,
   validateAccountInvite,
@@ -544,7 +545,7 @@ app.post("/api/projects/:id/tasks", (c) =>
         projectId,
         ticketId,
         title,
-        description: body.description?.trim() || null,
+        description: sanitizeDescHtml(body.description ?? "") || null,
         status,
         type: (body.type ?? "TASK") as "TASK" | "BUG",
         priority: (body.priority ?? "MEDIUM") as "LOW" | "MEDIUM" | "HIGH" | "URGENT",
@@ -598,7 +599,7 @@ app.patch("/api/projects/:id/tasks/:taskId", (c) =>
 
     const values: Partial<typeof tasks.$inferInsert> = {};
     if (body.title !== undefined) values.title = body.title.trim();
-    if (body.description !== undefined) values.description = body.description?.trim() || null;
+    if (body.description !== undefined) values.description = sanitizeDescHtml(body.description ?? "") || null;
     if (body.type !== undefined) {
       // Changing the ticket type (and therefore its branch prefix) is admin-only.
       if (myRole !== "ADMIN") throw new ApiError(403, "Only project admins can change the ticket type");

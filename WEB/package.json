@@ -7,6 +7,7 @@
     "start": "tsx server/main.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "backup": "tsx scripts/backup.ts",
+    "media:gc": "tsx scripts/media-gc.ts",
     "gen:templates": "tsx scripts/gen-templates.ts",
     "db:seed": "npm run -s gen:templates && tsx seed/seed.ts",
     "db:reset": "node -e \"const fs=require('fs');fs.rmSync('data',{recursive:true,force:true});fs.rmSync('.mail-out',{recursive:true,force:true});\"",
