@@ -190,10 +190,15 @@ Admin panel (users \& projects, bidirectional access management) & \ok~implement
 Global search (normalized IDs, description text, typo-tolerant suggestions) & \ok~implemented \\
 E-mail transport abstraction (Resend in production, file outbox in dev) & \ok~implemented \\
 Scheduled jobs: daily digest, weekly report, weekly security scan (OSV) & \ok~implemented \\
-Automated test suite & \risk~missing \\
-Version control (git) for this working directory & \risk~missing \\
-CI/CD pipeline, production deployment configuration & \risk~missing \\
-Password reset flow, API rate limiting, pagination & \risk~missing \\
+Automated test suite (27 API/unit tests, zero extra dependencies) & \ok~implemented \\
+Version control (git) with clean initial import & \ok~implemented \\
+CI pipeline (typecheck + tests + audit) on GitHub Actions & \ok~implemented \\
+Production deployment kit (systemd, nginx TLS sample, backup tool) & \ok~implemented \\
+Password reset flow (token-based, session-revoking) & \ok~implemented \\
+API rate limiting (general + per-feature strict budgets) & \ok~implemented \\
+Pagination (admin users, task lists, activity events) & \ok~implemented \\
+Server-side sanitization of rich text & \risk~missing \\
+Real-time board updates (SSE/WebSocket) & \risk~missing \\
 \bottomrule
 \end{tabularx}
 \caption{Implementation status summary. Red crosses mark known gaps discussed
@@ -335,6 +340,7 @@ Every request flows through the same pipeline in \file{server/main.ts}:
 \textbf{Endpoint} & \textbf{Method(s)} & \textbf{Access}\\
 \midrule
 \file{/api/auth/*} & POST & Better Auth (sign-in, sign-out, session). Public sign-up disabled.\\
+\file{/api/auth/request-password-reset}, \file{/api/auth/reset-password} & POST & Public (rate-limited); token-based password reset\\
 \file{/api/projects} & GET, POST & Any authenticated (list is role-filtered) / create: ADMIN+\\
 \file{/api/projects/:id} & GET, PATCH, DELETE & Project role / project admin / super admin\\
 \file{/api/my-tickets} & GET & Any authenticated (assigned tickets across accessible projects)\\
@@ -558,16 +564,34 @@ if that fails, as an account invitation. The invited person always sets
 \emph{their own} password on the acceptance page --- no administrator ever
 handles a user's password.
 
+\subsection{Password Reset}
+
+A forgotten password no longer requires database surgery. The flow mirrors
+the invitation mechanics:
+
+\begin{enumerate}
+  \item \file{POST /api/auth/request-password-reset} (public, rate-limited to
+  5 requests / 15 minutes per IP) creates a reset token --- CSPRNG, 1-hour
+  expiry, single-use, SHA-256-at-rest in the \file{password\_resets} table
+  (migration 0006) --- and e-mails a link
+  (\file{/reset-password?token=...}). The response is identical whether or
+  not the account exists, preventing account enumeration.
+  \item The confirmation endpoint validates the token, hashes the new
+  password with Better Auth's own \file{hashPassword}, updates the
+  credential account, \textbf{revokes all sessions} of that user (forced
+  re-login everywhere) and consumes the token.
+\end{enumerate}
+
+The client adds \file{/reset-password} as a public route (request form and,
+with a token, the new-password form) and a ``Forgot password?'' link on the
+login page.
+
 \subsection{Known Gaps in the Account Lifecycle}
 
 \begin{itemize}
-  \item \textbf{No password reset.} A forgotten password currently requires a
-  super admin to intervene at the database level. This is the most important
-  missing account-management feature.
   \item \textbf{No e-mail verification} independent of invitations; the
-  \file{email_verified} column exists but is not part of any flow.
-  \item \textbf{No rate limiting} beyond Better Auth's built-in defaults on
-  auth endpoints; application API endpoints are unthrottled.
+  \file{email\_verified} column exists but is not part of any flow.
+  \item \textbf{No 2FA}; Better Auth supports plugins if ever needed.
 \end{itemize}
 
 % ============================================================
@@ -876,6 +900,33 @@ tick with a fresh period key runs it once. The security scan additionally
 suppresses re-reporting of open findings via the
 \file{security_findings} unique index.
 
+\subsection{Rate Limiting}
+
+A fixed-window in-memory limiter (\file{src/lib/ratelimit.ts}) protects the
+API on two levels: a generous general budget (600 requests/minute per client
+IP on all \file{/api/*} routes) and strict per-feature budgets on
+abuse-sensitive operations (20 invitation creations per hour; 5 password
+reset requests per 15 minutes). Exceeded requests receive \texttt{429} with a
+\file{Retry-After} header. The limiter is single-node by design --- documented
+as such; horizontal scaling would require moving the counter to a shared
+store.
+
+\subsection{Pagination}
+
+List endpoints accept optional pagination and stay backwards compatible:
+
+\begin{itemize}
+  \item \file{GET /api/admin/users?page=\&perPage=} returns
+  \file{\{data, total, page, perPage\}}; without parameters the plain array
+  is returned (the admin UI fetches everything --- internal user counts are
+  small by nature).
+  \item \file{GET /api/projects/:id/tasks} accepts \file{?page=\&perPage=} or
+  \file{?limit=\&offset=}; the board client intentionally fetches the full
+  set because a Kanban board needs every ticket to render its columns.
+  \item The activity feed endpoint caps pages at 500 events
+  (\file{?perPage=}).
+\end{itemize}
+
 % ============================================================
 \section{Front-End Architecture}
 \label{sec:frontend}
@@ -935,10 +986,12 @@ refetching, which is irrelevant at LAN latency.
   strings in the UI layer.
   \item \textbf{Weekly automated vulnerability scanning} against OSV with
   e-mailed HIGH/CRITICAL findings and de-duplication.
-  \item \textbf{Secrets via environment}: \file{RESEND_API_KEY},
-  \file{BETTER_AUTH_SECRET}, \file{MAIL_FROM}, \file{APP_URL},
-  \file{OSV_PACKAGES}; a warning is printed when the auth secret falls back
+  \item \textbf{Secrets via environment}: \file{RESEND\_API\_KEY},
+  \file{BETTER\_AUTH\_SECRET}, \file{MAIL\_FROM}, \file{APP\_URL},
+  \file{OSV\_PACKAGES}; a warning is printed when the auth secret falls back
   to a development default.
+  \item \textbf{API rate limiting} (general per-IP budget plus strict
+  per-feature budgets on invitations and password resets).
 \end{itemize}
 
 \subsection{Open Weaknesses}
@@ -950,30 +1003,89 @@ refetching, which is irrelevant at LAN latency.
 \toprule
 \textbf{Weakness} & \textbf{Severity} & \textbf{Detail / recommended fix}\\
 \midrule
-No automated tests & High & Nothing prevents a regression in the atomic counter, RBAC or invite flows. Priority: integration tests over the API with an in-memory SQLite database (Vitest + Supertest-style harness).\\
-\addlinespace
-Not under version control & High & The working directory is not a git repository; a mistake or disk failure is unrecoverable. Priority: \file{git init} + private remote, immediately.\\
-\addlinespace
-No CI/CD & Medium & Lint, typecheck (\file{npm run check}), tests and builds should run on push.\\
-\addlinespace
 Client-side-only description sanitization & Medium & The server stores what it receives; a crafted API call could persist unsafe HTML. Fix: run the same allowlist sanitizer server-side before insert/update.\\
 \addlinespace
-No API rate limiting & Medium & Auth endpoints have Better Auth defaults; everything else is unthrottled. Fix: a small in-memory limiter per session/IP on write endpoints.\\
+No HTTPS on the Node process itself & Medium & Solved operationally by the provided nginx TLS sample; the Node process stays on loopback HTTP.\\
 \addlinespace
-No password reset & Medium & Manual database intervention required today. Fix: Better Auth's reset plugin or an invitation-style token flow.\\
+In-memory rate limiting / scheduler & Low & Both are single-node by design; horizontal scaling requires a shared store and a cron replacement. Documented, not a problem at current scale.\\
 \addlinespace
-No pagination & Low & Task lists and the fuzzy pool (500) are bounded by convention, not by page parameters; fine for hundreds of tickets, not thousands.\\
+No real-time updates & Low & Boards refresh manually; SSE would be the natural next step.\\
 \addlinespace
 Orphaned media files & Low & Attachments of deleted tickets remain on disk. Fix: periodic reconciliation of \file{data/uploads} against referenced URLs.\\
 \addlinespace
-No HTTPS/deployment story & Medium & The server binds plain HTTP on :8788. Production needs a reverse proxy (Caddy/nginx) or TLS termination, a process manager, and a documented backup procedure for \file{data/}.\\
-\addlinespace
 Single light theme, no a11y audit & Low & Cosmetic/accessibility; CSS variables make theming cheap.\\
+\addlinespace
+No e-mail verification / 2FA & Low & Invitation flow proves e-mail ownership at creation; verification and 2FA are Better Auth plugin territory if needed.\\
 \bottomrule
 \end{tabularx}
-\caption{Known weaknesses with recommended remediations.}
+\caption{Remaining known weaknesses after the v1.1 hardening round.}
 \label{tab:weaknesses}
 \end{table}
+
+% ============================================================
+\section{Quality Infrastructure: Tests, CI, Deployment, Backup}
+
+\subsection{Automated Test Suite}
+
+The suite uses \textbf{Node.js's built-in test runner} (\file{node:test}) ---
+\emph{zero additional dependencies}; \file{npm test} runs it through tsx.
+The server module was refactored to export \file{app} and \file{env} and to
+only bind the HTTP port and scheduler when run as the entry point, so tests
+exercise the real Hono application in-process via \file{app.request()}
+against a throwaway SQLite database (\file{TM\_DB\_FILE} pointing at a temp
+directory; migrations apply automatically).
+
+27 tests in two files cover the areas where regressions would hurt most:
+
+\begin{itemize}
+  \item \textbf{Authentication}: anonymous 401, public sign-up 403, seeded
+  sign-in.
+  \item \textbf{RBAC matrix}: USER blocked from admin API; ADMIN allowed;
+  non-members blocked from project data; project creation rights; super-admin
+  self-role/self-delete lockout.
+  \item \textbf{Tickets}: sequential unique IDs, member edit rules
+  (assignee/creator), admin-only fields (priority, reassignment), delete
+  permissions, pagination parameters.
+  \item \textbf{Invitations}: create $\rightarrow$ accept $\rightarrow$
+  single-use (410 on reuse), duplicate 409, new account role USER;
+  standalone account invites restricted to super admins.
+  \item \textbf{Password reset}: no account enumeration, token extracted
+  from the outbox mail, old password rejected, sessions revoked, token
+  single-use.
+  \item \textbf{Search}: glued normalized IDs (\file{tst2} $\rightarrow$
+  \file{TST-2}), no user leakage to USER role, no leakage of inaccessible
+  projects.
+  \item \textbf{Cron}: \file{runOnce} idempotency.
+\end{itemize}
+
+Writing the suite surfaced one real integration subtlety: Better Auth v1.7
+requires \file{account.issuer = "local:credential"} and
+\file{accountId = user.id} for credential sign-in to succeed --- now
+documented in the test fixtures.
+
+\subsection{Continuous Integration}
+
+\file{.github/workflows/ci.yml} runs on every push and pull request:
+\file{npm ci} $\rightarrow$ \file{npm run check} (TypeScript) $\rightarrow$
+\file{npm test} $\rightarrow$ \file{npm audit --audit-level=high}. The audit
+step institutionalizes the weekly OSV scan's logic at commit time.
+
+\subsection{Deployment and Backup}
+
+\begin{itemize}
+  \item \file{WEB/deploy/ticket-manager.service} --- systemd unit with
+  automatic restart, hardening flags (\file{NoNewPrivileges},
+  \file{ProtectSystem}) and an \file{EnvironmentFile} for secrets.
+  \item \file{WEB/deploy/nginx.conf.sample} --- TLS termination reverse proxy
+  (\file{client\_max\_body\_size 110m} for uploads, \file{X-Forwarded-For}
+  for the rate limiter); the Node process stays on loopback :8788.
+  \item \file{npm run backup} --- consistent SQLite \file{.backup()} snapshot
+  (safe under WAL) plus a copy of \file{data/uploads} into a timestamped
+  \file{backups/<stamp>/} directory. Restore = stop service, copy both back,
+  start service. Schedule it nightly via cron.
+  \item \file{npm start} --- production entry point (same code path as dev
+  without watch).
+\end{itemize}
 
 % ============================================================
 \section{Deliberate Non-Decisions}
@@ -1011,41 +1123,33 @@ they are not mistaken for oversights:
 \subsection{Engineering}
 
 \begin{enumerate}
-  \item \textbf{Put the project under git now} (including this document);
-  without it, every other improvement is built on sand.
-  \item \textbf{Integration test suite} for the API: RBAC matrix, invite
-  lifecycle (expiry, reuse, duplicate), atomic ticket IDs under concurrency,
-  search behaviour, cron idempotency. The synchronous SQLite driver makes an
-  in-memory test database trivial.
-  \item \textbf{CI pipeline}: typecheck, tests, \file{npm audit} on every
-  push.
+  \item \textbf{Add a private git remote} (the local repository exists; push
+  it off-machine for disaster recovery).
   \item \textbf{Server-side sanitization} of rich text before persistence.
-  \item \textbf{Password reset flow} (token-based, mirroring the invite
-  mechanics that already exist).
-  \item \textbf{Rate limiting} on write endpoints and invitation creation.
-  \item \textbf{Pagination parameters} on task/comment/event lists.
+  \item \textbf{Real-time board invalidation} (SSE) so open boards update
+  without manual refresh.
   \item \textbf{Media garbage collection} for unreferenced uploads.
   \item \textbf{Decide the global-Admin access model}: implicit
   all-project access (today) vs. explicit memberships with only
   \file{SUPER_ADMIN} exempt. The admin UI is already prepared for either.
-  \item \textbf{Deployment recipe}: reverse proxy + TLS, process manager,
-  documented backup/restore of \file{data/} (SQLite file + uploads).
+  \item \textbf{Grow the test suite} toward the e-mail jobs (digest/report
+  content) and the admin membership diffing logic as those evolve.
 \end{enumerate}
 
 \subsection{Management}
 
 \begin{itemize}
   \item \textbf{Bus factor is 1.} Everything is documented here, but only one
-  person knows the codebase. The roadmap above (tests + CI + git) is also the
-  onboarding path for a second contributor.
+  person knows the codebase. The test suite and CI are the onboarding path
+  for a second contributor: green pipeline = safe first change.
   \item \textbf{Data is the asset.} The SQLite file plus \file{data/uploads}
-  is the entire state; a scheduled offline copy (even \file{rsync} to another
-  disk) should exist from day one of real usage.
+  is the entire state. \file{npm run backup} exists; scheduling it nightly
+  and storing one copy off-machine is the remaining operational task.
   \item \textbf{Scope discipline.} The pivot away from Cloudflare and
   react-admin both \emph{reduced} complexity; the same discipline should
-  apply to future features --- the current feature set is complete for a
-  small team, and the highest-value next investments are reliability
-  (tests/CI/backups), not features.
+  apply to future features. The reliability round (tests, CI, deployment,
+  password reset, rate limiting, pagination) closed every high-severity gap;
+  remaining items are low severity by design.
   \item \textbf{Cost.} Running cost is effectively zero (self-hosted, Resend
   free tier); the only recurring obligation is the weekly security scan
   review.
@@ -1064,6 +1168,8 @@ they are not mistaken for oversights:
 v0.1--v0.5 & --- & Architecture drafts (see \file{DOC/main (1).tex}): Cloudflare D1/Pages design, react-admin panel, MailHog plan, e-mail template system, security scanning concept.\\
 \addlinespace
 v1.0 & \today & First documentation of the \emph{implemented} system: self-hosted Hono + SQLite pivot; vanilla SPA shell with persistent sidebar; admin panel migrated in-app (react-admin and Vite removed, 153 packages dropped); account invitations with public sign-up disabled; bidirectional user/project access management; global search with normalization, description matching and fuzzy suggestions; My Tickets cross-project view; real ticket counts; full security assessment and roadmap.\\
+\addlinespace
+v1.1 & \today & Reliability round: automated test suite (27 node:test API/unit tests, zero extra dependencies; server made importable for in-process testing); git repository initialized; CI pipeline (typecheck + tests + audit); production deployment kit (systemd unit, nginx TLS sample, \file{npm run backup}); token-based password reset with session revocation and no account enumeration; API rate limiting (general + strict invitation/reset budgets); pagination on users, tasks and activity events. Documentation updated accordingly; remaining weaknesses all re-classified as low/medium.\\
 \bottomrule
 \end{tabularx}
 \caption{Document version history.}
