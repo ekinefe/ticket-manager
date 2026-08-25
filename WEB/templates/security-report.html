@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Ticket Manager Security Report</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f4f5;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0"
+             style="background:#ffffff;border-radius:8px;overflow:hidden;
+                    font-family:Arial,Helvetica,sans-serif;">
+        <tr>
+          <td style="background:#964826;padding:24px 32px;">
+            <span style="color:#ffffff;font-size:20px;font-weight:bold;">Ticket&nbsp;Manager</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:32px;">
+            <h1 style="margin:0 0 6px;font-size:20px;color:#242424;">
+              Weekly security report
+            </h1>
+            <p style="margin:0 0 24px;font-size:13px;color:#8a8a8a;">
+              {{report_date}} &middot; {{finding_count}} finding(s)
+            </p>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                   style="border:1px solid #ececec;border-radius:6px;">
+              <tr>
+                <th align="left" style="padding:8px 12px;border-bottom:2px solid #ececec;
+                                       font-size:11px;color:#8a8a8a;letter-spacing:1px;">PACKAGE</th>
+                <th align="left" style="padding:8px 12px;border-bottom:2px solid #ececec;
+                                       font-size:11px;color:#8a8a8a;letter-spacing:1px;">SEVERITY</th>
+                <th align="left" style="padding:8px 12px;border-bottom:2px solid #ececec;
+                                       font-size:11px;color:#8a8a8a;letter-spacing:1px;">CVE</th>
+                <th align="left" style="padding:8px 12px;border-bottom:2px solid #ececec;
+                                       font-size:11px;color:#8a8a8a;letter-spacing:1px;">FIX IN</th>
+              </tr>
+              {{findings_rows}}
+            </table>
+
+            <p style="margin:20px 0 0;font-size:12px;line-height:18px;color:#8a8a8a;">
+              Findings are collected from the OSV vulnerability database.
+              Update to the suggested fix version and deploy; the finding closes automatically on the next scan.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#fafafa;border-top:1px solid #ececec;
+                     padding:16px 32px;font-size:11px;color:#9a9a9a;">
+            Ticket Manager - self-hosted task management.<br>
+            This report is sent to Super Admin accounts only.
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

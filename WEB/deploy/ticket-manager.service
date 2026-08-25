@@ -1,0 +1,38 @@
+# systemd unit for Ticket Manager (production, self-hosted).
+#
+# Install:
+#   1. Copy the repository to /opt/ticket-manager
+#   2. cd /opt/ticket-manager/WEB && npm ci
+#   3. Create /opt/ticket-manager/WEB/.env (see Environment= lines below)
+#   4. cp deploy/ticket-manager.service /etc/systemd/system/
+#   5. systemctl daemon-reload && systemctl enable --now ticket-manager
+[Unit]
+Description=Ticket Manager (Hono + SQLite)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ticket-manager/WEB
+ExecStart=/usr/bin/npx tsx server/main.ts
+Restart=on-failure
+RestartSec=3
+User=www-data
+Group=www-data
+
+# --- Required environment (put real values in /opt/ticket-manager/WEB/.env) ---
+# APP_URL=https://tickets.example.com
+# MAIL_FROM=Ticket Manager <no-reply@example.com>
+# MAIL_TRANSPORT=resend
+# RESEND_API_KEY=re_xxxxxxxx
+# BETTER_AUTH_SECRET=<openssl rand -base64 32>
+# OSV_PACKAGES=["pkg@version", ...]
+EnvironmentFile=/opt/ticket-manager/WEB/.env
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/ticket-manager/WEB
+
+[Install]
+WantedBy=multi-user.target

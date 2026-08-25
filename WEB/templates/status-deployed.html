@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Ticket Manager DEPLOYED</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f4f5;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0"
+             style="background:#ffffff;border-radius:8px;overflow:hidden;
+                    font-family:Arial,Helvetica,sans-serif;">
+        <tr>
+          <td style="background:#964826;padding:24px 32px;">
+            <span style="color:#ffffff;font-size:20px;font-weight:bold;">Ticket&nbsp;Manager</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:32px;">
+            <!-- Badge color matches the Kanban column color -->
+            <table role="presentation" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="background:#1E8C5A;border-radius:999px;padding:5px 14px;"
+                    align="center">
+                  <span style="color:#ffffff;font-size:11px;font-weight:bold;
+                               letter-spacing:1.5px;">DEPLOYED</span>
+                </td>
+              </tr>
+            </table>
+            <h1 style="margin:18px 0 6px;font-size:19px;color:#242424;">
+              {{task_title}}
+            </h1>
+            <p style="margin:0 0 20px;font-size:13px;color:#8a8a8a;">
+              {{ticket_id}} &middot; {{project}}
+            </p>
+            <p style="margin:0 0 20px;font-size:14px;line-height:22px;color:#4b4b4b;">
+              <strong>{{actor}}</strong> moved this ticket from
+              <strong>{{old_status}}</strong> to
+              <strong>{{new_status}}</strong>.
+            </p>
+            <table role="presentation" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="background:#964826;border-radius:6px;" align="center">
+                  <a href="{{task_url}}"
+                     style="display:inline-block;padding:12px 28px;
+                            color:#ffffff;text-decoration:none;
+                            font-size:14px;font-weight:bold;">
+                    Open ticket
+                  </a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#fafafa;border-top:1px solid #ececec;
+                     padding:16px 32px;font-size:11px;color:#9a9a9a;">
+            Ticket Manager - self-hosted task management.<br>
+            You receive this e-mail because you follow this ticket.
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

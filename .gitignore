@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Runtime data (database, uploads, mail outbox, backups)
+WEB/data/
+WEB/.mail-out/
+WEB/backups/
+
+# LaTeX build artifacts
+DOC/*.aux
+DOC/*.log
+DOC/*.out
+DOC/*.toc
+DOC/*.fls
+DOC/*.fdb_latexmk
+DOC/*.synctex.gz
+DOC/*.pdf
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp

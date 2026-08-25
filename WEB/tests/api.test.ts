@@ -1,0 +1,310 @@
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  app, env, seed, cleanup, req, userCookie, signIn, USERS, PROJECT_ID, PREFIX,
+} from "./helpers.ts";
+
+const MAIL_OUT = join(process.cwd(), ".mail-out");
+
+function newestMail(): string {
+  const files = readdirSync(MAIL_OUT).filter((f) => f.endsWith(".html"));
+  const sorted = files.sort((a, b) => (a < b ? 1 : -1));
+  return readFileSync(join(MAIL_OUT, sorted[0]), "utf8");
+}
+
+let superCookie = "";
+let adminCookie = "";
+let member1 = "";
+let member2 = "";
+let outsider = "";
+
+before(async () => {
+  await seed();
+  superCookie = await userCookie("u_super");
+  adminCookie = await userCookie("u_admin");
+  member1 = await userCookie("u_ayse");
+  member2 = await userCookie("u_mehmet");
+  outsider = await userCookie("u_zeynep");
+});
+
+after(async () => {
+  await cleanup();
+});
+
+describe("authentication", () => {
+  it("rejects anonymous API access with 401", async () => {
+    const res = await req("/api/projects");
+    assert.equal(res.status, 401);
+  });
+
+  it("blocks public sign-up with 403", async () => {
+    const res = await req("/api/auth/sign-up/email", {
+      method: "POST",
+      body: { email: "x@y.z", password: "12345678" },
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it("signs in seeded users", async () => {
+    const res = await req("/api/auth/get-session", { cookie: member1 });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.user.role, "USER");
+  });
+});
+
+describe("rbac", () => {
+  it("forbids USER role from the admin user list", async () => {
+    const res = await req("/api/admin/users", { cookie: member1 });
+    assert.equal(res.status, 403);
+  });
+
+  it("allows ADMIN role to read the user list", async () => {
+    const res = await req("/api/admin/users", { cookie: adminCookie });
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(await res.json()));
+  });
+
+  it("forbids non-members from reading project tasks", async () => {
+    const res = await req(`/api/projects/${PROJECT_ID}/tasks`, { cookie: outsider });
+    assert.equal(res.status, 403);
+  });
+
+  it("forbids USER role from creating projects", async () => {
+    const res = await req("/api/projects", {
+      method: "POST", cookie: member1,
+      body: { name: "Nope", prefix: "NOP" },
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it("allows ADMIN role to create projects", async () => {
+    const res = await req("/api/projects", {
+      method: "POST", cookie: adminCookie,
+      body: { name: "CI Project", prefix: "CIP" },
+    });
+    assert.equal(res.status, 201);
+    const project = await res.json();
+    assert.equal(project.prefix, "CIP");
+  });
+
+  it("forbids super admin self-role change and self-delete", async () => {
+    const patch = await req("/api/admin/users/u_super", {
+      method: "PATCH", cookie: superCookie, body: { role: "USER" },
+    });
+    assert.equal(patch.status, 400);
+    const del = await req("/api/admin/users/u_super", { method: "DELETE", cookie: superCookie });
+    assert.equal(del.status, 400);
+  });
+});
+
+describe("tickets", () => {
+  it("allocates unique sequential ticket IDs", async () => {
+    const r1 = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: member1, body: { title: "First", assigneeId: "u_ayse" },
+    });
+    const r2 = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: member1, body: { title: "Second", assigneeId: "u_ayse" },
+    });
+    assert.equal(r1.status, 201);
+    assert.equal(r2.status, 201);
+    const t1 = await r1.json();
+    const t2 = await r2.json();
+    assert.equal(t1.ticketId, `${PREFIX}-1`);
+    assert.equal(t2.ticketId, `${PREFIX}-2`);
+    assert.notEqual(t1.id, t2.id);
+  });
+
+  it("forbids members from editing tickets they did not create and are not assigned", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: member1, body: { title: "Ayse only" },
+    });
+    const task = await create.json();
+    const res = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}`, {
+      method: "PATCH", cookie: member2, body: { title: "hijacked" },
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it("forbids members from changing priority (admin-only field)", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: member1, body: { title: "Prio test", assigneeId: "u_ayse" },
+    });
+    const task = await create.json();
+    const res = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}`, {
+      method: "PATCH", cookie: member1, body: { priority: "URGENT" },
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it("allows project admins to change priority", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: member1, body: { title: "Prio admin", assigneeId: "u_ayse" },
+    });
+    const task = await create.json();
+    const res = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}`, {
+      method: "PATCH", cookie: adminCookie, body: { priority: "HIGH" },
+    });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).priority, "HIGH");
+  });
+
+  it("forbids members from deleting tickets, allows admins", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: member1, body: { title: "Delete me" },
+    });
+    const task = await create.json();
+    const asMember = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}`, {
+      method: "DELETE", cookie: member1,
+    });
+    assert.equal(asMember.status, 403);
+    const asAdmin = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}`, {
+      method: "DELETE", cookie: adminCookie,
+    });
+    assert.equal(asAdmin.status, 200);
+  });
+
+  it("supports pagination parameters", async () => {
+    const res = await req(`/api/projects/${PROJECT_ID}/tasks?page=1&perPage=2`, { cookie: member1 });
+    assert.equal(res.status, 200);
+    const rows = await res.json();
+    assert.ok(rows.length <= 2);
+  });
+});
+
+describe("invitations", () => {
+  it("creates, accepts, and single-uses a project invitation", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/invitations`, {
+      method: "POST", cookie: adminCookie,
+      body: { email: "newbie@test.local", role: "MEMBER" },
+    });
+    assert.equal(create.status, 201);
+    const { devInviteUrl } = await create.json();
+    const token = new URL(devInviteUrl).searchParams.get("token")!;
+
+    const accept = await req("/api/invitations/accept", {
+      method: "POST",
+      body: { token, name: "Newbie", password: "newbie123!" },
+    });
+    assert.equal(accept.status, 200);
+
+    // Token is single-use.
+    const reuse = await req("/api/invitations/accept", {
+      method: "POST",
+      body: { token, name: "Newbie", password: "newbie123!" },
+    });
+    assert.equal(reuse.status, 410);
+
+    // New account can sign in and has USER role.
+    const cookie = await signIn("newbie@test.local", "newbie123!");
+    const session = await req("/api/auth/get-session", { cookie });
+    assert.equal((await session.json()).user.role, "USER");
+  });
+
+  it("rejects duplicate pending invitations with 409", async () => {
+    const res = await req(`/api/projects/${PROJECT_ID}/invitations`, {
+      method: "POST", cookie: adminCookie,
+      body: { email: "newbie@test.local", role: "MEMBER" },
+    });
+    assert.equal(res.status, 409);
+  });
+
+  it("creates standalone account invites (super admin only)", async () => {
+    const asAdmin = await req("/api/admin/invites", {
+      method: "POST", cookie: adminCookie, body: { email: "acct@test.local" },
+    });
+    assert.equal(asAdmin.status, 403);
+
+    const asSuper = await req("/api/admin/invites", {
+      method: "POST", cookie: superCookie, body: { email: "acct@test.local" },
+    });
+    assert.equal(asSuper.status, 201);
+    const { devInviteUrl } = await asSuper.json();
+    const token = new URL(devInviteUrl).searchParams.get("token")!;
+    const accept = await req("/api/invitations/accept", {
+      method: "POST", body: { token, password: "acct1234!" },
+    });
+    assert.equal(accept.status, 200);
+    const cookie = await signIn("acct@test.local", "acct1234!");
+    const list = await req("/api/admin/users", { cookie: superCookie });
+    const users = await list.json();
+    const acct = users.find((u: { email: string }) => u.email === "acct@test.local");
+    assert.equal(acct.role, "USER");
+    void cookie;
+  });
+});
+
+describe("password reset", () => {
+  it("requests, confirms, revokes sessions, and never enumerates accounts", async () => {
+    const unknown = await req("/api/auth/request-password-reset", {
+      method: "POST", body: { email: "ghost@test.local" },
+    });
+    assert.equal(unknown.status, 200); // no enumeration
+
+    const request = await req("/api/auth/request-password-reset", {
+      method: "POST", body: { email: "ayse@test.local" },
+    });
+    assert.equal(request.status, 200);
+
+    // The dev file transport wrote the mail; extract the token from it.
+    const html = newestMail();
+    const match = html.match(/token=([A-Za-z0-9_-]+)/);
+    assert.ok(match, "reset link found in outbox");
+    const token = match[1];
+
+    const confirm = await req("/api/auth/reset-password", {
+      method: "POST", body: { token, password: "brandnew123!" },
+    });
+    assert.equal(confirm.status, 200);
+
+    // Old password no longer works, new one does.
+    await assert.rejects(() => signIn("ayse@test.local", "member123!"));
+    const newCookie = await signIn("ayse@test.local", "brandnew123!");
+    assert.ok(newCookie.includes("better-auth") || newCookie.length > 0);
+
+    // Token is single-use.
+    const reuse = await req("/api/auth/reset-password", {
+      method: "POST", body: { token, password: "another123!" },
+    });
+    assert.equal(reuse.status, 410);
+  });
+});
+
+describe("search", () => {
+  // Uses member2: the password-reset test above revokes member1's session.
+  it("finds tickets by glued normalized ID (pln-style)", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: member2, body: { title: "Searchable one" },
+    });
+    const task = await create.json(); // TST-n
+    const n = task.ticketId.split("-")[1];
+    const res = await req(`/api/search?q=${PREFIX.toLowerCase()}${n}`, { cookie: member2 });
+    const data = await res.json();
+    assert.ok(data.tickets.some((t: { ticketId: string }) => t.ticketId === task.ticketId));
+  });
+
+  it("never leaks users to USER-role searchers", async () => {
+    const res = await req("/api/search?q=super", { cookie: member2 });
+    const data = await res.json();
+    assert.deepEqual(data.users, []);
+  });
+
+  it("never leaks inaccessible projects", async () => {
+    const res = await req("/api/search?q=cip", { cookie: outsider });
+    const data = await res.json();
+    assert.equal(data.projects.length, 0);
+    assert.equal(data.tickets.length, 0);
+  });
+});
+
+describe("cron idempotency", () => {
+  it("runs a job once per period key", async () => {
+    const { runOnce } = await import("../src/cron/guard.ts");
+    const first = await runOnce(env, "test_job", "period-1");
+    const second = await runOnce(env, "test_job", "period-1");
+    assert.equal(first, true);
+    assert.equal(second, false);
+  });
+});

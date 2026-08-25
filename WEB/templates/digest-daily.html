@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Ticket Manager Daily Digest</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f4f5;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0"
+             style="background:#ffffff;border-radius:8px;overflow:hidden;
+                    font-family:Arial,Helvetica,sans-serif;">
+        <tr>
+          <td style="background:#964826;padding:24px 32px;">
+            <span style="color:#ffffff;font-size:20px;font-weight:bold;">Ticket&nbsp;Manager</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:32px;">
+            <h1 style="margin:0 0 6px;font-size:20px;color:#242424;">
+              Daily digest &middot; {{project}}
+            </h1>
+            <p style="margin:0 0 24px;font-size:13px;color:#8a8a8a;">{{date}}</p>
+
+            <h2 style="margin:0 0 10px;font-size:14px;color:#236E37;">
+              Completed today ({{done_count}})
+            </h2>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                   style="border:1px solid #ececec;border-radius:6px;margin-bottom:24px;">
+              {{done_rows}}
+            </table>
+
+            <h2 style="margin:0 0 10px;font-size:14px;color:#286EB4;">
+              In progress ({{wip_count}})
+            </h2>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                   style="border:1px solid #ececec;border-radius:6px;">
+              {{wip_rows}}
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#fafafa;border-top:1px solid #ececec;
+                     padding:16px 32px;font-size:11px;color:#9a9a9a;">
+            Ticket Manager - self-hosted task management.<br>
+            You receive this digest because you are a member of this project.
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

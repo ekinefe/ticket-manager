@@ -1,0 +1,1072 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---------- Encoding, language and typography ----------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[english]{babel}
+\usepackage{microtype}
+
+\usepackage[margin=2.5cm,headheight=15pt]{geometry}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{mdframed}
+\usepackage{pifont}
+\usepackage{parskip}
+\usepackage{fancyhdr}
+
+% ---------- Colors ----------
+\definecolor{accent}{RGB}{150,72,38}
+\definecolor{darkgray}{RGB}{90,90,90}
+\definecolor{lightgray}{RGB}{245,245,245}
+\definecolor{codebg}{RGB}{30,30,30}
+\definecolor{codetext}{RGB}{220,220,220}
+\definecolor{codekw}{RGB}{240,160,90}
+\definecolor{codecmt}{RGB}{125,165,120}
+\definecolor{okgreen}{RGB}{35,120,55}
+\definecolor{warnred}{RGB}{179,38,30}
+
+\definecolor{stTodo}{RGB}{115,115,115}
+\definecolor{stInProgress}{RGB}{40,110,180}
+\definecolor{stReview}{RGB}{200,130,20}
+\definecolor{stMerged}{RGB}{120,60,160}
+\definecolor{stDeployed}{RGB}{30,140,90}
+\definecolor{stTest}{RGB}{205,95,35}
+\definecolor{stDone}{RGB}{35,110,55}
+
+% ---------- Headings and page style ----------
+\titleformat{\section}
+  {\Large\bfseries\color{accent}}{\thesection}{0.8em}{}
+\titlespacing*{\section}{0pt}{2.0ex plus .4ex}{1.0ex}
+\titleformat{\subsection}
+  {\large\bfseries\color{accent!80!black}}{\thesubsection}{0.7em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\sffamily\color{darkgray}Ticket Manager}
+\fancyhead[R]{\footnotesize\sffamily\color{darkgray}\nouppercase{\leftmark}}
+\fancyfoot[C]{\footnotesize\sffamily\color{darkgray}---~\thepage~---}
+\renewcommand{\headrulewidth}{0.8pt}
+\renewcommand{\headrule}{{\color{accent}\hrule width\headwidth height \headrulewidth}}
+
+\setlist{itemsep=2pt,parsep=0pt,topsep=4pt}
+\emergencystretch=1em
+\raggedbottom
+
+% ---------- Helper commands ----------
+\newcommand{\ok}{\textcolor{okgreen}{\ding{51}}}
+\newcommand{\no}{\textcolor{darkgray}{\ding{55}}}
+\newcommand{\risk}{\textcolor{warnred}{\ding{55}}}
+\newcommand{\statusbadge}[2]{%
+  \colorbox{#1}{\makebox[3.0cm][c]{\color{white}\sffamily\bfseries\small #2}}}
+\newcommand{\file}[1]{\texttt{\detokenize{#1}}}
+
+% ---------- Code listing style ----------
+\lstdefinestyle{sql}{
+  language=SQL,
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\footnotesize\color{codetext},
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecmt}\itshape,
+  stringstyle=\color{codetext},
+  numbers=left,
+  numberstyle=\tiny\color{darkgray},
+  numbersep=8pt,
+  frame=none,
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=2,
+  xleftmargin=2.6em,
+  framexleftmargin=1.6em,
+}
+\lstdefinestyle{html}{
+  language=HTML,
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\footnotesize\color{codetext},
+  keywordstyle=\color{codekw},
+  commentstyle=\color{codecmt}\itshape,
+  stringstyle=\color{codetext},
+  numbers=left,
+  numberstyle=\tiny\color{darkgray},
+  numbersep=8pt,
+  frame=none,
+  breaklines=true,
+  breakindent=1.5em,
+  showstringspaces=false,
+  tabsize=2,
+  xleftmargin=2.6em,
+  framexleftmargin=1.6em,
+}
+\lstset{style=sql}
+
+% ---------- PDF metadata ----------
+\usepackage[unicode,colorlinks=true,linkcolor=accent,urlcolor=accent,citecolor=darkgray]{hyperref}
+\hypersetup{
+  pdftitle={Ticket Manager - Full System Documentation},
+  pdfauthor={Ekin},
+  pdfsubject={Architecture, Security and Project Report},
+  pdfkeywords={ticket manager, kanban, hono, sqlite, drizzle, better-auth, self-hosted},
+}
+
+\begin{document}
+
+% ============================================================
+% COVER
+% ============================================================
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\color{accent}\rule{0.6\textwidth}{1pt}}
+\vspace{0.8cm}
+
+{\Huge \bfseries Ticket Manager\par}
+
+\vspace{0.4cm}
+{\Large \color{darkgray} Full System Documentation\\ Architecture, Security and Project Report\par}
+
+\vspace{0.8cm}
+{\color{accent}\rule{0.6\textwidth}{1pt}}
+\vspace{1.2cm}
+
+{\large \itshape A zero-cost, self-hosted internal Jira / Linear alternative for\\
+PlannedLost development tracking and multi-project management\par}
+
+\vspace{2cm}
+{\normalsize
+\begin{tabular}{rl}
+\textbf{Date:}      & \today \\
+\textbf{Version:}   & v1.0 \\
+\textbf{Author:}    & Ekin \\
+\textbf{Status:}    & Implemented and running (development stage) \\
+\end{tabular}\par}
+\vfill
+\end{titlepage}
+
+\pagenumbering{roman}
+\tableofcontents
+\newpage
+\pagenumbering{arabic}
+
+% ============================================================
+\section{Executive Summary}
+
+Ticket Manager is a self-hosted, zero-cost work tracking system built for
+\textbf{PlannedLost}, an independent game development effort. Its purpose is
+twofold: (1) to track PlannedLost's own development with a Kanban workflow and
+unique ticket IDs, and (2) to manage any number of additional projects from a
+single installation. The long-term goal is to replicate the paid core of tools
+such as \href{https://linear.app/}{Linear} on our own server, without license
+fees and without handing data to a third party.
+
+This document is a complete, ground-up survey of the implemented system: every
+technology choice and its justification, every subsystem and where it lives in
+the code, the security model, the features that were deliberately left out and
+why, and a prioritized list of weaknesses and recommended next steps --- from
+both an engineering and a management perspective.
+
+\subsection{Current State at a Glance}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{4.4cm}X}
+\toprule
+\textbf{Area} & \textbf{Status}\\
+\midrule
+Kanban board (7 columns, drag \& drop, inline editing) & \ok~implemented \\
+Ticket IDs (\texttt{PREFIX-n}), types (Task/Bug), priorities & \ok~implemented \\
+Rich-text descriptions, comments, per-ticket activity feed & \ok~implemented \\
+File attachments (image/video, up to 100\,MB) & \ok~implemented \\
+Cookie-session auth (Better Auth), invitation-only sign-up & \ok~implemented \\
+Global roles + per-project roles, enforced server-side & \ok~implemented \\
+Admin panel (users \& projects, bidirectional access management) & \ok~implemented \\
+Global search (normalized IDs, description text, typo-tolerant suggestions) & \ok~implemented \\
+E-mail transport abstraction (Resend in production, file outbox in dev) & \ok~implemented \\
+Scheduled jobs: daily digest, weekly report, weekly security scan (OSV) & \ok~implemented \\
+Automated test suite & \risk~missing \\
+Version control (git) for this working directory & \risk~missing \\
+CI/CD pipeline, production deployment configuration & \risk~missing \\
+Password reset flow, API rate limiting, pagination & \risk~missing \\
+\bottomrule
+\end{tabularx}
+\caption{Implementation status summary. Red crosses mark known gaps discussed
+in Section~\ref{sec:gaps}.}
+\label{tab:status}
+\end{table}
+
+% ============================================================
+\section{System Components and Technology Choices}
+
+An earlier revision of this document (v0.5) described a Cloudflare-centric
+design: Pages Functions, D1, Wrangler and a react-admin management panel.
+During implementation the architecture pivoted to a \textbf{self-hosted
+Node.js server with a local SQLite file} and a \textbf{hand-written vanilla
+JavaScript front-end}. The pivot happened for practical reasons: the
+application is an internal tool for a single team, a local database file is
+easier to inspect, back up and reason about than a remote D1 instance, and the
+Cloudflare free tier's read quotas added complexity without adding value at
+this scale. The pivot also removed an entire build step: the React admin
+bundle (and with it react-admin, React, Vite --- 153 packages) was deleted and
+replaced by server-rendered static pages plus vanilla ES modules.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{2.6cm}p{4.6cm}X}
+\toprule
+\textbf{Layer} & \textbf{Technology} & \textbf{Rationale}\\
+\midrule
+Runtime      & Node.js 24 + \file{tsx} (dev)  & Single-language stack; \file{tsx watch} gives instant restart during development.\\
+\addlinespace
+HTTP server  & Hono 4.9 via \file{@hono/node-server} & Small, fast, Web-standard Request/Response API; the same routing code could later be redeployed to Cloudflare Workers if ever desired.\\
+\addlinespace
+Database     & SQLite (better-sqlite3 12) + Drizzle ORM 0.45 & Zero-administration relational store in \file{data/ticket-manager.db}; WAL journaling; synchronous driver is the fastest option for a single-node tool. Drizzle provides typed schema and queries.\\
+\addlinespace
+Auth         & Better Auth 1.3 & Cookie sessions, e-mail/password, Drizzle adapter; the \file{role} column is registered as a non-input additional field so clients can never set it.\\
+\addlinespace
+Front-end    & Vanilla ES modules + hand-written CSS design system & No build step at all; the server statically serves \file{client/}. A framework was judged unnecessary for $\sim$2{,}200 lines of UI code (see Section~\ref{sec:frontend}).\\
+\addlinespace
+E-mail       & Resend HTTP API behind a transport interface & Production delivery via Resend; development writes rendered mails to a local outbox directory instead of a catch-all SMTP server (Section~\ref{sec:mail}).\\
+\addlinespace
+Scheduling   & In-process \file{setInterval} tick (60\,s) & No external cron needed; jobs are idempotent per period (Section~\ref{sec:cron}).\\
+\addlinespace
+Vulnerability feed & OSV (\texttt{api.osv.dev}) batch query & Free, structured CVE data for the weekly dependency scan.\\
+\bottomrule
+\end{tabularx}
+\caption{Technology choices and their justifications as implemented today.}
+\label{tab:techstack}
+\end{table}
+
+\subsection{Why the Alternatives Were Not Chosen}
+
+\begin{itemize}
+  \item \textbf{react-admin (removed).} The original plan used react-admin for
+  the super-admin panel. In practice the panel only ever needed two small
+  resources (users, projects); react-admin brought Material UI theming that
+  clashed with the application's own design system, plus a separate Vite build
+  pipeline. It was replaced by $\sim$530 lines of vanilla JS in
+  \file{client/js/pages/admin.js} that reuses the application's CSS components,
+  and the dependency was removed entirely. Security was unaffected: the panel
+  was always gated server-side (Section~\ref{sec:rbac}).
+  \item \textbf{Cloudflare D1 / Pages Functions (postponed).} Still possible
+  in the future --- Hono was chosen partly because its handlers are
+  Web-standard and portable --- but local SQLite removes network latency from
+  every query during development and makes backup a file copy.
+  \item \textbf{React/Vue/Svelte for the main client (rejected).} The UI is a
+  handful of pages with one interactive board. A framework would have added a
+  build step, virtual-DOM reconciliation and $\sim$50\,MB of
+  \file{node_modules} to solve problems this application does not have.
+  State is kept in a single exported \file{state} object and pages re-render
+  explicitly.
+  \item \textbf{MailHog/Mailpit SMTP catcher (rejected for now).} The original
+  plan used an SMTP catcher for development. The implemented transport
+  abstraction is even simpler in a Node context: without
+  \file{MAIL_TRANSPORT=resend} every mail is written as
+  \file{.mail-out/<timestamp>-<to>-<subject>.html} and logged to the console.
+  No extra container is required, and the rendered HTML can be opened
+  directly in a browser.
+\end{itemize}
+
+\subsection{Code Base Overview}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{5.2cm}p{1.6cm}X}
+\toprule
+\textbf{Location} & \textbf{Lines} & \textbf{Contents}\\
+\midrule
+\file{WEB/server/main.ts} & 1{,}004 & All HTTP endpoints (Hono), static file serving, upload handling.\\
+\file{WEB/src/lib/*} & $\sim$700 & RBAC, invites, search, activity, notify, ticket IDs, mail transport, status model.\\
+\file{WEB/src/db/*} & $\sim$250 & Drizzle schema (13 tables), SQLite bootstrap, migration runner.\\
+\file{WEB/src/auth/server.ts} & 27 & Better Auth factory.\\
+\file{WEB/src/cron/*} & $\sim$300 & Scheduler, idempotency guard, digest / weekly / security jobs.\\
+\file{WEB/migrations/*.sql} & 5 files & Hand-written, ordered, auto-applied schema migrations.\\
+\file{WEB/client/js/**} & $\sim$2{,}175 & Vanilla SPA: router, API wrapper, UI kit, 6 pages.\\
+\file{WEB/client/css/app.css} & 535 & The entire design system (single light theme).\\
+\file{WEB/templates/*.html} & 12 files & E-mail templates compiled into \file{generated-templates.ts}.\\
+\file{WEB/seed/seed.ts} & $\sim$160 & Deterministic demo data (4 users, 2 projects, tasks, invitations).\\
+\bottomrule
+\end{tabularx}
+\caption{Repository layout and approximate sizes.}
+\label{tab:layout}
+\end{table}
+
+% ============================================================
+\section{Application Architecture}
+
+\subsection{Request Lifecycle}
+
+Every request flows through the same pipeline in \file{server/main.ts}:
+
+\begin{enumerate}
+  \item \textbf{Static assets.} \file{/js/*} and \file{/css/*} are served with
+  \file{Cache-Control: no-cache} in development so edits show up on refresh;
+  other client assets are served statically from \file{client/}.
+  \item \textbf{Auth routes.} \file{/api/auth/*} is delegated to Better Auth's
+  handler. One exception is installed \emph{before} it: a middleware rejects
+  every public \file{POST /api/auth/sign-up/email} unless it carries an
+  internal secret header (Section~\ref{sec:auth}).
+  \item \textbf{API routes.} Each handler is wrapped in \file{guard()}, which
+  catches \file{ApiError} and converts it into a JSON error response with the
+  right status code; unexpected errors become a generic 500 without leaking
+  internals. Every protected handler starts by resolving the session
+  (\file{getSessionUser}) and asserting a role
+  (\file{requireSuperAdmin}/\file{requirePanelAccess}/\file{requireProjectRole}).
+  \item \textbf{SPA fallback.} Any non-API GET serves
+  \file{client/index.html}; the client router renders the correct page for
+  paths such as \file{/projects/prj_pln} or \file{/my-tickets}.
+\end{enumerate}
+
+\subsection{HTTP API Surface}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{5.6cm}p{2.2cm}X}
+\toprule
+\textbf{Endpoint} & \textbf{Method(s)} & \textbf{Access}\\
+\midrule
+\file{/api/auth/*} & POST & Better Auth (sign-in, sign-out, session). Public sign-up disabled.\\
+\file{/api/projects} & GET, POST & Any authenticated (list is role-filtered) / create: ADMIN+\\
+\file{/api/projects/:id} & GET, PATCH, DELETE & Project role / project admin / super admin\\
+\file{/api/my-tickets} & GET & Any authenticated (assigned tickets across accessible projects)\\
+\file{/api/search?q=} & GET & Any authenticated (results role-filtered; user search ADMIN+)\\
+\file{/api/projects/:id/tasks} & GET, POST & Project role\\
+\file{/api/projects/:id/tasks/:taskId} & PATCH, DELETE & Assignee or creator or project admin / delete: project admin\\
+\file{/api/projects/:id/tasks/:taskId/events} & GET & Project role (activity feed)\\
+\file{/api/projects/:id/tasks/:taskId/comments} & GET, POST, DELETE & Project role\\
+\file{/api/projects/:id/media} & POST & Project role (multipart upload)\\
+\file{/api/projects/:id/invitations} & GET, POST & Project role (read) / project admin (create)\\
+\file{/api/invitations/accept} & POST & Public with valid token (project or account invite)\\
+\file{/api/admin/users}, \file{/api/admin/users/:id} & GET, PATCH, DELETE & Super admin (user list, role change, delete, detail + memberships)\\
+\file{/api/admin/users/:id/projects} & POST, DELETE & Super admin (membership upsert/remove from the user side)\\
+\file{/api/admin/projects/:id/members} & GET, POST, DELETE & Super admin (same memberships from the project side)\\
+\file{/api/admin/invites} & POST & Super admin (standalone account invitation)\\
+\file{/api/dev/cron/:job} & POST & Super admin (manual job trigger for development)\\
+\bottomrule
+\end{tabularx}
+\caption{HTTP API surface. Every write path re-validates authorization
+server-side; the client-side checks are purely cosmetic.}
+\label{tab:api}
+\end{table}
+
+% ============================================================
+\section{Data Model and Migrations}
+\label{sec:datamodel}
+
+\subsection{Schema}
+
+Better Auth owns the identity tables (\file{user}, \file{session},
+\file{account}, \file{verification}); the application tables reference them.
+The full application schema follows.
+
+\begin{lstlisting}[language=SQL]
+-- Projects
+CREATE TABLE projects (
+    id                      TEXT PRIMARY KEY,
+    name                    TEXT NOT NULL,
+    prefix                  TEXT NOT NULL UNIQUE,     -- e.g. WCE
+    current_ticket_sequence INTEGER NOT NULL DEFAULT 0,
+    created_at              INTEGER NOT NULL
+);
+
+-- Tickets
+CREATE TABLE tasks (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    ticket_id   TEXT NOT NULL UNIQUE,                     -- e.g. WCE-12
+    title       TEXT NOT NULL,
+    description TEXT,                                     -- sanitized rich text (HTML)
+    status      TEXT NOT NULL DEFAULT 'TODO',
+    type        TEXT NOT NULL DEFAULT 'TASK' CHECK (...), -- TASK | BUG
+    priority    TEXT NOT NULL DEFAULT 'MEDIUM',           -- LOW..URGENT
+    assignee_id TEXT REFERENCES user(id) ON DELETE SET NULL,
+    created_by  TEXT REFERENCES user(id) ON DELETE SET NULL,
+    position    REAL NOT NULL DEFAULT 0,                  -- intra-column order
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+CREATE INDEX idx_tasks_project_status ON tasks(project_id, status);
+
+-- Project memberships and in-project roles
+CREATE TABLE project_members (
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id    TEXT NOT NULL REFERENCES user(id)    ON DELETE CASCADE,
+    role       TEXT NOT NULL DEFAULT 'MEMBER',            -- ADMIN | MEMBER
+    PRIMARY KEY (project_id, user_id)
+);
+
+-- Project invitations (only the token HASH is stored)
+CREATE TABLE invitations (
+    id           TEXT PRIMARY KEY,
+    project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    email        TEXT NOT NULL,
+    token_hash   TEXT NOT NULL UNIQUE,
+    invited_role TEXT NOT NULL DEFAULT 'MEMBER',          -- ADMIN | MEMBER
+    expires_at   INTEGER NOT NULL,
+    accepted_at  INTEGER,
+    created_by   TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    created_at   INTEGER NOT NULL
+);
+
+-- Standalone account invitations (no project attached)   [migration 0005]
+CREATE TABLE account_invites (
+    id          TEXT PRIMARY KEY,
+    email       TEXT NOT NULL,
+    token_hash  TEXT NOT NULL UNIQUE,
+    expires_at  INTEGER NOT NULL,
+    accepted_at INTEGER,
+    created_by  TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    created_at  INTEGER NOT NULL
+);
+
+-- Field-level ticket history (source for the activity feed and digests)
+CREATE TABLE activity_log (
+    id         TEXT PRIMARY KEY,
+    task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    actor_id   TEXT REFERENCES user(id) ON DELETE SET NULL,
+    event_type TEXT NOT NULL,   -- CREATED | STATUS_CHANGED | TITLE_CHANGED |
+                               -- DESCRIPTION_CHANGED | ASSIGNEE_CHANGED |
+                               -- TYPE_CHANGED | PRIORITY_CHANGED
+    old_status TEXT, new_status TEXT,
+    old_value  TEXT, new_value  TEXT,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX idx_activity_created ON activity_log(created_at);
+
+-- Ticket comments
+CREATE TABLE task_comments (
+    id        TEXT PRIMARY KEY,
+    task_id   TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    author_id TEXT REFERENCES user(id) ON DELETE SET NULL,
+    body      TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+-- Cron idempotency: one row per (job, period)
+CREATE TABLE job_runs (
+    job_name   TEXT NOT NULL,
+    period_key TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (job_name, period_key)
+);
+
+-- Weekly security scan de-duplication
+CREATE TABLE security_findings (
+    id           TEXT PRIMARY KEY,
+    cve          TEXT NOT NULL,
+    package_name TEXT NOT NULL,
+    severity     TEXT NOT NULL,
+    fixed_version TEXT,
+    reported_at  INTEGER NOT NULL,
+    resolved_at  INTEGER,
+    UNIQUE (cve, package_name)
+);
+\end{lstlisting}
+
+Design notes:
+\begin{itemize}
+  \item \textbf{Deletion semantics are explicit everywhere.} Deleting a
+  project cascades to tasks, memberships and invitations; deleting a user
+  cascades sessions, accounts and memberships while tickets fall back to
+  ``Unassigned'' (\file{ON DELETE SET NULL}). This is what makes the admin
+  panel's delete actions safe with a single \file{DELETE} statement.
+  \item \textbf{\file{position} is a \file{REAL}.} After a drag \& drop the
+  new position is the midpoint between the neighbours, so re-ordering never
+  renumbers a whole column (Section~\ref{sec:kanban}).
+  \item \textbf{\file{ticket_id} is \texttt{UNIQUE}} --- the schema-level
+  backstop behind the atomic counter (Section~\ref{sec:ticketid}).
+\end{itemize}
+
+\subsection{Migration System}
+
+Migrations are plain SQL files in \file{WEB/migrations}, applied in
+lexicographic order at every server start by \file{src/db/local.ts}; applied
+names are recorded in a \file{_migrations} table. Five migrations exist
+(\file{0001_init} \dots \file{0005_account_invites}). The approach is
+deliberately primitive: no migration tool dependency, the SQL that will run is
+exactly the SQL a human reviewed, and a fresh checkout reaches the current
+schema by just starting the server. The trade-off is that there is no
+down-migration; destructive changes require the documented
+\file{npm run db:reset} + re-seed path, which is acceptable for an internal
+tool at this stage but should be revisited before real data accumulates.
+
+% ============================================================
+\section{Authentication and Account Lifecycle}
+\label{sec:auth}
+
+\subsection{Sessions}
+
+Better Auth is configured with e-mail + password and a Drizzle adapter over
+the same SQLite database. Sessions are cookie-based (\file{credentials:
+same-origin} on every client fetch). The \file{role} field is declared with
+\texttt{input: false}, so even a forged sign-up request body cannot influence
+it --- every account starts as \texttt{USER}.
+
+\begin{mdframed}[linecolor=accent,linewidth=0.8pt,
+                 backgroundcolor=lightgray,skipabove=10pt,skipbelow=10pt]
+\small
+\textbf{Public sign-up is disabled.} Better Auth would normally expose
+\file{POST /api/auth/sign-up/email} to everyone. A Hono middleware in front of
+the auth handler rejects it with \texttt{403 "Sign-up is by invitation only"}
+unless the request carries the internal secret header. The invitation
+acceptance flow calls Better Auth's \file{signUpEmail} \emph{in-process}
+(server-side function call, not HTTP) and passes that header explicitly, so
+the two invitation flows keep working while the open endpoint is closed.
+\end{mdframed}
+
+\subsection{Invitation Flows}
+
+There are two invitation kinds, sharing the same security mechanics
+(\file{invite.ts} / \file{account-invite.ts}):
+
+\begin{enumerate}
+  \item \textbf{Project invitation} (created by project admins or super
+  admins, \file{POST /api/projects/:id/invitations}): targets an e-mail
+  address, carries an in-project role (\texttt{ADMIN}/\texttt{MEMBER}), and on
+  acceptance the account is created (if needed) \emph{and} the membership row
+  is inserted.
+  \item \textbf{Account invitation} (created only by super admins,
+  \file{POST /api/admin/invites}): creates the account with no project
+  access; memberships are granted afterwards from the admin panel. This was
+  added so that accounts can exist before any project assignment.
+\end{enumerate}
+
+Both share the same token discipline:
+\begin{itemize}
+  \item The raw token is 32 bytes from \file{crypto.getRandomValues}
+  (CSPRNG), base64url-encoded; it exists \emph{only} inside the e-mail link.
+  \item The database stores the \textbf{SHA-256 hash} with a \texttt{UNIQUE}
+  constraint. A leaked database cannot be replayed as invitation links.
+  \item Tokens expire after 48 hours and are single-use
+  (\file{accepted_at} is stamped on acceptance).
+  \item Duplicate pending invitations and already-existing accounts are
+  rejected with \texttt{409}.
+\end{itemize}
+
+The acceptance endpoint (\file{POST /api/invitations/accept}) transparently
+handles both kinds: it first validates the token as a project invitation and,
+if that fails, as an account invitation. The invited person always sets
+\emph{their own} password on the acceptance page --- no administrator ever
+handles a user's password.
+
+\subsection{Known Gaps in the Account Lifecycle}
+
+\begin{itemize}
+  \item \textbf{No password reset.} A forgotten password currently requires a
+  super admin to intervene at the database level. This is the most important
+  missing account-management feature.
+  \item \textbf{No e-mail verification} independent of invitations; the
+  \file{email_verified} column exists but is not part of any flow.
+  \item \textbf{No rate limiting} beyond Better Auth's built-in defaults on
+  auth endpoints; application API endpoints are unthrottled.
+\end{itemize}
+
+% ============================================================
+\section{Role-Based Access Control}
+\label{sec:rbac}
+
+\subsection{Roles}
+
+\begin{enumerate}
+  \item \textbf{Super Admin} (\file{SUPER_ADMIN}): full control --- user
+  list/roles/deletion, account invitations, project creation/deletion,
+  membership management from either side, manual cron triggers.
+  \item \textbf{Admin} (\file{ADMIN}, global): may create projects, invite
+  people to projects they can access and view the user list read-only in the
+  admin panel. \emph{Note:} in the current model a global Admin implicitly has
+  admin rights on \emph{every} project (\file{requireProjectRole} short-circuits
+  membership checks for non-\texttt{USER} roles). Tightening this to explicit
+  per-project membership is a documented open decision
+  (Section~\ref{sec:gaps}).
+  \item \textbf{User} (\file{USER}): sees and acts only inside projects where
+  a \file{project_members} row exists.
+\end{enumerate}
+
+Inside a project, members additionally carry \file{ADMIN} or \file{MEMBER}:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Capability} & \textbf{Super Admin} & \textbf{Project Admin} & \textbf{Member}\\
+\midrule
+View board and tickets                     & \ok & \ok & \ok\\
+Create tickets                             & \ok & \ok & \ok\\
+Edit tickets they created / are assigned to& \ok & \ok & \ok\\
+Edit \emph{any} ticket                     & \ok & \ok & \no\\
+Reassign tickets                           & \ok & \ok & \no\\
+Change ticket type or priority             & \ok & \ok & \no\\
+Delete tickets                             & \ok & \ok & \no\\
+Invite to project / view invitation list   & \ok & \ok & \no\\
+Rename project, change prefix              & \ok & \ok & \no\\
+Delete project                             & \ok & \no & \no\\
+Create projects (global)                   & \ok & \ok & \no\\
+Manage global roles / delete users         & \ok & \no & \no\\
+\bottomrule
+\end{tabular}
+\caption{Effective permission matrix. ``Project Admin'' includes global
+Admins and Super Admins, who short-circuit membership checks.}
+\label{tab:rbac}
+\end{table}
+
+\subsection{Enforcement}
+
+Enforcement is exclusively server-side, in three layers:
+\begin{enumerate}
+  \item \file{getSessionUser} rejects anonymous requests (\texttt{401}).
+  \item \file{requireSuperAdmin} / \file{requirePanelAccess} gate the admin
+  API (\texttt{403}).
+  \item \file{requireProjectRole} resolves the effective in-project role and
+  rejects non-members (\texttt{403}); ticket-level rules (assignee/creator
+  edits, admin-only fields) are checked inside the task PATCH handler.
+\end{enumerate}
+The client hides controls the current user cannot use, but this is cosmetic:
+every capability denial is a server decision, so IDOR-style attempts through
+the API fail regardless of the UI.
+
+% ============================================================
+\section{Kanban Workflow and Ordering}
+\label{sec:kanban}
+
+\subsection{Columns}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{clX}
+\toprule
+\textbf{Order} & \textbf{Status} & \textbf{Meaning}\\
+\midrule
+1 & \statusbadge{stTodo}{TO DO}             & Backlog; accepted work waiting to be picked up.\\
+2 & \statusbadge{stInProgress}{IN PROGRESS} & Actively being worked on.\\
+3 & \statusbadge{stReview}{UNDER REVIEW}    & Code complete, awaiting review. Instant e-mail.\\
+4 & \statusbadge{stMerged}{MERGED}          & Integrated into the main branch.\\
+5 & \statusbadge{stDeployed}{DEPLOYED}      & Live. Instant e-mail.\\
+6 & \statusbadge{stTest}{TEST}              & Verification on the live system. Instant e-mail.\\
+7 & \statusbadge{stDone}{DONE}              & Closed. Feeds the daily digest.\\
+\bottomrule
+\end{tabularx}
+\caption{Kanban columns.}
+\label{tab:kanban}
+\end{table}
+
+\subsection{Transitions and Ordering}
+
+\texttt{canTransition()} currently allows \emph{any} status to any status.
+This is a documented, deliberate decision: the board is drag \& drop based and
+free movement makes accidental drags trivially reversible. The server still
+validates status values and rejects same-status no-ops that are not reorders.
+If stricter flow control is wanted later, the single function in
+\file{src/lib/status.ts} is the only place to change.
+
+Ordering uses fractional indexing: when a ticket is dropped before another
+one, its new \file{position} is the midpoint between the target and its
+predecessor (\file{computePosition}). Dropping at the end takes
+\file{max(position) + 1}. Reordering therefore costs one \file{UPDATE} and
+never renumbers a column. The practical limit is float precision after
+$\sim$50 consecutive inserts at the same spot, which is far beyond observed
+usage; a periodic renumber could be added if it ever matters.
+
+% ============================================================
+\section{Ticket Identity Generation}
+\label{sec:ticketid}
+
+Each project owns a unique prefix (\file{WCE}, \file{PLN}, \dots); tickets are
+\file{<PREFIX>-<n>}. The counter is incremented atomically in a single
+statement so two concurrent creations can never receive the same number:
+
+\begin{lstlisting}[language=SQL]
+UPDATE projects
+SET current_ticket_sequence = current_ticket_sequence + 1
+WHERE id = ?
+RETURNING current_ticket_sequence;
+\end{lstlisting}
+
+SQLite serializes writes, and the \texttt{UNIQUE} constraint on
+\file{tasks.ticket_id} is the final backstop. Note that the sequence counts
+\emph{creations}, not existing tickets: deleted tickets are not re-used and
+the counter is not decremented. The UI therefore shows the real
+\texttt{COUNT(*)} of tickets per project (added to \file{/api/projects}) next
+to the sequence-derived ID space.
+
+% ============================================================
+\section{Ticket Content: Rich Text, Comments, History, Media}
+
+\begin{itemize}
+  \item \textbf{Rich-text descriptions} are entered in a contenteditable
+  editor and sanitized on the client with an allowlist sanitizer
+  (\file{sanitizeDesc}): only formatting tags survive, \file{<script>} and
+  event handlers are stripped, links get \file{rel="noopener noreferrer"},
+  and embedded \file{<img>}/\file{<video>} sources must point at
+  \file{/media/uploads/*}. Legacy plain-text descriptions are auto-upgraded.
+  The sanitizer is client-side only; server-side sanitization is a listed gap
+  (Section~\ref{sec:gaps}).
+  \item \textbf{Comments} are stored per ticket (\file{task_comments}) with
+  \file{@mention} support in the composer (member autocomplete popup).
+  \item \textbf{Activity feed.} Every mutation writes a row to
+  \file{activity_log} (seven event types). The feed endpoint resolves
+  assignee IDs into display names and is rendered as the right-hand column of
+  the ticket modal. The daily digest and weekly report query the same table.
+  \item \textbf{Media.} \file{POST /api/projects/:id/media} accepts multipart
+  uploads; the MIME type is checked against a whitelist (png, jpg, gif, webm,
+  mp4, mov), the size against 100\,MB, and the file is stored under a random
+  UUID name in \file{data/uploads}, served back at \file{/media/uploads/*}.
+  There is no orphan cleanup: deleting a ticket does not remove its embedded
+  files (Section~\ref{sec:gaps}).
+\end{itemize}
+
+% ============================================================
+\section{Global Search}
+
+The header search (\file{GET /api/search}) was built to tolerate the way
+people actually type:
+
+\begin{enumerate}
+  \item \textbf{Fast path (SQL).} The query is normalized (lowercase,
+  non-alphanumerics stripped), and tickets are matched with
+  \file{LIKE} against the normalized \file{ticket_id} expression
+  (\file{replace(lower(ticket_id), '-', '')}), so \texttt{pln2} finds
+  \texttt{PLN-2}. Titles \emph{and} rich-text descriptions are matched with a
+  plain \file{LIKE} on the raw query. Single-character queries are restricted
+  to ticket IDs and project prefixes to avoid matching half the database.
+  \item \textbf{Fuzzy fallback.} If the fast path finds nothing, up to 500
+  tickets from the caller's accessible projects are scored in JavaScript with
+  a bounded Levenshtein distance (long queries require distance $\leq$1,
+  short ones $\leq$2; a sentinel value keeps ``too far'' results out).
+  Results are returned with a \texttt{suggested: true} flag and the UI labels
+  them ``Did you mean''.
+  \item \textbf{Projects and users.} Projects match on name/prefix within the
+  accessible set; user matching (name/e-mail) is only executed for
+  ADMIN+ callers --- a plain member's search response never even contains the
+  user group.
+\end{enumerate}
+
+All results are filtered by the caller's accessible project set, so search
+cannot leak tickets from projects the user cannot open. Verified examples:
+\texttt{pln2} $\rightarrow$ PLN-2; \texttt{kanbn} $\rightarrow$ PLN-2
+(suggested); \texttt{compose} $\rightarrow$ PLN-9 (description match).
+
+% ============================================================
+\section{Admin Panel}
+
+The admin area lives inside the main application at \file{/admin/users} and
+\file{/admin/projects}, rendered by the same vanilla SPA shell (the sidebar
+stays visible; the ``Admin Panel'' entry is shown only to super admins).
+
+\begin{itemize}
+  \item \textbf{Users tab.} A read-only table; clicking a row opens a
+  ``Manage user'' dialog with the user's global role selector (self-edit and
+  self-delete are blocked server-side as lockout protection) and the full
+  project access matrix: per project, a checkbox and a project-role selector.
+  Saving sends only the diff (membership upserts/removals + optional role
+  change). A danger zone deletes the account; foreign keys cascade sessions
+  and memberships and unassign tickets.
+  \item \textbf{Projects tab.} Lists all projects with real ticket counts;
+  ``+ New project'' creates one (name + unique 2--5 character prefix,
+  validated server-side). Clicking a row opens the mirrored ``Project
+  access'' dialog: all users with checkboxes and project roles, with global
+  Admins/Super Admins pinned as ``global access''. A delete action requires
+  confirmation and cascades everything.
+  \item \textbf{Invite user.} Super admins can invite an e-mail address
+  without attaching a project (Section~\ref{sec:auth}); in development the
+  dialog shows the generated link for copying since no SMTP server runs.
+\end{itemize}
+
+Both dialogs edit the same \file{project_members} table, so the two views
+cannot drift apart by construction.
+
+% ============================================================
+\section{E-mail Infrastructure}
+\label{sec:mail}
+
+\subsection{Transport Abstraction}
+
+All outgoing mail goes through a single \file{MailTransport} interface
+(\file{src/lib/mail/index.ts}):
+
+\begin{itemize}
+  \item \textbf{\file{resend}} (production): posts to Resend's REST API; the
+  API key is read from the environment, never committed.
+  \item \textbf{\file{file}} (development, the default): writes the rendered
+  HTML and plain-text parts into \file{WEB/.mail-out/} and logs the path.
+  This replaces the originally planned MailHog container with zero
+  infrastructure: the development ``inbox'' is a directory of openable files,
+  and it is physically impossible to e-mail a real user by accident.
+\end{itemize}
+
+Selection is one environment variable (\file{MAIL_TRANSPORT}); switching to
+production delivery changes no business code.
+
+\subsection{Templates}
+
+Twelve HTML templates live in \file{WEB/templates/} and are compiled into
+\file{src/lib/mail/generated-templates.ts} by \file{scripts/gen-templates.ts}
+(\file{npm run gen:templates}, run automatically before dev/seed). They share
+a common skeleton: brand header in the accent colour (\#964826), table-based
+responsive layout, inline styles for client compatibility, status-coloured
+badges, and \texttt{\{\{placeholder\}\}} substitution with an
+\file{htmlToText} plain-text fallback for every message.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{5.2cm}X}
+\toprule
+\textbf{Template} & \textbf{Used by}\\
+\midrule
+\file{invite.html} & Project invitation e-mail.\\
+\file{account-invite.html} & Standalone account invitation.\\
+\file{status-<status>.html} (7) & Instant notifications for \texttt{UNDER REVIEW}, \texttt{DEPLOYED}, \texttt{TEST}.\\
+\file{digest-daily.html} & Per-project daily summary (closed + in-progress).\\
+\file{digest-weekly.html} & Weekly progress report to admins.\\
+\file{security-report.html} & Weekly OSV scan findings.\\
+\bottomrule
+\end{tabularx}
+\caption{E-mail template inventory.}
+\label{tab:templates}
+\end{table}
+
+% ============================================================
+\section{Scheduled Jobs}
+\label{sec:cron}
+
+\subsection{Scheduler}
+
+\file{src/cron/scheduler.ts} runs a 60-second in-process tick. The current
+wall-clock time is converted to \file{Europe/Istanbul} with
+\file{Intl.DateTimeFormat} (no external timezone library), so ``midnight''
+means Turkish midnight regardless of the host's timezone or DST:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{3.4cm}p{3.4cm}X}
+\toprule
+\textbf{Job} & \textbf{Schedule (TR time)} & \textbf{Behaviour}\\
+\midrule
+Daily digest & every day 00:00 & Per project: tickets that reached \texttt{DONE} that day (from \file{activity_log}) plus all \texttt{IN PROGRESS} tickets; sent to project members.\\
+\addlinespace
+Weekly report & Sunday 22:00 & Progress roll-up sent to global Admins and Super Admins.\\
+\addlinespace
+Security scan & Sunday 21:00 & OSV batch query over the package list in \file{OSV_PACKAGES}; HIGH/CRITICAL findings are de-duplicated against \file{security_findings} and mailed to super admins with affected package, CVE, severity and fixed version.\\
+\bottomrule
+\end{tabularx}
+\caption{Scheduled jobs. All are also triggerable by a super admin via
+\file{POST /api/dev/cron/:job} for testing.}
+\label{tab:cron}
+\end{table}
+
+\subsection{Idempotency}
+
+Every run claims its period with \file{runOnce()}: an
+\file{INSERT ... ON CONFLICT DO NOTHING} into \file{job_runs} keyed by
+\file{(job_name, period_key)}. If the process restarts mid-day, the digest
+is not sent twice; if the machine is off at the scheduled minute, the next
+tick with a fresh period key runs it once. The security scan additionally
+suppresses re-reporting of open findings via the
+\file{security_findings} unique index.
+
+% ============================================================
+\section{Front-End Architecture}
+\label{sec:frontend}
+
+\subsection{SPA Shell}
+
+\file{client/js/main.js} implements a history-API router with six routes
+(\file{/login}, \file{/accept-invite}, \file{/projects},
+\file{/projects/:id}, \file{/projects/:id/members}, \file{/my-tickets},
+\file{/admin/*}). After authentication every page renders inside a persistent
+\emph{shell}: a full-height project sidebar (My Tickets, project list, and an
+Admin Panel entry for super admins) plus the page area. The header carries the
+brand, the global search (centered, Ctrl+K (Cmd+K on macOS) focusable, debounced dropdown
+with grouped results and ``did you mean'' suggestions) and the account box.
+
+\subsection{Design System}
+
+\file{client/css/app.css} ($\sim$535 lines) defines the whole visual language
+with CSS variables (accent \#964826, neutral grays), reusable components
+(buttons, chips, pills, tables, modals, toasts, tabs) and the Kanban styles.
+Because the admin panel was migrated into this system, the entire application
+has one coherent look with zero component-framework overhead. The theme is
+light-only by design for now; the variables would make a dark theme a
+mechanical change.
+
+\subsection{State and Data}
+
+State is deliberately simple: a module-level \file{state} object (current
+user, project cache) exported from \file{main.js}, and explicit re-renders.
+\file{api.js} is a thin \file{fetch} wrapper (same-origin credentials, JSON
+errors surfaced as \file{Error.status}). There is no client-side cache
+invalidation problem because there is almost no cache; the trade-off is more
+refetching, which is irrelevant at LAN latency.
+
+% ============================================================
+\section{Security Assessment}
+\label{sec:security}
+
+\subsection{Implemented Hardening}
+
+\begin{itemize}
+  \item \textbf{Server-side authorization on every endpoint} (three-layer
+  checks, Section~\ref{sec:rbac}); object IDs are always scoped by project or
+  user, preventing IDOR.
+  \item \textbf{Invitation tokens}: CSPRNG, 48-hour expiry, single-use,
+  SHA-256-at-rest (Section~\ref{sec:auth}).
+  \item \textbf{Public sign-up disabled} at the router level with an internal
+  secret required to create accounts.
+  \item \textbf{\file{role} cannot be set by clients} (Better Auth
+  \texttt{input: false}).
+  \item \textbf{Lockout protections}: a super admin can neither change their
+  own role nor delete their own account.
+  \item \textbf{Upload hardening}: MIME whitelist, size cap, random file
+  names, no execution context (static file directory).
+  \item \textbf{Client-side XSS defence} for ticket descriptions
+  (allowlist sanitizer) and blanket \file{esc()} escaping of interpolated
+  strings in the UI layer.
+  \item \textbf{Weekly automated vulnerability scanning} against OSV with
+  e-mailed HIGH/CRITICAL findings and de-duplication.
+  \item \textbf{Secrets via environment}: \file{RESEND_API_KEY},
+  \file{BETTER_AUTH_SECRET}, \file{MAIL_FROM}, \file{APP_URL},
+  \file{OSV_PACKAGES}; a warning is printed when the auth secret falls back
+  to a development default.
+\end{itemize}
+
+\subsection{Open Weaknesses}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{4.6cm}p{1.8cm}X}
+\toprule
+\textbf{Weakness} & \textbf{Severity} & \textbf{Detail / recommended fix}\\
+\midrule
+No automated tests & High & Nothing prevents a regression in the atomic counter, RBAC or invite flows. Priority: integration tests over the API with an in-memory SQLite database (Vitest + Supertest-style harness).\\
+\addlinespace
+Not under version control & High & The working directory is not a git repository; a mistake or disk failure is unrecoverable. Priority: \file{git init} + private remote, immediately.\\
+\addlinespace
+No CI/CD & Medium & Lint, typecheck (\file{npm run check}), tests and builds should run on push.\\
+\addlinespace
+Client-side-only description sanitization & Medium & The server stores what it receives; a crafted API call could persist unsafe HTML. Fix: run the same allowlist sanitizer server-side before insert/update.\\
+\addlinespace
+No API rate limiting & Medium & Auth endpoints have Better Auth defaults; everything else is unthrottled. Fix: a small in-memory limiter per session/IP on write endpoints.\\
+\addlinespace
+No password reset & Medium & Manual database intervention required today. Fix: Better Auth's reset plugin or an invitation-style token flow.\\
+\addlinespace
+No pagination & Low & Task lists and the fuzzy pool (500) are bounded by convention, not by page parameters; fine for hundreds of tickets, not thousands.\\
+\addlinespace
+Orphaned media files & Low & Attachments of deleted tickets remain on disk. Fix: periodic reconciliation of \file{data/uploads} against referenced URLs.\\
+\addlinespace
+No HTTPS/deployment story & Medium & The server binds plain HTTP on :8788. Production needs a reverse proxy (Caddy/nginx) or TLS termination, a process manager, and a documented backup procedure for \file{data/}.\\
+\addlinespace
+Single light theme, no a11y audit & Low & Cosmetic/accessibility; CSS variables make theming cheap.\\
+\bottomrule
+\end{tabularx}
+\caption{Known weaknesses with recommended remediations.}
+\label{tab:weaknesses}
+\end{table}
+
+% ============================================================
+\section{Deliberate Non-Decisions}
+\label{sec:nondone}
+
+The following were consciously \emph{not} built, with reasons recorded so
+they are not mistaken for oversights:
+
+\begin{itemize}
+  \item \textbf{No front-end framework.} $\sim$2{,}200 lines of vanilla JS
+  cover six pages; a framework's build step and reconciliation were judged
+  costlier than explicit re-renders. Revisit only if the UI grows
+  substantially (e.g. real-time multi-user boards).
+  \item \textbf{No real-time collaboration.} Board updates require a refresh;
+  there is no WebSocket/SSE layer. Acceptable for a single small team; the
+  next meaningful upgrade would be SSE for board invalidation.
+  \item \textbf{Free status transitions.} Any column to any column, so drags
+  are undoable. A stricter machine can be introduced later in one function.
+  \item \textbf{No per-project membership requirement for global Admins.}
+  Global Admins implicitly administer every project. This keeps the seed team
+  frictionless but is flagged as an open model decision (the admin UI already
+  communicates it as ``global access'').
+  \item \textbf{No Docker.} The app is one \file{npm run dev} command plus a
+  SQLite file; containerization is deferred until a second machine deploys.
+  \item \textbf{No i18n.} The UI is uniformly English; all strings are
+  inline, so extraction would be required before localizing.
+  \item \textbf{No SMTP catcher in development.} The file transport covers
+  the same need with less infrastructure (Section~\ref{sec:mail}).
+\end{itemize}
+
+% ============================================================
+\section{Gaps and Recommended Roadmap}
+\label{sec:gaps}
+
+\subsection{Engineering}
+
+\begin{enumerate}
+  \item \textbf{Put the project under git now} (including this document);
+  without it, every other improvement is built on sand.
+  \item \textbf{Integration test suite} for the API: RBAC matrix, invite
+  lifecycle (expiry, reuse, duplicate), atomic ticket IDs under concurrency,
+  search behaviour, cron idempotency. The synchronous SQLite driver makes an
+  in-memory test database trivial.
+  \item \textbf{CI pipeline}: typecheck, tests, \file{npm audit} on every
+  push.
+  \item \textbf{Server-side sanitization} of rich text before persistence.
+  \item \textbf{Password reset flow} (token-based, mirroring the invite
+  mechanics that already exist).
+  \item \textbf{Rate limiting} on write endpoints and invitation creation.
+  \item \textbf{Pagination parameters} on task/comment/event lists.
+  \item \textbf{Media garbage collection} for unreferenced uploads.
+  \item \textbf{Decide the global-Admin access model}: implicit
+  all-project access (today) vs. explicit memberships with only
+  \file{SUPER_ADMIN} exempt. The admin UI is already prepared for either.
+  \item \textbf{Deployment recipe}: reverse proxy + TLS, process manager,
+  documented backup/restore of \file{data/} (SQLite file + uploads).
+\end{enumerate}
+
+\subsection{Management}
+
+\begin{itemize}
+  \item \textbf{Bus factor is 1.} Everything is documented here, but only one
+  person knows the codebase. The roadmap above (tests + CI + git) is also the
+  onboarding path for a second contributor.
+  \item \textbf{Data is the asset.} The SQLite file plus \file{data/uploads}
+  is the entire state; a scheduled offline copy (even \file{rsync} to another
+  disk) should exist from day one of real usage.
+  \item \textbf{Scope discipline.} The pivot away from Cloudflare and
+  react-admin both \emph{reduced} complexity; the same discipline should
+  apply to future features --- the current feature set is complete for a
+  small team, and the highest-value next investments are reliability
+  (tests/CI/backups), not features.
+  \item \textbf{Cost.} Running cost is effectively zero (self-hosted, Resend
+  free tier); the only recurring obligation is the weekly security scan
+  review.
+\end{itemize}
+
+% ============================================================
+\section{Version History}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabularx}{\textwidth}{p{1.6cm}p{2.6cm}X}
+\toprule
+\textbf{Version} & \textbf{Date} & \textbf{Notes}\\
+\midrule
+v0.1--v0.5 & --- & Architecture drafts (see \file{DOC/main (1).tex}): Cloudflare D1/Pages design, react-admin panel, MailHog plan, e-mail template system, security scanning concept.\\
+\addlinespace
+v1.0 & \today & First documentation of the \emph{implemented} system: self-hosted Hono + SQLite pivot; vanilla SPA shell with persistent sidebar; admin panel migrated in-app (react-admin and Vite removed, 153 packages dropped); account invitations with public sign-up disabled; bidirectional user/project access management; global search with normalization, description matching and fuzzy suggestions; My Tickets cross-project view; real ticket counts; full security assessment and roadmap.\\
+\bottomrule
+\end{tabularx}
+\caption{Document version history.}
+\end{table}
+
+\end{document}

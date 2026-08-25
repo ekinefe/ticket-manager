@@ -1,0 +1,13 @@
+node_modules/
+.wrangler/
+dist/
+.dev.vars
+.env
+.env.*
+!.env.example
+seed/seed.sql
+*.log
+.DS_Store
+
+data/
+.mail-out/
