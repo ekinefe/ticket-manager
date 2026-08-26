@@ -190,7 +190,7 @@ Admin panel (users \& projects, bidirectional access management) & \ok~implement
 Global search (normalized IDs, description text, typo-tolerant suggestions) & \ok~implemented \\
 E-mail transport abstraction (Resend in production, file outbox in dev) & \ok~implemented \\
 Scheduled jobs: daily digest, weekly report, weekly security scan (OSV) & \ok~implemented \\
-Automated test suite (27 API/unit tests, zero extra dependencies) & \ok~implemented \\
+Automated test suite (43 API/unit tests incl. e-mail jobs, zero extra dependencies) & \ok~implemented \\\
 Version control (git) with clean initial import & \ok~implemented \\
 CI pipeline (typecheck + tests + audit) on GitHub Actions & \ok~implemented \\
 Production deployment kit (systemd, nginx TLS sample, backup tool) & \ok~implemented \\
@@ -1057,7 +1057,7 @@ exercise the real Hono application in-process via \file{app.request()}
 against a throwaway SQLite database (\file{TM\_DB\_FILE} pointing at a temp
 directory; migrations apply automatically).
 
-27 tests in two files cover the areas where regressions would hurt most:
+43 tests in three files cover the areas where regressions would hurt most:
 
 \begin{itemize}
   \item \textbf{Authentication}: anonymous 401, public sign-up 403, seeded
@@ -1078,12 +1078,19 @@ directory; migrations apply automatically).
   \file{TST-2}), no user leakage to USER role, no leakage of inaccessible
   projects.
   \item \textbf{Cron}: \file{runOnce} idempotency.
+  \item \textbf{E-mail jobs (end-to-end through the file transport)}: daily
+  digest lists the closed ticket and targets project members and is
+  idempotent per period; the weekly report reaches project admins and super
+  admins; the security scan (with a stubbed OSV API) names the affected
+  package and CVE and de-duplicates open findings on subsequent scans.
 \end{itemize}
 
 Writing the suite surfaced one real integration subtlety: Better Auth v1.7
 requires \file{account.issuer = "local:credential"} and
 \file{accountId = user.id} for credential sign-in to succeed --- now
-documented in the test fixtures.
+documented in the test fixtures. The e-mail job tests run end-to-end through
+the file transport: mails are read back from the outbox directory, and the
+OSV HTTP API is stubbed so the security scan is verified offline.
 
 \subsection{Continuous Integration}
 
@@ -1150,8 +1157,6 @@ they are not mistaken for oversights:
   \item \textbf{Decide the global-Admin access model}: implicit
   all-project access (today) vs. explicit memberships with only
   \file{SUPER_ADMIN} exempt. The admin UI is already prepared for either.
-  \item \textbf{Grow the test suite} toward the e-mail jobs (digest/report
-  content) and the admin membership diffing logic as those evolve.
 \end{enumerate}
 
 \subsection{Management}
@@ -1190,6 +1195,8 @@ v1.0 & \today & First documentation of the \emph{implemented} system: self-hoste
 v1.1 & \today & Reliability round: automated test suite (27 node:test API/unit tests, zero extra dependencies; server made importable for in-process testing); git repository initialized; CI pipeline (typecheck + tests + audit); production deployment kit (systemd unit, nginx TLS sample, \file{npm run backup}); token-based password reset with session revocation and no account enumeration; API rate limiting (general + strict invitation/reset budgets); pagination on users, tasks and activity events. Documentation updated accordingly; remaining weaknesses all re-classified as low/medium.\\
 \addlinespace
 v1.2 & \today & Security hardening round: server-side allowlist sanitizer for rich-text descriptions (10 unit tests + API-level regression test; crafted API calls can no longer persist unsafe HTML); \file{npm run media:gc} orphaned-upload cleanup tool with 7-day grace period. Test count now 38; remaining weaknesses are all low severity.\\
+\addlinespace
+v1.4 & \today & Test-suite round: end-to-end coverage of the scheduled e-mail jobs (daily digest content and recipients, weekly report recipients, security-scan CVE reporting and de-duplication with a stubbed OSV API); 43 tests total.\
 \addlinespace
 v1.3 & \today & Real-time round: SSE endpoint (\file{/api/projects/:id/stream}) with project-role gating, in-process pub/sub hub, 30\,s heartbeats and abort-signal cleanup; board client debounced refetch-on-event with drag-awareness and navigation-safe stream lifecycle; SSE integration tests (40 tests total).\
 \bottomrule

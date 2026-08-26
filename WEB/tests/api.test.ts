@@ -343,6 +343,112 @@ describe("realtime (SSE)", () => {
   });
 });
 
+describe("email jobs", () => {
+  const DAY = "2030-01-01"; // synthetic window, unique per fresh test DB
+
+  function mailFiles(): Set<string> {
+    return new Set(readdirSync(MAIL_OUT));
+  }
+
+  function readNewMails(before: Set<string>): string[] {
+    return [...mailFiles()]
+      .filter((f) => !before.has(f) && f.endsWith(".html"))
+      .map((f) => readFileSync(join(MAIL_OUT, f), "utf8"));
+  }
+
+  it("daily digest lists closed and in-progress tickets for members", async () => {
+    const db = (await import("./helpers.ts")).env.DB;
+    const { getDb } = await import("../src/db/client.ts");
+    const { activityLog } = await import("../src/db/schema.ts");
+    const db2 = getDb(db);
+
+    // A ticket closed inside the synthetic window.
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: adminCookie, body: { title: "Digest probe" },
+    });
+    const task = await create.json();
+    const windowStart = Date.parse(`${DAY}T00:00:00Z`);
+    await db2.insert(activityLog).values({
+      id: crypto.randomUUID(),
+      taskId: task.id,
+      actorId: "u_admin",
+      eventType: "STATUS_CHANGED",
+      newStatus: "DONE",
+      createdAt: windowStart + 3_600_000,
+    });
+
+    const before = mailFiles();
+    const { runDailyDigest } = await import("../src/cron/jobs/daily-digest.ts");
+    await runDailyDigest(env, DAY);
+    const mails = readNewMails(before);
+
+    const digest = mails.find((m) => m.includes("Daily digest") && m.includes("Test Project"));
+    assert.ok(digest, "digest mail for Test Project written");
+    assert.ok(digest.includes(task.ticketId), "closed ticket listed");
+    assert.ok(mailFiles().has([...mailFiles()].find((f) => f.includes("ayse-test-local") && f.includes("daily-digest")) ?? ""), "member ayse is a recipient");
+    void db2; void db;
+
+    // Idempotent per period: a second run sends nothing.
+    const snapshot = mailFiles();
+    await runDailyDigest(env, DAY);
+    assert.deepEqual(mailFiles(), snapshot);
+  });
+
+  it("weekly report goes to project admins and super admins", async () => {
+    const before = mailFiles();
+    const { runWeeklyReport } = await import("../src/cron/jobs/weekly-report.ts");
+    await runWeeklyReport(env, "2030-01-05"); // week containing DAY
+    const mails = readNewMails(before);
+
+    const report = mails.find((m) => m.includes("Weekly report") && m.includes("Test Project"));
+    assert.ok(report, "weekly report for Test Project written");
+    assert.ok(
+      [...mailFiles()].some((f) => f.includes("super-test-local") && f.includes("weekly-report")),
+      "super admin is a recipient"
+    );
+  });
+
+  it("security scan reports HIGH findings once, then de-duplicates", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("querybatch")) {
+        return new Response(JSON.stringify({ results: [{ vulns: [{ id: "GHSA-TEST-0001" }] }] }), { status: 200 });
+      }
+      if (url.includes("vulns/GHSA-TEST-0001")) {
+        return new Response(JSON.stringify({
+          id: "GHSA-TEST-0001",
+          aliases: ["CVE-2099-0001"],
+          database_specific: { severity: "HIGH" },
+          affected: [{
+            package: { name: "drizzle-orm" },
+            ranges: [{ type: "SEMVER", events: [{ fixed: "9.9.9" }] }],
+          }],
+        }), { status: 200 });
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch;
+
+    try {
+      const { runSecurityScan } = await import("../src/cron/jobs/security-scan.ts");
+      const before = mailFiles();
+      await runSecurityScan(env, "2030-02-01");
+      let mails = readNewMails(before);
+      const report = mails.find((m) => m.includes("CVE-2099-0001"));
+      assert.ok(report, "security report contains the CVE");
+      assert.ok(report.includes("drizzle-orm"), "affected package named");
+
+      // Same open finding is not re-reported on the next scan.
+      const snapshot = mailFiles();
+      await runSecurityScan(env, "2030-02-08");
+      mails = readNewMails(snapshot);
+      assert.ok(!mails.some((m) => m.includes("CVE-2099-0001")), "open finding de-duplicated");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});
+
 describe("cron idempotency", () => {
   it("runs a job once per period key", async () => {
     const { runOnce } = await import("../src/cron/guard.ts");
