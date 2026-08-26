@@ -142,7 +142,7 @@ PlannedLost development tracking and multi-project management\par}
 {\normalsize
 \begin{tabular}{rl}
 \textbf{Date:}      & \today \\
-\textbf{Version:}   & v1.0 \\
+\textbf{Version:}   & v1.6 \\
 \textbf{Author:}    & Ekin \\
 \textbf{Status:}    & Implemented and running (development stage) \\
 \end{tabular}\par}
@@ -190,7 +190,7 @@ Admin panel (users \& projects, bidirectional access management) & \ok~implement
 Global search (normalized IDs, description text, typo-tolerant suggestions) & \ok~implemented \\
 E-mail transport abstraction (Resend in production, file outbox in dev) & \ok~implemented \\
 Scheduled jobs: daily digest, weekly report, weekly security scan (OSV) & \ok~implemented \\
-Automated test suite (43 API/unit tests incl. e-mail jobs, zero extra dependencies) & \ok~implemented \\\
+Automated test suite (52 API/unit tests incl. e-mail jobs, zero extra dependencies) & \ok~implemented \\\
 Version control (git) with clean initial import & \ok~implemented \\
 CI pipeline (typecheck + tests + audit) on GitHub Actions & \ok~implemented \\
 Production deployment kit (systemd, nginx TLS sample, backup tool) & \ok~implemented \\
@@ -1056,7 +1056,7 @@ exercise the real Hono application in-process via \file{app.request()}
 against a throwaway SQLite database (\file{TM\_DB\_FILE} pointing at a temp
 directory; migrations apply automatically).
 
-43 tests in three files cover the areas where regressions would hurt most:
+52 tests in three files cover the areas where regressions would hurt most:
 
 \begin{itemize}
   \item \textbf{Authentication}: anonymous 401, public sign-up 403, seeded
@@ -1082,6 +1082,14 @@ directory; migrations apply automatically).
   idempotent per period; the weekly report reaches project admins and super
   admins; the security scan (with a stubbed OSV API) names the affected
   package and CVE and de-duplicates open findings on subsequent scans.
+  \item \textbf{Comments}: post/read rules, empty and oversized rejection,
+  non-member 403.
+  \item \textbf{Media uploads}: whitelist acceptance, \texttt{415} otherwise.
+  \item \textbf{Activity feed}: CREATED and STATUS\_CHANGE events with actor
+  name resolution.
+  \item \textbf{Admin membership endpoints, both directions}: project-side
+  list/promote/remove with access verification, user-side grant/revoke.
+  \item \textbf{Invitation expiry}: expired tokens rejected with 410.
 \end{itemize}
 
 Writing the suite surfaced one real integration subtlety: Better Auth v1.7
@@ -1190,6 +1198,8 @@ v1.0 & \today & First documentation of the \emph{implemented} system: self-hoste
 v1.1 & \today & Reliability round: automated test suite (27 node:test API/unit tests, zero extra dependencies; server made importable for in-process testing); git repository initialized; CI pipeline (typecheck + tests + audit); production deployment kit (systemd unit, nginx TLS sample, \file{npm run backup}); token-based password reset with session revocation and no account enumeration; API rate limiting (general + strict invitation/reset budgets); pagination on users, tasks and activity events. Documentation updated accordingly; remaining weaknesses all re-classified as low/medium.\\
 \addlinespace
 v1.2 & \today & Security hardening round: server-side allowlist sanitizer for rich-text descriptions (10 unit tests + API-level regression test; crafted API calls can no longer persist unsafe HTML); \file{npm run media:gc} orphaned-upload cleanup tool with 7-day grace period. Test count now 38; remaining weaknesses are all low severity.\\
+\addlinespace
+v1.6 & \today & Test-coverage round: comments, media uploads, activity feed, bidirectional admin membership endpoints and invitation expiry now covered; 52 tests total.\\
 \addlinespace
 v1.5 & \today & Access-model decision implemented (strict model): global Admins no longer have implicit access to every project; only \file{SUPER_ADMIN} short-circuits membership checks. Admin-panel project-access dialog updated (only Super Admins are pinned as global). New RBAC regression tests cover the boundary.\
 \addlinespace

@@ -483,3 +483,161 @@ describe("cron idempotency", () => {
     assert.equal(second, false);
   });
 });
+
+describe("comments", () => {
+  it("members can post and read comments; empty/oversized rejected", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: member2, body: { title: "Comment target" },
+    });
+    const task = await create.json();
+
+    const empty = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}/comments`, {
+      method: "POST", cookie: member2, body: { body: "   " },
+    });
+    assert.equal(empty.status, 400);
+
+    const oversized = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}/comments`, {
+      method: "POST", cookie: member2, body: { body: "x".repeat(4001) },
+    });
+    assert.equal(oversized.status, 400);
+
+    const post = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}/comments`, {
+      method: "POST", cookie: member2, body: { body: "first!" },
+    });
+    assert.equal(post.status, 201);
+    assert.equal((await post.json()).authorName, "mehmet");
+
+    const list = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}/comments`, { cookie: member2 });
+    const rows = await list.json();
+    assert.ok(rows.some((c: { body: string }) => c.body === "first!"));
+  });
+
+  it("forbids non-members from commenting", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: member2, body: { title: "No comment" },
+    });
+    const task = await create.json();
+    const res = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}/comments`, {
+      method: "POST", cookie: outsider, body: { body: "sneak" },
+    });
+    assert.equal(res.status, 403);
+  });
+});
+
+describe("media upload", () => {
+  it("stores whitelisted image uploads under /media/uploads/", async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const form = new FormData();
+    form.append("file", new File([png], "probe.png", { type: "image/png" }));
+    const res = await req(`/api/projects/${PROJECT_ID}/media`, { method: "POST", cookie: member2, form });
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.ok(data.url.startsWith("/media/uploads/"));
+    assert.ok(data.url.endsWith(".png"));
+  });
+
+  it("rejects non-whitelisted MIME types with 415", async () => {
+    const form = new FormData();
+    form.append("file", new File(["hello"], "a.txt", { type: "text/plain" }));
+    const res = await req(`/api/projects/${PROJECT_ID}/media`, { method: "POST", cookie: member2, form });
+    assert.equal(res.status, 415);
+  });
+});
+
+describe("activity feed", () => {
+  it("records CREATED and STATUS_CHANGED with actor names", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: member2, body: { title: "History probe" },
+    });
+    const task = await create.json();
+    await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}`, {
+      method: "PATCH", cookie: adminCookie, body: { status: "IN_PROGRESS" },
+    });
+    const res = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}/events`, { cookie: member2 });
+    const events = await res.json();
+    const types = events.map((e: { type: string }) => e.type);
+    assert.ok(types.includes("CREATED"));
+    assert.ok(types.includes("STATUS_CHANGED"));
+    const statusEvent = events.find((e: { type: string }) => e.type === "STATUS_CHANGED");
+    assert.equal(statusEvent.actorName, "admin");
+    assert.equal(statusEvent.newStatus, "IN_PROGRESS");
+  });
+});
+
+describe("admin membership endpoints (both directions)", () => {
+  it("project side: lists members with global role, upserts and removes", async () => {
+    const list = await req(`/api/admin/projects/${PROJECT_ID}/members`, { cookie: superCookie });
+    const { members } = await list.json();
+    assert.ok(members.some((m: { userId: string; globalRole: string }) => m.userId === "u_ayse" && m.globalRole === "USER"));
+
+    // Promote mehmet to project ADMIN, verify effect, then remove.
+    const upsert = await req(`/api/admin/projects/${PROJECT_ID}/members`, {
+      method: "POST", cookie: superCookie, body: { userId: "u_mehmet", role: "ADMIN" },
+    });
+    assert.equal(upsert.status, 200);
+
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: adminCookie, body: { title: "Mehmet can delete this" },
+    });
+    const task = await create.json();
+    const del = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}`, {
+      method: "DELETE", cookie: member2, // mehmet, now project ADMIN
+    });
+    assert.equal(del.status, 200);
+
+    const remove = await req(`/api/admin/projects/${PROJECT_ID}/members/u_mehmet`, {
+      method: "DELETE", cookie: superCookie,
+    });
+    assert.equal(remove.status, 200);
+    const denied = await req(`/api/projects/${PROJECT_ID}/tasks`, { cookie: member2 });
+    assert.equal(denied.status, 403);
+  });
+
+  it("user side: grant and revoke access to a project", async () => {
+    // CIP was created by the global admin earlier; mehmet is not a member.
+    const projects = await (await req("/api/projects", { cookie: adminCookie })).json();
+    const cip = projects.find((p: { prefix: string }) => p.prefix === "CIP");
+    assert.ok(cip, "CIP project exists from earlier test");
+
+    const denied = await req(`/api/projects/${cip.id}/tasks`, { cookie: member2 });
+    assert.equal(denied.status, 403);
+
+    const grant = await req(`/api/admin/users/u_mehmet/projects`, {
+      method: "POST", cookie: superCookie, body: { projectId: cip.id, role: "MEMBER" },
+    });
+    assert.equal(grant.status, 200);
+    const allowed = await req(`/api/projects/${cip.id}/tasks`, { cookie: member2 });
+    assert.equal(allowed.status, 200);
+
+    const revoke = await req(`/api/admin/users/u_mehmet/projects/${cip.id}`, {
+      method: "DELETE", cookie: superCookie,
+    });
+    assert.equal(revoke.status, 200);
+    const deniedAgain = await req(`/api/projects/${cip.id}/tasks`, { cookie: member2 });
+    assert.equal(deniedAgain.status, 403);
+  });
+});
+
+describe("invitation expiry", () => {
+  it("rejects expired invitation tokens with 410", async () => {
+    const { hashInviteToken } = await import("../src/lib/invite.ts");
+    const { getDb } = await import("../src/db/client.ts");
+    const { invitations } = await import("../src/db/schema.ts");
+    const token = "expired-token-" + crypto.randomUUID();
+    const { tokenHash } = await hashInviteToken(token);
+    await getDb(env.DB).insert(invitations).values({
+      id: crypto.randomUUID(),
+      projectId: PROJECT_ID,
+      email: "expired@test.local",
+      tokenHash,
+      invitedRole: "MEMBER",
+      expiresAt: Date.now() - 1000,
+      createdBy: "u_admin",
+      createdAt: Date.now() - 2000,
+    });
+    const res = await req("/api/invitations/accept", {
+      method: "POST", body: { token, name: "Late", password: "latelate1" },
+    });
+    assert.equal(res.status, 410);
+  });
+});
