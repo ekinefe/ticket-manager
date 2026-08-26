@@ -22,6 +22,7 @@ import { notifyStatusChanged } from "../src/lib/notify";
 import { validateInvitation, markInvitationAccepted, hashInviteToken, generateInviteToken } from "../src/lib/invite";
 import { searchAll } from "../src/lib/search";
 import { sanitizeDescHtml } from "../src/lib/sanitize";
+import { publish, subscribe, unsubscribe } from "../src/lib/realtime";
 import {
   hasPendingAccountInvite,
   validateAccountInvite,
@@ -493,6 +494,52 @@ async function computePosition(projectId: string, status: Status, beforeTaskId: 
   return (siblings[idx - 1].position + siblings[idx].position) / 2;
 }
 
+// Server-Sent Events stream: clients get a "ticket-changed" nudge whenever
+// any ticket in the project is created, updated or deleted. The payload is
+// deliberately minimal — clients re-fetch the board rather than diffing.
+app.get("/api/projects/:id/stream", (c) =>
+  guard(c, async () => {
+    const projectId = c.req.param("id") as string;
+    const u = await getSessionUser(c.req.raw, env);
+    await requireProjectRole(env.DB, u, projectId);
+
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let client: ReadableStreamDefaultController<Uint8Array> | undefined;
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        client = controller;
+        subscribe(projectId, controller);
+        controller.enqueue(new TextEncoder().encode(": connected\n\n"));
+        heartbeat = setInterval(() => {
+          try {
+            controller.enqueue(new TextEncoder().encode(": ping\n\n"));
+          } catch {
+            /* closed */
+          }
+        }, 30_000);
+        // Clean up when the client disconnects (tab close, navigation).
+        c.req.raw.signal.addEventListener("abort", () => {
+          if (heartbeat) clearInterval(heartbeat);
+          if (client) unsubscribe(projectId, client);
+        });
+      },
+      cancel() {
+        if (heartbeat) clearInterval(heartbeat);
+        if (client) unsubscribe(projectId, client);
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      },
+    });
+  })
+);
+
 app.get("/api/projects/:id/tasks", (c) =>
   guard(c, async () => {
     const projectId = c.req.param("id");
@@ -558,6 +605,7 @@ app.post("/api/projects/:id/tasks", (c) =>
       .returning();
 
     await logActivity(env.DB, { taskId: task.id, actorId: u.id, eventType: "CREATED", newStatus: status });
+    publish(projectId, { type: "created", ticketId, taskId: task.id, actorId: u.id });
     return c.json(task, 201);
   })
 );
@@ -646,6 +694,7 @@ app.patch("/api/projects/:id/tasks/:taskId", (c) =>
         oldStatus,
         newStatus,
       });
+      publish(projectId, { type: "status", ticketId: updated.ticketId, taskId, actorId: u.id });
 
       if (INSTANT_NOTIFY_STATUSES.has(newStatus)) {
         const [actor] = await env.DB.select({ name: user.name }).from(user).where(eq(user.id, u.id));
@@ -694,6 +743,12 @@ app.patch("/api/projects/:id/tasks/:taskId", (c) =>
     }
     if (values.priority !== undefined && values.priority !== oldPriority) {
       await logActivity(env.DB, { taskId, actorId: u.id, eventType: "PRIORITY_CHANGED", oldValue: oldPriority, newValue: values.priority });
+    }
+
+    // Non-status edits also nudge open boards (status changes published above).
+    if (!(oldStatus && newStatus && oldStatus !== newStatus) &&
+        Object.keys(values).some((k) => k !== "updatedAt")) {
+      publish(projectId, { type: "updated", ticketId: updated.ticketId, taskId, actorId: u.id });
     }
 
     return c.json(updated);
@@ -831,6 +886,7 @@ app.delete("/api/projects/:id/tasks/:taskId", (c) =>
       .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)))
       .returning({ id: tasks.id });
     if (deleted.length === 0) throw new ApiError(404, "Task not found");
+    publish(projectId, { type: "deleted", taskId, actorId: u.id });
     return c.json({ ok: true });
   })
 );

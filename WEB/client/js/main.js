@@ -7,6 +7,7 @@ import { renderAcceptInvite } from "./pages/accept-invite.js";
 import { renderAdmin } from "./pages/admin.js";
 import { renderMyTickets } from "./pages/my-tickets.js";
 import { renderResetPassword } from "./pages/reset-password.js";
+import { closeBoardStream } from "./pages/board.js";
 
 export const state = {
   user: null, // { id, name, email, role }
@@ -164,6 +165,7 @@ async function route() {
   const path = location.pathname;
   const appEl = document.getElementById("app");
   const topbar = document.getElementById("topbar");
+  closeBoardStream();
 
   // Public routes
   if (path === "/accept-invite") {

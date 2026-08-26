@@ -312,6 +312,37 @@ describe("search", () => {
   });
 });
 
+describe("realtime (SSE)", () => {
+  // Uses member2: the password-reset test above revokes member1's session.
+  it("pushes a ticket-changed event when a ticket is created", async () => {
+    const stream = await req(`/api/projects/${PROJECT_ID}/stream`, { cookie: member2 });
+    assert.equal(stream.status, 200);
+    assert.equal(stream.headers.get("content-type"), "text/event-stream");
+
+    const reader = stream.body.getReader();
+    // Connection banner arrives first.
+    await reader.read();
+
+    const create = req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: adminCookie, body: { title: "SSE probe" },
+    });
+    const read = reader.read();
+    const timeout = new Promise((r) => setTimeout(() => r("timeout"), 3000));
+    const result = await Promise.race([read.then((r) => new TextDecoder().decode(r.value)), timeout]);
+    await create;
+    reader.cancel().catch(() => {});
+
+    assert.notEqual(result, "timeout", "SSE event should arrive promptly");
+    assert.ok(result.includes("event: ticket-changed"));
+    assert.ok(result.includes('"type":"created"'));
+  });
+
+  it("forbids non-members from subscribing", async () => {
+    const res = await req(`/api/projects/${PROJECT_ID}/stream`, { cookie: outsider });
+    assert.equal(res.status, 403);
+  });
+});
+
 describe("cron idempotency", () => {
   it("runs a job once per period key", async () => {
     const { runOnce } = await import("../src/cron/guard.ts");

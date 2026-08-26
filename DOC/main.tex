@@ -199,7 +199,7 @@ API rate limiting (general + per-feature strict budgets) & \ok~implemented \\
 Pagination (admin users, task lists, activity events) & \ok~implemented \\
 Server-side sanitization of rich text (allowlist, unit-tested) & \ok~implemented \\
 Media garbage collection tool (\file{npm run media:gc}) & \ok~implemented \\
-Real-time board updates (SSE/WebSocket) & \risk~missing \\
+Real-time board updates via Server-Sent Events & \ok~implemented \\
 \bottomrule
 \end{tabularx}
 \caption{Implementation status summary. Red crosses mark known gaps discussed
@@ -346,6 +346,7 @@ Every request flows through the same pipeline in \file{server/main.ts}:
 \file{/api/projects/:id} & GET, PATCH, DELETE & Project role / project admin / super admin\\
 \file{/api/my-tickets} & GET & Any authenticated (assigned tickets across accessible projects)\\
 \file{/api/search?q=} & GET & Any authenticated (results role-filtered; user search ADMIN+)\\
+\file{/api/projects/:id/stream} & GET (SSE) & Project role (real-time ticket-change events)\\
 \file{/api/projects/:id/tasks} & GET, POST & Project role\\
 \file{/api/projects/:id/tasks/:taskId} & PATCH, DELETE & Assignee or creator or project admin / delete: project admin\\
 \file{/api/projects/:id/tasks/:taskId/events} & GET & Project role (activity feed)\\
@@ -932,6 +933,31 @@ List endpoints accept optional pagination and stay backwards compatible:
 \end{itemize}
 
 % ============================================================
+\section{Real-Time Board Updates}
+
+Open boards subscribe to \file{GET /api/projects/:id/stream}, a
+Server-Sent Events endpoint gated by the normal project-role check. Every
+ticket creation, update (status or field) and deletion in the project
+publishes a minimal \file{ticket-changed} event
+(\file{\{type, ticketId, taskId, actorId\}}) through an in-process pub/sub
+hub (\file{src/lib/realtime.ts}); the client debounces 150\,ms, re-fetches
+the task list and re-renders its columns, skipping the refresh while a drag
+is in progress. Deliberate design points:
+
+\begin{itemize}
+  \item \textbf{Nudge, not state.} Events carry no payload diff; clients
+  re-fetch. This keeps the protocol trivially correct under concurrent edits.
+  \item \textbf{Self-healing connections.} A \file{:ping} comment every
+  30\,s keeps proxies from idling out the connection; the client's
+  \file{EventSource} reconnects automatically after drops.
+  \item \textbf{Lifecycle hygiene.} The stream is closed on every client
+  navigation (router hook); the server cleans up subscriptions on abort
+  signals and prunes closed controllers on publish.
+  \item \textbf{Single-node scope.} The hub is in-process memory, matching
+  the rate limiter and scheduler; horizontal scaling needs a shared bus.
+\end{itemize}
+
+% ============================================================
 \section{Front-End Architecture}
 \label{sec:frontend}
 
@@ -1008,8 +1034,6 @@ refetching, which is irrelevant at LAN latency.
 \textbf{Weakness} & \textbf{Severity} & \textbf{Detail / recommended fix}\\
 \midrule
 In-memory rate limiting / scheduler & Low & Both are single-node by design; horizontal scaling requires a shared store and a cron replacement. Documented, not a problem at current scale.\\
-\addlinespace
-No real-time updates & Low & Boards refresh manually; SSE would be the natural next step.\\
 \addlinespace
 Single light theme, no a11y audit & Low & Cosmetic/accessibility; CSS variables make theming cheap.\\
 \addlinespace
@@ -1093,13 +1117,13 @@ The following were consciously \emph{not} built, with reasons recorded so
 they are not mistaken for oversights:
 
 \begin{itemize}
-  \item \textbf{No front-end framework.} $\sim$2{,}200 lines of vanilla JS
-  cover six pages; a framework's build step and reconciliation were judged
+  \item \textbf{No front-end framework.} $\sim$2{,}400 lines of vanilla JS
+  cover the pages; a framework's build step and reconciliation were judged
   costlier than explicit re-renders. Revisit only if the UI grows
-  substantially (e.g. real-time multi-user boards).
-  \item \textbf{No real-time collaboration.} Board updates require a refresh;
-  there is no WebSocket/SSE layer. Acceptable for a single small team; the
-  next meaningful upgrade would be SSE for board invalidation.
+  substantially.
+  \item \textbf{No full-duplex collaboration.} Ticket changes are pushed to
+  open boards via SSE (one-way), but there is no presence, live cursors or
+  comment streaming; those need WebSockets and are deliberately deferred.
   \item \textbf{Free status transitions.} Any column to any column, so drags
   are undoable. A stricter machine can be introduced later in one function.
   \item \textbf{No per-project membership requirement for global Admins.}
@@ -1123,8 +1147,6 @@ they are not mistaken for oversights:
 \begin{enumerate}
   \item \textbf{Add a private git remote} (the local repository exists; push
   it off-machine for disaster recovery).
-  \item \textbf{Real-time board invalidation} (SSE) so open boards update
-  without manual refresh.
   \item \textbf{Decide the global-Admin access model}: implicit
   all-project access (today) vs. explicit memberships with only
   \file{SUPER_ADMIN} exempt. The admin UI is already prepared for either.
@@ -1168,6 +1190,8 @@ v1.0 & \today & First documentation of the \emph{implemented} system: self-hoste
 v1.1 & \today & Reliability round: automated test suite (27 node:test API/unit tests, zero extra dependencies; server made importable for in-process testing); git repository initialized; CI pipeline (typecheck + tests + audit); production deployment kit (systemd unit, nginx TLS sample, \file{npm run backup}); token-based password reset with session revocation and no account enumeration; API rate limiting (general + strict invitation/reset budgets); pagination on users, tasks and activity events. Documentation updated accordingly; remaining weaknesses all re-classified as low/medium.\\
 \addlinespace
 v1.2 & \today & Security hardening round: server-side allowlist sanitizer for rich-text descriptions (10 unit tests + API-level regression test; crafted API calls can no longer persist unsafe HTML); \file{npm run media:gc} orphaned-upload cleanup tool with 7-day grace period. Test count now 38; remaining weaknesses are all low severity.\\
+\addlinespace
+v1.3 & \today & Real-time round: SSE endpoint (\file{/api/projects/:id/stream}) with project-role gating, in-process pub/sub hub, 30\,s heartbeats and abort-signal cleanup; board client debounced refetch-on-event with drag-awareness and navigation-safe stream lifecycle; SSE integration tests (40 tests total).\
 \bottomrule
 \end{tabularx}
 \caption{Document version history.}

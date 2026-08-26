@@ -12,6 +12,33 @@ let myRole = "MEMBER";
 let tasks = [];
 let filterText = "";
 let filterAssignee = "";
+let boardStream = null;
+let refreshTimer = null;
+
+// Live updates: one EventSource per board; closed on navigation.
+function openBoardStream(projectId) {
+  closeBoardStream();
+  boardStream = new EventSource(`/api/projects/${projectId}/stream`);
+  boardStream.addEventListener("ticket-changed", () => {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(async () => {
+      // Don't fight an in-progress drag; the next event or refresh catches up.
+      if (document.querySelector(".card.dragging")) return;
+      try {
+        tasks = await api.get(`/projects/${projectId}/tasks`);
+        refreshColumns();
+      } catch { /* transient; next event or refresh recovers */ }
+    }, 150);
+  });
+}
+
+export function closeBoardStream() {
+  clearTimeout(refreshTimer);
+  if (boardStream) {
+    boardStream.close();
+    boardStream = null;
+  }
+}
 
 export async function renderBoard(root, projectId) {
   if (!requireAuth(`/projects/${projectId}`)) return;
@@ -123,6 +150,7 @@ function drawShell(root) {
 
   bindTabs();
   document.getElementById("new-task-btn").addEventListener("click", () => taskModal(null));
+  openBoardStream(project.id);
 
   const searchEl = document.getElementById("filter-text");
   searchEl.addEventListener("input", () => { filterText = searchEl.value.toLowerCase(); refreshColumns(); });
