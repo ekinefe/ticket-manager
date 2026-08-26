@@ -21,7 +21,7 @@ export async function renderProjects(root) {
       <div class="page-head">
         <h1>Projects</h1>
         <span class="spacer" style="flex:1"></span>
-        ${isSuper ? `<a class="btn sm" href="/admin/projects" data-nav>+ New project</a>` : ""}
+        ${isSuper || state.user.role === "ADMIN" ? `<a class="btn sm" href="/admin/projects" data-nav>+ New project</a>` : ""}
       </div>
       ${projects.length === 0
         ? `<div class="empty-note">No projects yet.${isSuper ? " Create one from the admin panel." : " Ask an admin to invite you."}</div>`

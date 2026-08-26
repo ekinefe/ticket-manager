@@ -1118,9 +1118,12 @@ step institutionalizes the weekly OSV scan's logic at commit time.
   \item \file{npm run backup} --- consistent SQLite \file{.backup()} snapshot
   (safe under WAL) plus a copy of \file{data/uploads} into a timestamped
   \file{backups/<stamp>/} directory. Restore = stop service, copy both back,
-  start service. Schedule it nightly via cron.
+  start service. A systemd timer
+  (\file{deploy/ticket-manager-backup.timer}) schedules it nightly at 03:15.
   \item \file{npm start} --- production entry point (same code path as dev
   without watch).
+  \item \file{GET /api/health} --- unauthenticated liveness probe returning
+  \file{\{ok, time\}}, suitable for reverse-proxy and uptime checks.
 \end{itemize}
 
 % ============================================================
