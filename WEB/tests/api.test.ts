@@ -98,6 +98,31 @@ describe("rbac", () => {
     const del = await req("/api/admin/users/u_super", { method: "DELETE", cookie: superCookie });
     assert.equal(del.status, 400);
   });
+
+  it("strict model: global ADMIN has no implicit project access", async () => {
+    // Super creates a project; only the creator (super) is a member.
+    const create = await req("/api/projects", {
+      method: "POST", cookie: superCookie,
+      body: { name: "Strict Model", prefix: "STM" },
+    });
+    assert.equal(create.status, 201);
+    const project = await create.json();
+
+    // Global ADMIN without membership: no access (was implicit before v1.5).
+    const denied = await req(`/api/projects/${project.id}/tasks`, { cookie: adminCookie });
+    assert.equal(denied.status, 403);
+    const list = await req("/api/projects", { cookie: adminCookie });
+    const projects = await list.json();
+    assert.ok(!projects.some((p: { id: string }) => p.id === project.id));
+
+    // Granting membership unlocks access.
+    const grant = await req(`/api/admin/projects/${project.id}/members`, {
+      method: "POST", cookie: superCookie, body: { userId: "u_admin", role: "ADMIN" },
+    });
+    assert.equal(grant.status, 200);
+    const allowed = await req(`/api/projects/${project.id}/tasks`, { cookie: adminCookie });
+    assert.equal(allowed.status, 200);
+  });
 });
 
 describe("tickets", () => {

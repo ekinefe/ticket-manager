@@ -389,12 +389,14 @@ async function openProjectAccessModal(p, reload) {
       </div>
       <div style="color:var(--text-dim);font-size:12px;margin-bottom:8px">
         Check who can access this project and pick their project role.
-        Users with a global ADMIN / SUPER_ADMIN role already have access to everything.
+        Super Admins have access to every project; everyone else needs a
+        membership below. Global Admins manage users and create projects but
+        still need membership to open a project.
       </div>
       <div id="pm-users">
         ${users.map((u) => {
           const memberRole = memberMap.get(u.id);
-          const global = u.role !== "USER";
+          const global = u.role === "SUPER_ADMIN";
           const checked = memberRole !== undefined || global;
           return `
           <div class="up-row" data-user="${esc(u.id)}"${global ? ' data-global="1"' : ""} style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border)${global ? ";opacity:.75" : ""}">

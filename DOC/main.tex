@@ -606,13 +606,11 @@ login page.
   \item \textbf{Super Admin} (\file{SUPER_ADMIN}): full control --- user
   list/roles/deletion, account invitations, project creation/deletion,
   membership management from either side, manual cron triggers.
-  \item \textbf{Admin} (\file{ADMIN}, global): may create projects, invite
-  people to projects they can access and view the user list read-only in the
-  admin panel. \emph{Note:} in the current model a global Admin implicitly has
-  admin rights on \emph{every} project (\file{requireProjectRole} short-circuits
-  membership checks for non-\texttt{USER} roles). Tightening this to explicit
-  per-project membership is a documented open decision
-  (Section~\ref{sec:gaps}).
+  \item \textbf{Admin} (\file{ADMIN}, global): may create projects (becoming
+  their admin), invite people to projects they can access and view the user
+  list read-only in the admin panel. Since v1.5 a global Admin has
+  \emph{no} implicit access to projects they are not a member of --- only
+  \texttt{SUPER\_ADMIN} short-circuits membership checks.
   \item \textbf{User} (\file{USER}): sees and acts only inside projects where
   a \file{project_members} row exists.
 \end{enumerate}
@@ -640,8 +638,9 @@ Create projects (global)                   & \ok & \ok & \no\\
 Manage global roles / delete users         & \ok & \no & \no\\
 \bottomrule
 \end{tabular}
-\caption{Effective permission matrix. ``Project Admin'' includes global
-Admins and Super Admins, who short-circuit membership checks.}
+\caption{Effective permission matrix. ``Project Admin'' is the in-project
+role; global Admins and Super Admins hold it on projects they created, and
+Super Admins hold it everywhere.}
 \label{tab:rbac}
 \end{table}
 
@@ -1133,10 +1132,6 @@ they are not mistaken for oversights:
   comment streaming; those need WebSockets and are deliberately deferred.
   \item \textbf{Free status transitions.} Any column to any column, so drags
   are undoable. A stricter machine can be introduced later in one function.
-  \item \textbf{No per-project membership requirement for global Admins.}
-  Global Admins implicitly administer every project. This keeps the seed team
-  frictionless but is flagged as an open model decision (the admin UI already
-  communicates it as ``global access'').
   \item \textbf{No Docker.} The app is one \file{npm run dev} command plus a
   SQLite file; containerization is deferred until a second machine deploys.
   \item \textbf{No i18n.} The UI is uniformly English; all strings are
@@ -1195,6 +1190,8 @@ v1.0 & \today & First documentation of the \emph{implemented} system: self-hoste
 v1.1 & \today & Reliability round: automated test suite (27 node:test API/unit tests, zero extra dependencies; server made importable for in-process testing); git repository initialized; CI pipeline (typecheck + tests + audit); production deployment kit (systemd unit, nginx TLS sample, \file{npm run backup}); token-based password reset with session revocation and no account enumeration; API rate limiting (general + strict invitation/reset budgets); pagination on users, tasks and activity events. Documentation updated accordingly; remaining weaknesses all re-classified as low/medium.\\
 \addlinespace
 v1.2 & \today & Security hardening round: server-side allowlist sanitizer for rich-text descriptions (10 unit tests + API-level regression test; crafted API calls can no longer persist unsafe HTML); \file{npm run media:gc} orphaned-upload cleanup tool with 7-day grace period. Test count now 38; remaining weaknesses are all low severity.\\
+\addlinespace
+v1.5 & \today & Access-model decision implemented (strict model): global Admins no longer have implicit access to every project; only \file{SUPER_ADMIN} short-circuits membership checks. Admin-panel project-access dialog updated (only Super Admins are pinned as global). New RBAC regression tests cover the boundary.\
 \addlinespace
 v1.4 & \today & Test-suite round: end-to-end coverage of the scheduled e-mail jobs (daily digest content and recipients, weekly report recipients, security-scan CVE reporting and de-duplication with a stubbed OSV API); 43 tests total.\
 \addlinespace

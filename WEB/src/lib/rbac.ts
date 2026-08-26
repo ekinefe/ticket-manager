@@ -37,7 +37,9 @@ export async function requireProjectRole(
   projectId: string,
   minRole: ProjectRole = "MEMBER"
 ): Promise<ProjectRole> {
-  if (u.role !== "USER") return "ADMIN";
+  // Strict model (v1.5): only SUPER_ADMIN has implicit access to every
+  // project; global ADMINs need an explicit membership like everyone else.
+  if (u.role === "SUPER_ADMIN") return "ADMIN";
 
   const [membership] = await getDb(db)
     .select({ role: projectMembers.role })
@@ -52,7 +54,8 @@ export async function requireProjectRole(
 }
 
 export async function listAccessibleProjects(db: AppDB, u: SessionUser) {
-  const rows = u.role !== "USER"
+  // SUPER_ADMIN sees everything; ADMIN and USER see their memberships.
+  const rows = u.role === "SUPER_ADMIN"
     ? await db.select({ ...getTableColumns(projects) }).from(projects).orderBy(projects.name)
     : await db
         .select({ ...getTableColumns(projects), role: projectMembers.role })
@@ -66,7 +69,6 @@ export async function listAccessibleProjects(db: AppDB, u: SessionUser) {
     .from(tasks)
     .groupBy(tasks.projectId, tasks.status);
 
-  const byProject = new Map(statusRows.map((r) => [r.projectId, r]));
   return rows.map((p) => {
     const counts = statusRows.filter((r) => r.projectId === p.id);
     const statusCounts = Object.fromEntries(STATUSES.map((s) => [s, 0])) as Record<Status, number>;
