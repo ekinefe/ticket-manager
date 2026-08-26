@@ -196,6 +196,9 @@ app.get("/api/projects", (c) =>
   })
 );
 
+// Unauthenticated liveness probe for monitoring / reverse-proxy checks.
+app.get("/api/health", (c) => c.json({ ok: true, time: Date.now() }));
+
 app.get("/api/my-tickets", (c) =>
   guard(c, async () => {
     const u = await getSessionUser(c.req.raw, env);

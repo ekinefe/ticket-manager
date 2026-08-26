@@ -34,6 +34,14 @@ after(async () => {
 });
 
 describe("authentication", () => {
+  it("exposes an unauthenticated health probe", async () => {
+    const res = await req("/api/health");
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.ok, true);
+    assert.ok(Number(data.time) > 0);
+  });
+
   it("rejects anonymous API access with 401", async () => {
     const res = await req("/api/projects");
     assert.equal(res.status, 401);

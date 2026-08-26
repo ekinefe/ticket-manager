@@ -1,0 +1,14 @@
+# Nightly backup: consistent DB snapshot + uploads copy.
+# Install alongside ticket-manager.service:
+#   cp deploy/ticket-manager-backup.* /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now ticket-manager-backup.timer
+
+[Unit]
+Description=Ticket Manager nightly backup
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/ticket-manager/WEB
+ExecStart=/usr/bin/npx tsx scripts/backup.ts
+User=www-data
+Group=www-data

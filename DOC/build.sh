@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-TEX="main (1).tex"
+TEX="main.tex"
 
 render() {
   local src="$1" out="$2" h="$3"
