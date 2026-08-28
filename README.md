@@ -1,5 +1,10 @@
 # Ticket Manager
 
+> **Development status: not production-ready.** This project is still in
+> active development. Work is ongoing on the `dev` branch and has not yet
+> reached a production release. Nothing here should be treated as stable or
+> suitable for production use yet.
+
 Self-hosted, zero-cost Kanban work tracker for internal teams: projects,
 unique ticket IDs (`PREFIX-1`), drag & drop boards, rich-text descriptions,
 comments, attachments, invitation-only accounts, per-project roles, live
