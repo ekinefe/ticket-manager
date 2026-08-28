@@ -9,7 +9,8 @@ export type ActivityEventType =
   | "DESCRIPTION_CHANGED"
   | "ASSIGNEE_CHANGED"
   | "TYPE_CHANGED"
-  | "PRIORITY_CHANGED";
+  | "PRIORITY_CHANGED"
+  | "SPRINT_CHANGED";
 
 export interface ActivityInput {
   taskId: string;

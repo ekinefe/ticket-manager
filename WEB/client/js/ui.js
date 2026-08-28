@@ -1,13 +1,23 @@
 export const STATUSES = ["TODO", "IN_PROGRESS", "UNDER_REVIEW", "MERGED", "DEPLOYED", "TEST", "DONE"];
 
 export const STATUS_COLORS = {
-  TODO: "#737373",
-  IN_PROGRESS: "#286EB4",
-  UNDER_REVIEW: "#C88214",
-  MERGED: "#783CA0",
-  DEPLOYED: "#1E8C5A",
-  TEST: "#CD5F23",
-  DONE: "#236E37",
+  TODO: "#555555",
+  IN_PROGRESS: "#00f3ff",
+  UNDER_REVIEW: "#FF318C",
+  MERGED: "#7000ff",
+  DEPLOYED: "#00ff9d",
+  TEST: "#ffb700",
+  DONE: "#00ff9d",
+};
+
+const STATUS_COLORS_LIGHT = {
+  TODO: "#71717a",
+  IN_PROGRESS: "#0090a8",
+  UNDER_REVIEW: "#d6126b",
+  MERGED: "#5b00d6",
+  DEPLOYED: "#1e8c5a",
+  TEST: "#b8860b",
+  DONE: "#1e8c5a",
 };
 
 export const STATUS_LABELS = {
@@ -19,6 +29,16 @@ export const STATUS_LABELS = {
   TEST: "Test",
   DONE: "Done",
 };
+
+function isLightTheme() {
+  return document.documentElement.getAttribute("data-theme") === "light";
+}
+
+export function getStatusColor(status) {
+  return isLightTheme()
+    ? (STATUS_COLORS_LIGHT[status] || STATUS_COLORS_LIGHT.TODO)
+    : (STATUS_COLORS[status] || "#737373");
+}
 
 export function canTransition(from, to) {
   if (from === to) return true; // reorder within a column
@@ -38,8 +58,6 @@ export function esc(s) {
     .replaceAll("'", "&#39;");
 }
 
-const AVATAR_COLORS = ["#964826", "#286EB4", "#C88214", "#783CA0", "#1E8C5A", "#CD5F23", "#236E37", "#5B6ABF"];
-
 export function initials(name) {
   return (name || "?")
     .trim()
@@ -51,16 +69,15 @@ export function initials(name) {
 }
 
 export function avatarHtml(name, id, cls = "") {
-  let h = 0;
-  for (const ch of String(id || name || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  const color = AVATAR_COLORS[h % AVATAR_COLORS.length];
-  return `<span class="avatar ${cls}" style="background:${color}">${esc(initials(name))}</span>`;
+  return `<span class="avatar ${cls}">${esc(initials(name))}</span>`;
 }
 
-export function statusPill(status, count) {
+export function statusPill(status, count, light = false) {
   const n = Number(count);
   const label = STATUS_LABELS[status] || status;
-  return `<span class="status-pill" style="background:${STATUS_COLORS[status] || "#737373"}">${esc(label)}${Number.isFinite(n) ? ` · ${n}` : ""}</span>`;
+  const c = getStatusColor(status);
+  if (light) return `<span class="status-pill light" style="color:${c}">${esc(label)}${Number.isFinite(n) ? ` · ${n}` : ""}</span>`;
+  return `<span class="status-pill" style="background:${c}">${esc(label)}${Number.isFinite(n) ? ` · ${n}` : ""}</span>`;
 }
 
 export function roleChip(role) {
@@ -84,11 +101,20 @@ export const TYPE_LABELS = { TASK: "Task", BUG: "Bug" };
 
 export const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 export const PRIORITY_LABELS = { LOW: "Low", MEDIUM: "Medium", HIGH: "High", URGENT: "Urgent" };
-export const PRIORITY_COLORS = { LOW: "#8a8a8a", MEDIUM: "#286EB4", HIGH: "#C88214", URGENT: "#C0392B" };
+export const PRIORITY_COLORS = { LOW: "#555555", MEDIUM: "#00f3ff", HIGH: "#ffb700", URGENT: "#ff3333" };
+
+const PRIORITY_COLORS_LIGHT = { LOW: "#71717a", MEDIUM: "#0090a8", HIGH: "#b8860b", URGENT: "#d32f2f" };
+
+export function getPriorityColor(priority) {
+  const p = PRIORITY_LABELS[priority] ? priority : "MEDIUM";
+  return isLightTheme()
+    ? (PRIORITY_COLORS_LIGHT[p] || PRIORITY_COLORS_LIGHT.MEDIUM)
+    : (PRIORITY_COLORS[p] || PRIORITY_COLORS.MEDIUM);
+}
 
 export function priorityPill(priority) {
   const p = PRIORITY_LABELS[priority] ? priority : "MEDIUM";
-  const c = PRIORITY_COLORS[p];
+  const c = getPriorityColor(p);
   return `<span class="priority-pill" style="color:${c};background:${c}14">${esc(PRIORITY_LABELS[p])}</span>`;
 }
 
@@ -199,7 +225,8 @@ export function openModal({ title = "", body = "", onMount, wide = false } = {})
       </div>
     </div>`;
   const overlay = root.firstElementChild;
-  const close = () => { root.innerHTML = ""; };
+  document.body.classList.add("modal-open");
+  const close = () => { root.innerHTML = ""; document.body.classList.remove("modal-open"); };
   overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(); });
   overlay.querySelector(".modal-close").addEventListener("click", close);
   const escHandler = (e) => { if (e.key === "Escape") { close(); document.removeEventListener("keydown", escHandler); } };

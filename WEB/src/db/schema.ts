@@ -75,6 +75,7 @@ export const tasks = sqliteTable(
     priority: text("priority", { enum: ["LOW", "MEDIUM", "HIGH", "URGENT"] }).notNull().default("MEDIUM"),
     assigneeId: text("assignee_id").references(() => user.id, { onDelete: "set null" }),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    sprintId: text("sprint_id").references(() => sprints.id, { onDelete: "set null" }),
     position: real("position").notNull().default(0),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
@@ -94,6 +95,20 @@ export const projectMembers = sqliteTable(
     role: text("role", { enum: ["ADMIN", "MEMBER"] }).notNull().default("MEMBER"),
   },
   (t) => [primaryKey({ columns: [t.projectId, t.userId] })]
+);
+
+export const sprints = sqliteTable(
+  "sprints",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    sprintId: text("sprint_id").notNull().unique(),
+    name: text("name").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("idx_sprints_project").on(t.projectId)]
 );
 
 export const invitations = sqliteTable(
@@ -202,3 +217,34 @@ export const securityFindings = sqliteTable(
   },
   (t) => [uniqueIndex("uq_security_finding").on(t.cve, t.packageName)]
 );
+
+export const notifications = sqliteTable(
+  "notifications",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    actorId: text("actor_id").references(() => user.id, { onDelete: "set null" }),
+    type: text("type", {
+      enum: ["TICKET_CREATED", "STATUS_CHANGED", "ASSIGNED", "MENTIONED", "COMMENT_ADDED", "SPRINT_CHANGED", "PROJECT_INVITE", "MEMBER_ADDED"],
+    }).notNull(),
+    taskId: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    message: text("message").notNull(),
+    readAt: integer("read_at"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    index("idx_notifications_user").on(t.userId),
+    index("idx_notifications_user_read").on(t.userId, t.readAt),
+  ]
+);
+
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});

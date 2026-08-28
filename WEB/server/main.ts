@@ -39,8 +39,15 @@ import { clientIp, rateLimit } from "../src/lib/ratelimit";
 import { renderTemplate, htmlToText } from "../src/lib/mail/templates";
 import { getTransport } from "../src/lib/mail";
 import { runJob, startScheduler } from "../src/cron/scheduler";
-import { and, asc, eq, ne, sql } from "drizzle-orm";
-import { projects, projectMembers, tasks, user, invitations, activityLog, taskComments, accountInvites } from "../src/db/schema";
+import { and, asc, eq, ne, sql, gte, inArray, isNull } from "drizzle-orm";
+import { projects, projectMembers, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications } from "../src/db/schema";
+import {
+  createNotification,
+  createProjectNotification,
+  createAdminNotification,
+  createSuperAdminNotification,
+} from "../src/lib/in-app-notify";
+import { notifyMentionedUsers } from "../src/lib/mentions";
 
 const env: Env = {
   DB: createLocalDb(process.env.TM_DB_FILE || undefined),
@@ -79,6 +86,47 @@ async function readBody<T>(c: Context): Promise<T> {
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Every project starts with "Sprint 1" (PREFIX-S1); further sprints continue
+// the sequence. The UNIQUE constraint on sprint_id is the race backstop.
+async function createDefaultSprint(db: typeof env.DB, projectId: string, prefix: string): Promise<void> {
+  await db.insert(sprints).values({
+    id: crypto.randomUUID(),
+    projectId,
+    sprintId: `${prefix}-S1`,
+    name: "Sprint 1",
+    createdAt: Date.now(),
+  }).onConflictDoNothing();
+}
+
+async function listProjectSprints(db: typeof env.DB, projectId: string) {
+  return db
+    .select({
+      id: sprints.id,
+      sprintId: sprints.sprintId,
+      name: sprints.name,
+      createdAt: sprints.createdAt,
+      ticketCount: sql<number>`(select count(*) from ${tasks} where ${tasks.sprintId} = ${sprints.id})`,
+    })
+    .from(sprints)
+    .where(eq(sprints.projectId, projectId))
+    .orderBy(asc(sprints.createdAt));
+}
+
+// Next human-visible sprint ID for a project: PREFIX-S<max+1>. Parses existing
+// IDs rather than trusting a stored counter so manual/out-of-band IDs stay safe.
+async function nextSprintId(db: typeof env.DB, projectId: string, prefix: string): Promise<string> {
+  const rows = await db
+    .select({ sprintId: sprints.sprintId })
+    .from(sprints)
+    .where(eq(sprints.projectId, projectId));
+  let max = 0;
+  for (const r of rows) {
+    const m = /-S(\d+)$/.exec(r.sprintId);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `${prefix}-S${max + 1}`;
+}
 
 const TASK_TYPES = ["TASK", "BUG"];
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"];
@@ -234,6 +282,7 @@ app.post("/api/projects", (c) =>
       .values({ id, name, prefix, currentTicketSequence: 0, createdAt: Date.now() })
       .returning();
     await env.DB.insert(projectMembers).values({ projectId: id, userId: u.id, role: "ADMIN" });
+    await createDefaultSprint(env.DB, id, prefix);
     return c.json(project, 201);
   })
 );
@@ -258,7 +307,80 @@ app.get("/api/projects/:id", (c) =>
       .innerJoin(user, eq(user.id, projectMembers.userId))
       .where(eq(projectMembers.projectId, projectId));
 
-    return c.json({ ...project, members });
+    const projectSprints = await listProjectSprints(env.DB, projectId);
+
+    return c.json({ ...project, members, sprints: projectSprints });
+  })
+);
+
+// ---------- Sprints (per-project iterations) ----------
+// Only project admins may create, rename or delete sprints. A project must
+// always keep at least one sprint; deleting the last one is rejected.
+
+app.post("/api/projects/:id/sprints", (c) =>
+  guard(c, async () => {
+    const projectId = c.req.param("id");
+    const u = await getSessionUser(c.req.raw, env);
+    await requireProjectRole(env.DB, u, projectId, "ADMIN");
+
+    const body = await readBody<{ name?: string }>(c);
+    const [project] = await env.DB
+      .select({ prefix: projects.prefix })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+    if (!project) throw new ApiError(404, "Project not found");
+
+    const sprintId = await nextSprintId(env.DB, projectId, project.prefix);
+    const number = Number(sprintId.split("-S")[1]);
+    const name = body.name?.trim() || `Sprint ${number}`;
+    const [created] = await env.DB
+      .insert(sprints)
+      .values({ id: crypto.randomUUID(), projectId, sprintId, name, createdAt: Date.now() })
+      .returning();
+    return c.json(created, 201);
+  })
+);
+
+app.patch("/api/projects/:id/sprints/:sid", (c) =>
+  guard(c, async () => {
+    const projectId = c.req.param("id");
+    const sid = c.req.param("sid");
+    const u = await getSessionUser(c.req.raw, env);
+    await requireProjectRole(env.DB, u, projectId, "ADMIN");
+
+    const body = await readBody<{ name?: string }>(c);
+    const name = body.name?.trim();
+    if (!name) throw new ApiError(400, "Sprint name is required");
+
+    const [updated] = await env.DB
+      .update(sprints)
+      .set({ name })
+      .where(and(eq(sprints.id, sid), eq(sprints.projectId, projectId)))
+      .returning();
+    if (!updated) throw new ApiError(404, "Sprint not found");
+    return c.json(updated);
+  })
+);
+
+app.delete("/api/projects/:id/sprints/:sid", (c) =>
+  guard(c, async () => {
+    const projectId = c.req.param("id");
+    const sid = c.req.param("sid");
+    const u = await getSessionUser(c.req.raw, env);
+    await requireProjectRole(env.DB, u, projectId, "ADMIN");
+
+    const [{ total }] = await env.DB
+      .select({ total: sql<number>`count(*)` })
+      .from(sprints)
+      .where(eq(sprints.projectId, projectId));
+    if (total <= 1) throw new ApiError(400, "A project must always have at least one sprint");
+
+    const deleted = await env.DB
+      .delete(sprints)
+      .where(and(eq(sprints.id, sid), eq(sprints.projectId, projectId)))
+      .returning({ id: sprints.id });
+    if (deleted.length === 0) throw new ApiError(404, "Sprint not found");
+    return c.json({ ok: true });
   })
 );
 
@@ -478,6 +600,441 @@ app.delete("/api/admin/projects/:id/members/:userId", (c) =>
   })
 );
 
+// ---------- App settings (super admin) ----------
+// Settings are stored in the DB and applied to the runtime env on save so
+// changes take effect without a server restart.
+
+const SETTINGS_KEYS = ["app_url", "better_auth_secret", "mail_transport", "mail_from", "resend_api_key"] as const;
+type SettingsKey = (typeof SETTINGS_KEYS)[number];
+
+// Read all settings from the DB and override the matching env fields.
+// Called once at startup and again whenever settings are saved.
+export async function loadSettings(): Promise<void> {
+  const rows = await env.DB.select().from(appSettings);
+  const map = new Map(rows.map((r) => [r.key, r.value]));
+  if (map.get("app_url")) env.APP_URL = map.get("app_url")!;
+  if (map.get("better_auth_secret")) env.BETTER_AUTH_SECRET = map.get("better_auth_secret")!;
+  if (map.get("mail_transport")) env.MAIL_TRANSPORT = map.get("mail_transport") as Env["MAIL_TRANSPORT"];
+  if (map.get("mail_from")) env.MAIL_FROM = map.get("mail_from")!;
+  if (map.get("resend_api_key")) env.RESEND_API_KEY = map.get("resend_api_key")!;
+}
+
+// Load settings at startup so the env is pre-populated from the DB.
+await loadSettings();
+
+app.get("/api/admin/settings", (c) =>
+  guard(c, async () => {
+    const actor = await getSessionUser(c.req.raw, env);
+    requireSuperAdmin(actor);
+    const rows = await env.DB.select().from(appSettings);
+    const settings: Record<string, string> = {};
+    for (const r of rows) settings[r.key] = r.value;
+    return c.json(settings);
+  })
+);
+
+app.patch("/api/admin/settings", (c) =>
+  guard(c, async () => {
+    const actor = await getSessionUser(c.req.raw, env);
+    requireSuperAdmin(actor);
+    const body = await readBody<Record<string, string>>(c);
+    const now = Date.now();
+    for (const key of SETTINGS_KEYS) {
+      if (key in body) {
+        const value = String(body[key] ?? "").trim();
+        await env.DB
+          .insert(appSettings)
+          .values({ key, value, updatedAt: now })
+          .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: now } });
+      }
+    }
+    // Apply changes to the running env immediately.
+    await loadSettings();
+    return c.json({ ok: true });
+  })
+);
+
+// ---------- Dashboard stats (role-based, filterable) ----------
+
+app.get("/api/dashboard/stats", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    const isSuper = u.role === "SUPER_ADMIN";
+    const isAdmin = u.role === "ADMIN" || isSuper;
+
+    // --- Parse filter query params (super admin only) ---
+    const qProjectId = isSuper ? (c.req.query("projectId") || "").trim() : "";
+    const qSprintId = isSuper ? (c.req.query("sprintId") || "").trim() : "";
+    const qAssigneeId = isSuper ? (c.req.query("assigneeId") || "").trim() : "";
+    const qStatus = isSuper ? (c.req.query("status") || "").trim() : "";
+    const qPriority = isSuper ? (c.req.query("priority") || "").trim() : "";
+    const qType = isSuper ? (c.req.query("type") || "").trim() : "";
+    const qDays = isSuper ? Number(c.req.query("days") || 14) : 14;
+
+    // Time range (applies to all stats for super admin)
+    const daysBack = Math.min(Math.max(qDays || 14, 7), 90);
+    const timeCutoffMs = Date.now() - daysBack * 24 * 60 * 60 * 1000;
+
+    // Projects the user can access (base RBAC)
+    const accessibleProjectIds = isSuper
+      ? (await env.DB.select({ id: projects.id }).from(projects)).map((r) => r.id)
+      : (await env.DB
+          .select({ projectId: projectMembers.projectId })
+          .from(projectMembers)
+          .where(eq(projectMembers.userId, u.id))
+          .orderBy(asc(projectMembers.projectId))
+        ).map((r) => r.projectId);
+
+    // Effective project filter: RBAC × optional filter
+    let effectiveProjectIds = accessibleProjectIds;
+    if (isSuper && qProjectId && accessibleProjectIds.includes(qProjectId)) {
+      effectiveProjectIds = [qProjectId];
+    }
+    const projectFilter = effectiveProjectIds.length > 0
+      ? inArray(tasks.projectId, effectiveProjectIds)
+      : sql`1 = 0`;
+
+    // Build additional WHERE clauses from filters (all filters applied to taskWhere)
+    const extraConditions: ReturnType<typeof sql>[] = [];
+    if (isSuper && qSprintId) extraConditions.push(eq(tasks.sprintId, qSprintId));
+    if (isSuper && qAssigneeId) extraConditions.push(eq(tasks.assigneeId, qAssigneeId));
+    if (isSuper && qStatus) extraConditions.push(sql`${tasks.status} = ${qStatus}`);
+    if (isSuper && qPriority) extraConditions.push(sql`${tasks.priority} = ${qPriority}`);
+    if (isSuper && qType) extraConditions.push(sql`${tasks.type} = ${qType}`);
+    if (isSuper) extraConditions.push(gte(tasks.createdAt, timeCutoffMs));
+
+    const taskWhere = extraConditions.length > 0
+      ? and(projectFilter, ...extraConditions)
+      : projectFilter;
+
+    // --- Core counts (filtered) ---
+    const [{ totalTickets }] = await env.DB
+      .select({ totalTickets: sql<number>`count(*)` })
+      .from(tasks)
+      .where(taskWhere);
+
+    const myTickets = await env.DB
+      .select({
+        id: tasks.id,
+        ticketId: tasks.ticketId,
+        title: tasks.title,
+        status: tasks.status,
+        type: tasks.type,
+        priority: tasks.priority,
+        projectId: tasks.projectId,
+        projectPrefix: projects.prefix,
+        projectName: projects.name,
+        sprintId: tasks.sprintId,
+        createdAt: tasks.createdAt,
+        updatedAt: tasks.updatedAt,
+      })
+      .from(tasks)
+      .innerJoin(projects, eq(projects.id, tasks.projectId))
+      .where(and(taskWhere, eq(tasks.assigneeId, u.id)))
+      .orderBy(asc(tasks.updatedAt));
+
+    const myProjects = await env.DB
+      .select({
+        id: projects.id,
+        name: projects.name,
+        prefix: projects.prefix,
+        createdAt: projects.createdAt,
+      })
+      .from(projects)
+      .where(
+        effectiveProjectIds.length > 0
+          ? inArray(projects.id, effectiveProjectIds)
+          : sql`1 = 0`
+      )
+      .orderBy(asc(projects.name));
+
+    // --- Status / priority / type breakdown (filtered) ---
+    const statusRows = await env.DB
+      .select({ status: tasks.status, n: sql<number>`count(*)` })
+      .from(tasks)
+      .where(taskWhere)
+      .groupBy(tasks.status);
+    const statusCounts: Record<string, number> = {};
+    for (const r of statusRows) statusCounts[r.status] = r.n;
+
+    const priorityRows = await env.DB
+      .select({ priority: tasks.priority, n: sql<number>`count(*)` })
+      .from(tasks)
+      .where(taskWhere)
+      .groupBy(tasks.priority);
+    const priorityCounts: Record<string, number> = {};
+    for (const r of priorityRows) priorityCounts[r.priority] = r.n;
+
+    const typeRows = await env.DB
+      .select({ type: tasks.type, n: sql<number>`count(*)` })
+      .from(tasks)
+      .where(taskWhere)
+      .groupBy(tasks.type);
+    const typeCounts: Record<string, number> = {};
+    for (const r of typeRows) typeCounts[r.type] = r.n;
+
+    // --- Sprint stats (filtered) ---
+    let sprintWhere = sql`1 = 1`;
+    if (isSuper && qProjectId) sprintWhere = eq(sprints.projectId, qProjectId);
+    else if (effectiveProjectIds.length > 0) sprintWhere = inArray(sprints.projectId, effectiveProjectIds);
+    else sprintWhere = sql`1 = 0`;
+
+    const sprintRows = await env.DB
+      .select({
+        id: sprints.id,
+        sprintId: sprints.sprintId,
+        name: sprints.name,
+        projectId: sprints.projectId,
+        projectName: projects.name,
+        projectPrefix: projects.prefix,
+        total: sql<number>`(select count(*) from ${tasks} where ${tasks.sprintId} = ${sprints.id} and ${taskWhere})`,
+        done: sql<number>`(select count(*) from ${tasks} where ${tasks.sprintId} = ${sprints.id} and ${tasks.status} = 'DONE' and ${taskWhere})`,
+      })
+      .from(sprints)
+      .innerJoin(projects, eq(projects.id, sprints.projectId))
+      .where(sprintWhere)
+      .orderBy(asc(sprints.createdAt));
+
+    // --- Daily stats (uses taskWhere which already includes time filter) ---
+    const dailyCreatedRows = await env.DB
+      .select({
+        day: sql<string>`date(${tasks.createdAt} / 1000, 'unixepoch', 'localtime')`,
+        n: sql<number>`count(*)`,
+      })
+      .from(tasks)
+      .where(taskWhere)
+      .groupBy(sql`date(${tasks.createdAt} / 1000, 'unixepoch', 'localtime')`);
+
+    // For activity-based completed stats: project + time + assignee/type/priority filters
+    const activityExtra: ReturnType<typeof sql>[] = [eq(activityLog.newStatus, "DONE")];
+    if (isSuper && qAssigneeId) activityExtra.push(eq(tasks.assigneeId, qAssigneeId));
+    if (isSuper && qType) activityExtra.push(sql`${tasks.type} = ${qType}`);
+    if (isSuper && qPriority) activityExtra.push(sql`${tasks.priority} = ${qPriority}`);
+
+    const activityBase = and(projectFilter, ...activityExtra, gte(activityLog.createdAt, timeCutoffMs));
+
+    const dailyCompletedRows = await env.DB
+      .select({
+        day: sql<string>`date(${activityLog.createdAt} / 1000, 'unixepoch', 'localtime')`,
+        n: sql<number>`count(*)`,
+      })
+      .from(activityLog)
+      .innerJoin(tasks, eq(tasks.id, activityLog.taskId))
+      .where(activityBase)
+      .groupBy(sql`date(${activityLog.createdAt} / 1000, 'unixepoch', 'localtime')`);
+
+    const dailyStats: { day: string; created: number; completed: number }[] = [];
+    const dailyMap = new Map<string, { created: number; completed: number }>();
+    for (const r of dailyCreatedRows) {
+      const existing = dailyMap.get(r.day) || { created: 0, completed: 0 };
+      existing.created = r.n;
+      dailyMap.set(r.day, existing);
+    }
+    for (const r of dailyCompletedRows) {
+      const existing = dailyMap.get(r.day) || { created: 0, completed: 0 };
+      existing.completed = r.n;
+      dailyMap.set(r.day, existing);
+    }
+    for (const [day, data] of dailyMap) dailyStats.push({ day, ...data });
+    dailyStats.sort((a, b) => a.day.localeCompare(b.day));
+
+    // --- Weekly stats ---
+    const weeksBack = Math.min(Math.ceil(daysBack / 7), 12);
+    const weeklyCutoffMs = Date.now() - weeksBack * 7 * 24 * 60 * 60 * 1000;
+
+    const weeklyCreatedRows = await env.DB
+      .select({
+        week: sql<string>`strftime('%Y-W%W', ${tasks.createdAt} / 1000, 'unixepoch', 'localtime')`,
+        n: sql<number>`count(*)`,
+      })
+      .from(tasks)
+      .where(and(extraConditions.length > 0 ? and(projectFilter, ...extraConditions) : projectFilter, gte(tasks.createdAt, weeklyCutoffMs)))
+      .groupBy(sql`strftime('%Y-W%W', ${tasks.createdAt} / 1000, 'unixepoch', 'localtime')`);
+
+    const weeklyActivityBase = and(projectFilter, ...activityExtra, gte(activityLog.createdAt, weeklyCutoffMs));
+
+    const weeklyCompletedRows = await env.DB
+      .select({
+        week: sql<string>`strftime('%Y-W%W', ${activityLog.createdAt} / 1000, 'unixepoch', 'localtime')`,
+        n: sql<number>`count(*)`,
+      })
+      .from(activityLog)
+      .innerJoin(tasks, eq(tasks.id, activityLog.taskId))
+      .where(weeklyActivityBase)
+      .groupBy(sql`strftime('%Y-W%W', ${activityLog.createdAt} / 1000, 'unixepoch', 'localtime')`);
+
+    const weeklyStats: { week: string; created: number; completed: number }[] = [];
+    const weeklyMap = new Map<string, { created: number; completed: number }>();
+    for (const r of weeklyCreatedRows) {
+      const existing = weeklyMap.get(r.week) || { created: 0, completed: 0 };
+      existing.created = r.n;
+      weeklyMap.set(r.week, existing);
+    }
+    for (const r of weeklyCompletedRows) {
+      const existing = weeklyMap.get(r.week) || { created: 0, completed: 0 };
+      existing.completed = r.n;
+      weeklyMap.set(r.week, existing);
+    }
+    for (const [week, data] of weeklyMap) weeklyStats.push({ week, ...data });
+    weeklyStats.sort((a, b) => a.week.localeCompare(b.week));
+
+    // --- Recent activity (all filters applied) ---
+    const activityTaskConditions: ReturnType<typeof sql>[] = [eq(activityLog.eventType, "STATUS_CHANGED")];
+    if (isSuper && qSprintId) activityTaskConditions.push(eq(tasks.sprintId, qSprintId));
+    if (isSuper && qAssigneeId) activityTaskConditions.push(eq(tasks.assigneeId, qAssigneeId));
+    if (isSuper && qStatus) activityTaskConditions.push(sql`${tasks.status} != ${qStatus}`); // show transitions involving this status
+    if (isSuper && qPriority) activityTaskConditions.push(sql`${tasks.priority} = ${qPriority}`);
+    if (isSuper && qType) activityTaskConditions.push(sql`${tasks.type} = ${qType}`);
+    if (isSuper) activityTaskConditions.push(gte(activityLog.createdAt, timeCutoffMs));
+
+    const recentActivity = await env.DB
+      .select({
+        id: activityLog.id,
+        taskId: activityLog.taskId,
+        ticketId: tasks.ticketId,
+        taskTitle: tasks.title,
+        projectName: projects.name,
+        projectPrefix: projects.prefix,
+        actorId: activityLog.actorId,
+        actorName: user.name,
+        oldStatus: activityLog.oldStatus,
+        newStatus: activityLog.newStatus,
+        createdAt: activityLog.createdAt,
+      })
+      .from(activityLog)
+      .innerJoin(tasks, eq(tasks.id, activityLog.taskId))
+      .innerJoin(projects, eq(projects.id, tasks.projectId))
+      .leftJoin(user, eq(user.id, activityLog.actorId))
+      .where(and(projectFilter, ...activityTaskConditions))
+      .orderBy(asc(activityLog.createdAt))
+      .limit(10);
+
+    // --- Team workload (ADMIN+, filtered) ---
+    let teamWorkload: { userId: string; name: string; openCount: number; doneCount: number }[] = [];
+    if (isAdmin && effectiveProjectIds.length > 0) {
+      const workloadWhere = isSuper
+        ? and(taskWhere, sql`${tasks.assigneeId} is not null`)
+        : and(projectFilter, sql`${tasks.assigneeId} is not null`);
+
+      const workloadRows = await env.DB
+        .select({
+          userId: tasks.assigneeId,
+          openCount: sql<number>`count(case when ${tasks.status} != 'DONE' then 1 end)`,
+          doneCount: sql<number>`count(case when ${tasks.status} = 'DONE' then 1 end)`,
+        })
+        .from(tasks)
+        .where(workloadWhere)
+        .groupBy(tasks.assigneeId);
+
+      for (const r of workloadRows) {
+        const [uRow] = await env.DB.select({ name: user.name }).from(user).where(eq(user.id, r.userId!));
+        teamWorkload.push({
+          userId: r.userId!,
+          name: uRow?.name ?? "Unknown",
+          openCount: r.openCount,
+          doneCount: r.doneCount,
+        });
+      }
+      teamWorkload.sort((a, b) => b.openCount - a.openCount);
+    }
+
+    // --- Super-admin-only stats (filtered) ---
+    let totalProjects = 0;
+    let totalUsers = 0;
+    let projectStats: { id: string; name: string; prefix: string; total: number; done: number }[] = [];
+    let topAssignees: { name: string; total: number }[] = [];
+    let filterOptions: {
+      projects: { id: string; name: string; prefix: string }[];
+      sprints: { id: string; sprintId: string; name: string; projectId: string }[];
+      users: { id: string; name: string; email: string }[];
+    } | null = null;
+
+    if (isSuper) {
+      // Count projects that have at least one matching ticket (or all if no project filter)
+      const projCountRow = await env.DB
+        .select({ n: sql<number>`count(distinct ${tasks.projectId})` })
+        .from(tasks)
+        .where(taskWhere);
+      totalProjects = projCountRow[0]?.n ?? 0;
+
+      // Count users who have at least one matching ticket
+      const userCountRow = await env.DB
+        .select({ n: sql<number>`count(distinct ${tasks.assigneeId})` })
+        .from(tasks)
+        .where(and(taskWhere, sql`${tasks.assigneeId} is not null`));
+      totalUsers = userCountRow[0]?.n ?? 0;
+
+      // Per-project breakdown using taskWhere
+      projectStats = await env.DB
+        .select({
+          id: projects.id,
+          name: projects.name,
+          prefix: projects.prefix,
+          total: sql<number>`(select count(*) from ${tasks} where ${tasks.projectId} = ${projects.id} and ${taskWhere})`,
+          done: sql<number>`(select count(*) from ${tasks} where ${tasks.projectId} = ${projects.id} and ${tasks.status} = 'DONE' and ${taskWhere})`,
+        })
+        .from(projects)
+        .where(effectiveProjectIds.length > 0 ? inArray(projects.id, effectiveProjectIds) : sql`1 = 1`)
+        .orderBy(asc(projects.name));
+
+      // Top assignees (all filters applied via taskWhere)
+      const topRows = await env.DB
+        .select({
+          name: user.name,
+          total: sql<number>`count(*)`,
+        })
+        .from(tasks)
+        .innerJoin(user, eq(user.id, tasks.assigneeId))
+        .where(and(taskWhere, sql`${tasks.assigneeId} is not null`))
+        .groupBy(tasks.assigneeId)
+        .orderBy(sql`count(*) desc`)
+        .limit(10);
+      topAssignees = topRows;
+
+      // Filter options for the UI dropdowns (always show all options)
+      const allProjects = await env.DB
+        .select({ id: projects.id, name: projects.name, prefix: projects.prefix })
+        .from(projects)
+        .orderBy(asc(projects.name));
+
+      let sprintQuery = env.DB
+        .select({ id: sprints.id, sprintId: sprints.sprintId, name: sprints.name, projectId: sprints.projectId })
+        .from(sprints)
+        .orderBy(asc(sprints.createdAt));
+      if (qProjectId) {
+        sprintQuery = sprintQuery.where(eq(sprints.projectId, qProjectId)) as typeof sprintQuery;
+      }
+      const allSprints = await sprintQuery;
+
+      const allUsers = await env.DB
+        .select({ id: user.id, name: user.name, email: user.email })
+        .from(user)
+        .orderBy(asc(user.name));
+
+      filterOptions = { projects: allProjects, sprints: allSprints, users: allUsers };
+    }
+
+    return c.json({
+      totalTickets,
+      totalProjects,
+      totalUsers,
+      myTickets,
+      myProjects,
+      statusCounts,
+      priorityCounts,
+      typeCounts,
+      sprintStats: sprintRows,
+      dailyStats,
+      weeklyStats,
+      recentActivity: recentActivity.reverse(),
+      teamWorkload,
+      projectStats,
+      topAssignees,
+      filterOptions,
+    });
+  })
+);
+
 function isStatus(v: unknown): v is Status {
   return typeof v === "string" && (STATUSES as readonly string[]).includes(v);
 }
@@ -573,13 +1130,18 @@ app.post("/api/projects/:id/tasks", (c) =>
     const u = await getSessionUser(c.req.raw, env);
     await requireProjectRole(env.DB, u, projectId);
 
-    const body = await readBody<{ title?: string; description?: string; status?: string; assigneeId?: string; type?: string; priority?: string }>(c);
+    const body = await readBody<{ title?: string; description?: string; status?: string; assigneeId?: string; type?: string; priority?: string; sprintId?: string | null }>(c);
     const title = body.title?.trim();
     if (!title) throw new ApiError(400, "Title is required");
     // Members may pick the initial assignee of a NEW ticket; reassigning later is admin-only.
     const status = body.status ? (isStatus(body.status) ? body.status : (() => { throw new ApiError(400, `Invalid status`); })()) : "TODO";
     if (body.type !== undefined && !TASK_TYPES.includes(body.type)) throw new ApiError(400, `Invalid type: ${String(body.type)}`);
     if (body.priority !== undefined && !PRIORITIES.includes(body.priority)) throw new ApiError(400, `Invalid priority: ${String(body.priority)}`);
+    // If a sprintId is provided, verify it belongs to this project.
+    if (body.sprintId) {
+      const [sprint] = await env.DB.select({ id: sprints.id }).from(sprints).where(and(eq(sprints.id, body.sprintId), eq(sprints.projectId, projectId)));
+      if (!sprint) throw new ApiError(400, "Invalid sprint for this project");
+    }
 
     const ticketId = await allocateTicketId(env.DB, projectId);
     const [{ maxPos }] = await env.DB
@@ -600,6 +1162,7 @@ app.post("/api/projects/:id/tasks", (c) =>
         type: (body.type ?? "TASK") as "TASK" | "BUG",
         priority: (body.priority ?? "MEDIUM") as "LOW" | "MEDIUM" | "HIGH" | "URGENT",
         assigneeId: body.assigneeId || null,
+        sprintId: body.sprintId || null,
         createdBy: u.id,
         position: Number(maxPos) + 1,
         createdAt: now,
@@ -609,6 +1172,39 @@ app.post("/api/projects/:id/tasks", (c) =>
 
     await logActivity(env.DB, { taskId: task.id, actorId: u.id, eventType: "CREATED", newStatus: status });
     publish(projectId, { type: "created", ticketId, taskId: task.id, actorId: u.id });
+
+    if (body.assigneeId) {
+      await createNotification({
+        db: env.DB,
+        userId: body.assigneeId,
+        actorId: u.id,
+        type: "TICKET_CREATED",
+        taskId: task.id,
+        projectId,
+        message: `${u.name} assigned you ${ticketId}: ${title}`,
+      }).catch((e) => console.error("notification failed:", e));
+    } else {
+      await createProjectNotification({
+        db: env.DB,
+        projectId,
+        actorId: u.id,
+        type: "TICKET_CREATED",
+        taskId: task.id,
+        message: `${u.name} created ${ticketId}: ${title}`,
+      }).catch((e) => console.error("notification failed:", e));
+    }
+
+    if (body.description) {
+      await notifyMentionedUsers({
+        db: env.DB,
+        text: body.description,
+        actorId: u.id,
+        taskId: task.id,
+        projectId,
+        messagePrefix: `${u.name} on ${ticketId}`,
+      });
+    }
+
     return c.json(task, 201);
   })
 );
@@ -628,6 +1224,7 @@ app.patch("/api/projects/:id/tasks/:taskId", (c) =>
       beforeTaskId?: string;
       type?: string;
       priority?: string;
+      sprintId?: string | null;
     }>(c);
 
     const [task] = await env.DB
@@ -647,6 +1244,7 @@ app.patch("/api/projects/:id/tasks/:taskId", (c) =>
     const oldAssigneeId = task.assigneeId;
     const oldType = task.type;
     const oldPriority = task.priority;
+    const oldSprintId = task.sprintId;
 
     const values: Partial<typeof tasks.$inferInsert> = {};
     if (body.title !== undefined) values.title = body.title.trim();
@@ -662,6 +1260,13 @@ app.patch("/api/projects/:id/tasks/:taskId", (c) =>
       if (myRole !== "ADMIN") throw new ApiError(403, "Only project admins can change the priority");
       if (!PRIORITIES.includes(body.priority)) throw new ApiError(400, `Invalid priority: ${String(body.priority)}`);
       values.priority = body.priority as "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+    }
+    if (body.sprintId !== undefined) {
+      if (body.sprintId) {
+        const [sprint] = await env.DB.select({ id: sprints.id }).from(sprints).where(and(eq(sprints.id, body.sprintId), eq(sprints.projectId, projectId)));
+        if (!sprint) throw new ApiError(400, "Invalid sprint for this project");
+      }
+      values.sprintId = body.sprintId || null;
     }
     if (body.assigneeId !== undefined) {
       // Assignment is an admin-only action; members cannot reassign even their own tickets.
@@ -711,6 +1316,19 @@ app.patch("/api/projects/:id/tasks/:taskId", (c) =>
           actorName: actor?.name ?? u.name,
         }).catch((e) => console.error("notify failed:", e));
       }
+
+      const notifyUserIds = [task.createdBy, task.assigneeId].filter((v): v is string => Boolean(v) && v !== u.id);
+      for (const uid of notifyUserIds) {
+        await createNotification({
+          db: env.DB,
+          userId: uid,
+          actorId: u.id,
+          type: "STATUS_CHANGED",
+          taskId,
+          projectId,
+          message: `${u.name} moved ${updated.ticketId} to ${newStatus}`,
+        }).catch((e) => console.error("notification failed:", e));
+      }
     }
 
     // Field-level history entries (in addition to the status entry above).
@@ -731,6 +1349,16 @@ app.patch("/api/projects/:id/tasks/:taskId", (c) =>
         oldValue: descPreview(oldDescription),
         newValue: descPreview(values.description),
       });
+      if (values.description) {
+        await notifyMentionedUsers({
+          db: env.DB,
+          text: values.description,
+          actorId: u.id,
+          taskId,
+          projectId,
+          messagePrefix: `${u.name} on ${updated.ticketId}`,
+        });
+      }
     }
     if (body.assigneeId !== undefined && (values.assigneeId ?? null) !== (oldAssigneeId ?? null)) {
       await logActivity(env.DB, {
@@ -740,12 +1368,50 @@ app.patch("/api/projects/:id/tasks/:taskId", (c) =>
         oldValue: oldAssigneeId,
         newValue: values.assigneeId ?? null,
       });
+      if (values.assigneeId) {
+        await createNotification({
+          db: env.DB,
+          userId: values.assigneeId,
+          actorId: u.id,
+          type: "ASSIGNED",
+          taskId,
+          projectId,
+          message: `${u.name} assigned you ${updated.ticketId}: ${updated.title}`,
+        }).catch((e) => console.error("notification failed:", e));
+      }
     }
     if (values.type !== undefined && values.type !== oldType) {
       await logActivity(env.DB, { taskId, actorId: u.id, eventType: "TYPE_CHANGED", oldValue: oldType, newValue: values.type });
     }
     if (values.priority !== undefined && values.priority !== oldPriority) {
       await logActivity(env.DB, { taskId, actorId: u.id, eventType: "PRIORITY_CHANGED", oldValue: oldPriority, newValue: values.priority });
+    }
+    if (values.sprintId !== undefined && (values.sprintId ?? null) !== (oldSprintId ?? null)) {
+      // Resolve sprint internal IDs to human-readable IDs for the activity log.
+      const resolveSprint = async (sid: string | null): Promise<string | null> => {
+        if (!sid) return null;
+        const [s] = await env.DB.select({ sprintId: sprints.sprintId }).from(sprints).where(eq(sprints.id, sid));
+        return s?.sprintId ?? null;
+      };
+      await logActivity(env.DB, {
+        taskId,
+        actorId: u.id,
+        eventType: "SPRINT_CHANGED",
+        oldValue: await resolveSprint(oldSprintId),
+        newValue: await resolveSprint(values.sprintId),
+      });
+      const sprintNotifyUsers = [task.createdBy, task.assigneeId].filter((v): v is string => Boolean(v) && v !== u.id);
+      for (const uid of sprintNotifyUsers) {
+        await createNotification({
+          db: env.DB,
+          userId: uid,
+          actorId: u.id,
+          type: "SPRINT_CHANGED",
+          taskId,
+          projectId,
+          message: `${u.name} moved ${updated.ticketId} to sprint ${await resolveSprint(values.sprintId) ?? "None"}`,
+        }).catch((e) => console.error("notification failed:", e));
+      }
     }
 
     // Non-status edits also nudge open boards (status changes published above).
@@ -873,6 +1539,34 @@ app.post("/api/projects/:id/tasks/:taskId/comments", (c) =>
       .insert(taskComments)
       .values({ id: crypto.randomUUID(), taskId, authorId: u.id, body, createdAt: Date.now() })
       .returning();
+
+    const [taskRow] = await env.DB
+      .select({ assigneeId: tasks.assigneeId, createdBy: tasks.createdBy, ticketId: tasks.ticketId, title: tasks.title })
+      .from(tasks)
+      .where(eq(tasks.id, taskId));
+    if (taskRow) {
+      const commentNotifyUsers = [taskRow.createdBy, taskRow.assigneeId].filter((v): v is string => Boolean(v) && v !== u.id);
+      for (const uid of commentNotifyUsers) {
+        await createNotification({
+          db: env.DB,
+          userId: uid,
+          actorId: u.id,
+          type: "COMMENT_ADDED",
+          taskId,
+          projectId,
+          message: `${u.name} commented on ${taskRow.ticketId}: ${taskRow.title}`,
+        }).catch((e) => console.error("notification failed:", e));
+      }
+      await notifyMentionedUsers({
+        db: env.DB,
+        text: body,
+        actorId: u.id,
+        taskId,
+        projectId,
+        messagePrefix: `${u.name} on ${taskRow.ticketId}`,
+      });
+    }
+
     return c.json({ ...row, authorName: u.name }, 201);
   })
 );
@@ -1073,6 +1767,13 @@ app.post("/api/invitations/accept", (c) =>
           userId,
           role: projectInvitation.invitedRole,
         });
+        await createProjectNotification({
+          db: env.DB,
+          projectId: projectInvitation.projectId,
+          actorId: userId,
+          type: "MEMBER_ADDED",
+          message: `${projectInvitation.email} joined the project as ${projectInvitation.invitedRole}`,
+        }).catch((e) => console.error("notification failed:", e));
       }
 
       await markInvitationAccepted(env.DB, projectInvitation.id);
@@ -1141,6 +1842,269 @@ app.post("/api/dev/cron/:job", (c) =>
     if (!["daily", "weekly", "security"].includes(job)) throw new ApiError(404, "Unknown job");
     await runJob(env, job);
     return c.json({ ok: true, job });
+  })
+);
+
+// ---------- Notifications ----------
+
+app.get("/api/notifications/unread-count", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    const [{ n }] = await env.DB
+      .select({ n: sql<number>`count(*)` })
+      .from(notifications)
+      .where(and(eq(notifications.userId, u.id), isNull(notifications.readAt)));
+    return c.json({ count: n });
+  })
+);
+
+app.get("/api/notifications", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    const limit = Math.min(Number(c.req.query("limit") || 30), 100);
+    const offset = Number(c.req.query("offset") || 0);
+
+    const rows = await env.DB
+      .select({
+        id: notifications.id,
+        type: notifications.type,
+        taskId: notifications.taskId,
+        projectId: notifications.projectId,
+        message: notifications.message,
+        readAt: notifications.readAt,
+        createdAt: notifications.createdAt,
+        actorId: notifications.actorId,
+        actorName: user.name,
+      })
+      .from(notifications)
+      .leftJoin(user, eq(user.id, notifications.actorId))
+      .where(eq(notifications.userId, u.id))
+      .orderBy(sql`${notifications.createdAt} desc`)
+      .limit(limit)
+      .offset(offset);
+
+    const [{ total }] = await env.DB
+      .select({ total: sql<number>`count(*)` })
+      .from(notifications)
+      .where(eq(notifications.userId, u.id));
+
+    return c.json({ notifications: rows, total });
+  })
+);
+
+app.patch("/api/notifications/:id/read", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    const id = c.req.param("id");
+    await env.DB
+      .update(notifications)
+      .set({ readAt: Date.now() })
+      .where(and(eq(notifications.id, id), eq(notifications.userId, u.id)));
+    return c.json({ ok: true });
+  })
+);
+
+app.patch("/api/notifications/:id/unread", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    const id = c.req.param("id");
+    await env.DB
+      .update(notifications)
+      .set({ readAt: null })
+      .where(and(eq(notifications.id, id), eq(notifications.userId, u.id)));
+    return c.json({ ok: true });
+  })
+);
+
+app.patch("/api/notifications/read-all", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    await env.DB
+      .update(notifications)
+      .set({ readAt: Date.now() })
+      .where(and(eq(notifications.userId, u.id), isNull(notifications.readAt)));
+    return c.json({ ok: true });
+  })
+);
+
+app.delete("/api/notifications/:id", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    const id = c.req.param("id");
+    await env.DB
+      .delete(notifications)
+      .where(and(eq(notifications.id, id), eq(notifications.userId, u.id)));
+    return c.json({ ok: true });
+  })
+);
+
+// ---------- Export / Import ----------
+
+app.get("/api/projects/:id/export", (c) =>
+  guard(c, async () => {
+    const projectId = c.req.param("id");
+    const u = await getSessionUser(c.req.raw, env);
+    await requireProjectRole(env.DB, u, projectId);
+
+    const [project] = await env.DB
+      .select()
+      .from(projects)
+      .where(eq(projects.id, projectId));
+    if (!project) throw new ApiError(404, "Project not found");
+
+    const projectSprints = await env.DB
+      .select()
+      .from(sprints)
+      .where(eq(sprints.projectId, projectId))
+      .orderBy(asc(sprints.createdAt));
+
+    const projectTasks = await env.DB
+      .select({
+        id: tasks.id,
+        title: tasks.title,
+        description: tasks.description,
+        status: tasks.status,
+        type: tasks.type,
+        priority: tasks.priority,
+        assigneeId: tasks.assigneeId,
+        createdBy: tasks.createdBy,
+        sprintId: tasks.sprintId,
+        position: tasks.position,
+      })
+      .from(tasks)
+      .where(eq(tasks.projectId, projectId))
+      .orderBy(asc(tasks.position));
+
+    const sprintIndexMap = new Map(projectSprints.map((s, i) => [s.id, i]));
+
+    return c.json({
+      project: { name: project.name, prefix: project.prefix },
+      sprints: projectSprints.map((s) => ({ name: s.name })),
+      tasks: projectTasks.map((t) => ({
+        title: t.title,
+        description: t.description || undefined,
+        status: t.status,
+        type: t.type,
+        priority: t.priority,
+        sprint: t.sprintId != null ? sprintIndexMap.get(t.sprintId) ?? null : null,
+        assigneeId: t.assigneeId || undefined,
+      })),
+    });
+  })
+);
+
+app.post("/api/projects/import", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    requirePanelAccess(u);
+
+    const body = await readBody<{
+      project?: { name?: string; prefix?: string };
+      sprints?: { name?: string }[];
+      tasks?: {
+        title?: string;
+        description?: string;
+        status?: string;
+        type?: string;
+        priority?: string;
+        sprint?: number | null;
+        assigneeId?: string;
+      }[];
+    }>(c);
+
+    const projectName = body.project?.name?.trim();
+    const prefix = body.project?.prefix?.trim().toUpperCase();
+    if (!projectName) throw new ApiError(400, "Project name is required");
+    if (!prefix || !/^[A-Z0-9]{2,5}$/.test(prefix)) {
+      throw new ApiError(400, "Prefix must be 2-5 uppercase letters/digits");
+    }
+    if (!body.sprints?.length) throw new ApiError(400, "At least one sprint is required");
+
+    const projectId = crypto.randomUUID();
+    const now = Date.now();
+
+    const createdSprints: { id: string; sprintId: string; name: string; createdAt: number }[] = [];
+    const createdTaskIds: string[] = [];
+
+    env.DB.transaction((tx) => {
+      tx.insert(projects).values({
+        id: projectId,
+        name: projectName,
+        prefix,
+        currentTicketSequence: 0,
+        createdAt: now,
+      }).run();
+
+      tx.insert(projectMembers).values({
+        projectId,
+        userId: u.id,
+        role: "ADMIN",
+      }).run();
+
+      for (let i = 0; i < body.sprints!.length; i++) {
+        const s = body.sprints![i];
+        const sprintIdStr = `${prefix}-S${i + 1}`;
+        const sprintUuid = crypto.randomUUID();
+        tx.insert(sprints).values({
+          id: sprintUuid,
+          projectId,
+          sprintId: sprintIdStr,
+          name: s.name?.trim() || `Sprint ${i + 1}`,
+          createdAt: now,
+        }).run();
+        createdSprints.push({ id: sprintUuid, sprintId: sprintIdStr, name: s.name?.trim() || `Sprint ${i + 1}`, createdAt: now });
+      }
+
+      let ticketSeq = 0;
+      for (const t of body.tasks || []) {
+        const title = t.title?.trim();
+        if (!title) continue;
+
+        ticketSeq++;
+        const ticketId = `${prefix}-${ticketSeq}`;
+        const status = t.status && isStatus(t.status) ? t.status : "TODO";
+        const type = t.type && TASK_TYPES.includes(t.type) ? t.type : "TASK";
+        const priority = t.priority && PRIORITIES.includes(t.priority) ? t.priority : "MEDIUM";
+
+        let sprintUuid: string | null = null;
+        if (t.sprint != null && t.sprint >= 0 && t.sprint < createdSprints.length) {
+          sprintUuid = createdSprints[t.sprint].id;
+        }
+
+        const taskUuid = crypto.randomUUID();
+        tx.insert(tasks).values({
+          id: taskUuid,
+          projectId,
+          ticketId,
+          title,
+          description: sanitizeDescHtml(t.description ?? "") || null,
+          status,
+          type: type as "TASK" | "BUG",
+          priority: priority as "LOW" | "MEDIUM" | "HIGH" | "URGENT",
+          assigneeId: t.assigneeId || null,
+          sprintId: sprintUuid,
+          createdBy: u.id,
+          position: ticketSeq,
+          createdAt: now,
+          updatedAt: now,
+        }).run();
+        createdTaskIds.push(taskUuid);
+      }
+
+      tx.update(projects)
+        .set({ currentTicketSequence: ticketSeq })
+        .where(eq(projects.id, projectId))
+        .run();
+    });
+
+    publish(projectId, { type: "imported", actorId: u.id });
+
+    return c.json({
+      ok: true,
+      projectId,
+      sprintsCreated: createdSprints.length,
+      tasksCreated: createdTaskIds.length,
+    }, 201);
   })
 );
 

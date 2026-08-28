@@ -99,6 +99,10 @@ async function main(): Promise<void> {
     statements.push(
       `INSERT OR IGNORE INTO projects (id, name, prefix, current_ticket_sequence, created_at) VALUES (${q(p.id)}, ${q(p.name)}, ${q(p.prefix)}, ${p.seq}, ${daysAgo(35)});`
     );
+    // Every project starts with a default first sprint (PREFIX-S1).
+    statements.push(
+      `INSERT OR IGNORE INTO sprints (id, project_id, sprint_id, name, created_at) VALUES ('spr_${p.id}_1', ${q(p.id)}, ${q(p.prefix)}-S1, 'Sprint 1', ${daysAgo(35)});`
+    );
   }
 
   for (const [projectId, userId, role] of MEMBERS) {

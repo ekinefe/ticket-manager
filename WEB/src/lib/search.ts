@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, like, or, sql } from "drizzle-orm";
 import type { AppDB } from "../db/client";
-import { projects, tasks, user } from "../db/schema";
+import { projects, tasks, user, sprints } from "../db/schema";
 import { listAccessibleProjects, type SessionUser } from "./rbac";
 
 export function normalizeQuery(q: string): string {
@@ -52,7 +52,7 @@ export async function searchAll(db: AppDB, u: SessionUser, rawQuery: string) {
   const q = rawQuery.trim();
   const qlc = q.toLowerCase();
   const qNorm = normalizeQuery(q);
-  const empty = { tickets: [], projects: [], users: [], suggested: false };
+  const empty = { tickets: [], projects: [], users: [], sprints: [], suggested: false };
   if (qNorm.length === 0) return empty;
   // Single-character queries: match ticket IDs and project prefixes only,
   // otherwise a lone letter would match half the database.
@@ -144,5 +144,28 @@ export async function searchAll(db: AppDB, u: SessionUser, rawQuery: string) {
         .orderBy(asc(user.name))
         .limit(6);
 
-  return { tickets, projects: projectHits, users, suggested };
+  // Sprints: searchable by their human ID (PREFIX-S1) or display name, scoped
+  // to projects the user may access. Single-character queries are skipped to
+  // avoid flooding the dropdown with every "S"-prefixed ID.
+  const sprintHits = !single && ids.length > 0
+    ? await db
+        .select({
+          id: sprints.id,
+          sprintId: sprints.sprintId,
+          name: sprints.name,
+          projectId: sprints.projectId,
+          projectName: projects.name,
+          projectPrefix: projects.prefix,
+        })
+        .from(sprints)
+        .innerJoin(projects, eq(projects.id, sprints.projectId))
+        .where(and(
+          inArray(sprints.projectId, ids),
+          or(like(sprints.sprintId, `%${q}%`), like(sprints.name, `%${q}%`))
+        ))
+        .orderBy(asc(sprints.sprintId))
+        .limit(5)
+    : [];
+
+  return { tickets, projects: projectHits, users, sprints: sprintHits, suggested };
 }

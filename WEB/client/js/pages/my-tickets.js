@@ -2,7 +2,7 @@ import { api } from "../api.js";
 import { navigate } from "../main.js";
 import {
   esc, priorityPill, branchName,
-  STATUSES, STATUS_COLORS, STATUS_LABELS,
+  STATUSES, getStatusColor, STATUS_LABELS,
 } from "../ui.js";
 
 export async function renderMyTickets(root) {
@@ -56,7 +56,7 @@ function projectSection(projectId, g) {
         ${cols.map((c) => `
           <div class="column mt-col" data-status="${c.status}">
             <header class="col-head">
-              <span class="col-dot" style="background:${STATUS_COLORS[c.status]}"></span>
+              <span class="col-dot" style="background:${getStatusColor(c.status)}"></span>
               <span class="col-label">${STATUS_LABELS[c.status]}</span>
               <span class="col-count">${c.list.length}</span>
             </header>

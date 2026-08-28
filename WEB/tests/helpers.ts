@@ -11,7 +11,7 @@ process.env.TM_DB_FILE = join(dir, "test.db");
 process.env.MAIL_TRANSPORT = "file";
 
 const { app, env } = await import("../server/main.ts");
-const { user, account, projectMembers, projects } = await import("../src/db/schema.ts");
+const { user, account, projectMembers, projects, sprints } = await import("../src/db/schema.ts");
 const { getDb } = await import("../src/db/client.ts");
 
 export interface TestUser {
@@ -50,6 +50,11 @@ export async function seed(): Promise<void> {
   await db.insert(projects).values({
     id: PROJECT_ID, name: "Test Project", prefix: PREFIX,
     currentTicketSequence: 0, createdAt: Date.now(),
+  });
+  // Every project starts with a default first sprint (PREFIX-S1).
+  await db.insert(sprints).values({
+    id: "spr_default", projectId: PROJECT_ID, sprintId: `${PREFIX}-S1`,
+    name: "Sprint 1", createdAt: Date.now(),
   });
   // ayse and mehmet are project members; zeynep is not.
   for (const [userId, role] of [

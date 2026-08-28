@@ -12,12 +12,14 @@ export async function renderAdmin(root, section = "users") {
       <nav class="tabs">
         <a class="tab${section === "users" ? " active" : ""}" href="/admin/users" data-nav>Users</a>
         <a class="tab${section === "projects" ? " active" : ""}" href="/admin/projects" data-nav>Projects</a>
+        <a class="tab${section === "settings" ? " active" : ""}" href="/admin/settings" data-nav>Settings</a>
       </nav>
       <div id="admin-body"><div class="spinner"></div></div>
     </div>`;
 
   const body = root.querySelector("#admin-body");
   if (section === "projects") await renderProjectsTab(body);
+  else if (section === "settings") await renderSettingsTab(body);
   else await renderUsersTab(body);
 }
 
@@ -336,7 +338,8 @@ async function renderProjectsTab(body) {
 
   body.querySelector("#new-project-btn").addEventListener("click", () => openProjectModal(body));
   for (const btn of body.querySelectorAll("button[data-project-id]")) {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
       const p = projects.find((x) => x.id === btn.getAttribute("data-project-id"));
       confirmDeleteProject(body, p);
     });
@@ -529,5 +532,96 @@ function confirmDeleteProject(body, p) {
         }
       });
     },
+  });
+}
+
+/* ---------------- Settings ---------------- */
+
+async function renderSettingsTab(body) {
+  if (state.user.role !== "SUPER_ADMIN") {
+    body.innerHTML = `<div class="empty-note">Only Super Admins can manage settings.</div>`;
+    return;
+  }
+
+  let settings;
+  try {
+    settings = await api.get("/admin/settings");
+  } catch (err) {
+    body.innerHTML = `<div class="form-error">${esc(err.message)}</div>`;
+    return;
+  }
+
+  body.innerHTML = `
+    <div class="page-head">
+      <span class="spacer" style="flex:1"></span>
+    </div>
+    <form id="settings-form" class="settings-form">
+      <div class="settings-section">
+        <h3 class="settings-heading">Application</h3>
+        <div class="field">
+          <label for="s-app-url">App URL</label>
+          <input type="url" id="s-app-url" value="${esc(settings.app_url || "")}" placeholder="https://tickets.example.com" />
+          <div style="color:var(--text-dim);font-size:12px;margin-top:4px">Public URL used in e-mail links and invite URLs.</div>
+        </div>
+        <div class="field">
+          <label for="s-auth-secret">Better Auth Secret</label>
+          <input type="password" id="s-auth-secret" value="${esc(settings.better_auth_secret || "")}" placeholder="Leave blank to keep the env value" autocomplete="off" />
+          <div style="color:var(--text-dim);font-size:12px;margin-top:4px">Random string used for session signing. If blank the <code>BETTER_AUTH_SECRET</code> env var is used.</div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3 class="settings-heading">E-mail</h3>
+        <div class="field">
+          <label for="s-mail-transport">Transport</label>
+          <select id="s-mail-transport">
+            <option value="file" ${(settings.mail_transport || "file") === "file" ? "selected" : ""}>File (local dev)</option>
+            <option value="resend" ${settings.mail_transport === "resend" ? "selected" : ""}>Resend</option>
+          </select>
+          <div style="color:var(--text-dim);font-size:12px;margin-top:4px"><b>File</b> saves e-mails to <code>.mail-out/</code> (dev). <b>Resend</b> sends via the Resend API.</div>
+        </div>
+        <div class="field">
+          <label for="s-resend-key">Resend API Key</label>
+          <input type="password" id="s-resend-key" value="${esc(settings.resend_api_key || "")}" placeholder="re_..." autocomplete="off" />
+          <div style="color:var(--text-dim);font-size:12px;margin-top:4px">Required when transport is set to Resend. Get your key at <a href="https://resend.com/api-keys" target="_blank" rel="noopener">resend.com/api-keys</a>.</div>
+        </div>
+        <div class="field">
+          <label for="s-mail-from">From address</label>
+          <input type="email" id="s-mail-from" value="${esc(settings.mail_from || "")}" placeholder="Ticket Manager &lt;no-reply@tickets.local&gt;" />
+          <div style="color:var(--text-dim);font-size:12px;margin-top:4px">Sender address for all outgoing e-mails.</div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <span id="settings-msg" style="font-size:13px;color:var(--text-dim)"></span>
+        <span class="right">
+          <button type="submit" class="btn" id="s-save">Save settings</button>
+        </span>
+      </div>
+    </form>`;
+
+  body.querySelector("#settings-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const saveBtn = body.querySelector("#s-save");
+    const msg = body.querySelector("#settings-msg");
+    saveBtn.disabled = true;
+    msg.textContent = "";
+    try {
+      await api.patch("/admin/settings", {
+        app_url: body.querySelector("#s-app-url").value.trim(),
+        better_auth_secret: body.querySelector("#s-auth-secret").value,
+        mail_transport: body.querySelector("#s-mail-transport").value,
+        resend_api_key: body.querySelector("#s-resend-key").value,
+        mail_from: body.querySelector("#s-mail-from").value.trim(),
+      });
+      msg.textContent = "Settings saved and applied.";
+      msg.style.color = "var(--ok)";
+      toast("Settings saved", "ok");
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.style.color = "var(--danger)";
+    } finally {
+      saveBtn.disabled = false;
+    }
   });
 }

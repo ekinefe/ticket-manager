@@ -20,3 +20,28 @@ DOC/*.pdf
 .DS_Store
 Thumbs.db
 *.swp
+
+# Local / personal planning & scratch files
+wce-sprints.json
+*import-template.md
+
+# Secrets / credentials (defense in depth)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.secret
+*.token
+.credentials
+*credentials.json
+.netrc
+
+# IDE / tooling
+.idea/
+.vscode/
+*.code-workspace

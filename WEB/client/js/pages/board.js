@@ -1,7 +1,7 @@
 import { api } from "../api.js";
 import { navigate, requireAuth, state } from "../main.js";
 import {
-  STATUSES, STATUS_COLORS, STATUS_LABELS, canTransition,
+  STATUSES, getStatusColor, STATUS_LABELS, canTransition,
   esc, avatarHtml, statusPill, openModal, toast, fmtDate,
   sanitizeDesc, descToEditorHtml, isEmptyDesc,
   TASK_TYPES, TYPE_LABELS, PRIORITIES, PRIORITY_LABELS, priorityPill, branchName,
@@ -12,6 +12,8 @@ let myRole = "MEMBER";
 let tasks = [];
 let filterText = "";
 let filterAssignee = "";
+let filterSprint = "";
+let collapsedLanes = new Set();
 let boardStream = null;
 let refreshTimer = null;
 
@@ -40,7 +42,7 @@ export function closeBoardStream() {
   }
 }
 
-export async function renderBoard(root, projectId) {
+export async function renderBoard(root, projectId, initialSprint = "", initialTaskId = "") {
   if (!requireAuth(`/projects/${projectId}`)) return;
   root.innerHTML = `<div class="spinner"></div>`;
 
@@ -59,7 +61,24 @@ export async function renderBoard(root, projectId) {
     ? state.projectsCache.find((p) => p.id === projectId) : null;
   myRole = isSuper || cachedProj?.role === "ADMIN" ? "ADMIN" : "MEMBER";
 
+  // Each sprint gets its own swim lane. A deep-link (?sprint=<id>) auto-expands
+  // only that lane and collapses the rest; otherwise all lanes are expanded.
+  filterText = "";
+  filterAssignee = "";
+  collapsedLanes = new Set();
+  if (initialSprint && (initialSprint === "backlog" || project.sprints.some((s) => s.id === initialSprint))) {
+    for (const s of project.sprints) {
+      if (s.id !== initialSprint) collapsedLanes.add(s.id);
+    }
+    if (initialSprint !== "backlog") collapsedLanes.add("backlog");
+  }
+
   drawShell(root);
+
+  if (initialTaskId) {
+    const t = tasks.find((x) => x.id === initialTaskId || x.ticketId === initialTaskId);
+    if (t) requestAnimationFrame(() => taskModal(t));
+  }
 }
 
 async function renderMembers(root, projectId) {
@@ -103,6 +122,151 @@ async function renderMembers(root, projectId) {
 }
 export { renderMembers as renderMembersTab };
 
+/* ---------------- Sprints tab ---------------- */
+
+let sprintsRoot = null;
+
+function nextSprintPreview() {
+  let max = 0;
+  for (const s of project.sprints) {
+    const m = /-S(\d+)$/.exec(s.sprintId);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `${project.prefix}-S${max + 1}`;
+}
+
+async function renderSprintsTab(root, projectId) {
+  if (!requireAuth(`/projects/${projectId}/sprints`)) return;
+  root.innerHTML = `<div class="spinner"></div>`;
+
+  let proj;
+  try {
+    proj = await api.get(`/projects/${projectId}`);
+  } catch (err) {
+    root.innerHTML = `<div class="page"><div class="form-error">${esc(err.message)}</div></div>`;
+    return;
+  }
+  project = proj;
+  const isSuper = state.user.role === "SUPER_ADMIN";
+  const cachedProj = Array.isArray(state.projectsCache)
+    ? state.projectsCache.find((p) => p.id === projectId) : null;
+  myRole = isSuper || cachedProj?.role === "ADMIN" ? "ADMIN" : "MEMBER";
+
+  drawSprints(root);
+}
+export { renderSprintsTab as renderSprintsTab };
+
+function drawSprints(root) {
+  sprintsRoot = root;
+  const canManage = myRole === "ADMIN";
+  root.innerHTML = `
+    ${headHtml("sprints")}
+    <div class="page" style="max-width:920px">
+      ${canManage ? `
+      <div class="hint-card">
+        <span>Every project keeps at least one sprint. Add iterations and delete the ones you no longer need — tickets are never removed, they simply become unsprinted.</span>
+      </div>` : ""}
+      <div class="table-card">
+        <table class="data">
+          <thead><tr><th>Sprint ID</th><th>Name</th><th>Tickets</th>${canManage ? "<th></th>" : ""}</tr></thead>
+          <tbody>
+            ${project.sprints.map((s) => sprintRow(s, canManage)).join("")}
+          </tbody>
+        </table>
+      </div>
+      ${canManage ? `<div class="modal-actions" style="margin-top:14px"><button class="btn sm" id="add-sprint-btn">+ New sprint</button></div>` : ""}
+    </div>`;
+
+  bindTabs();
+  if (!canManage) return;
+
+  root.querySelector("#add-sprint-btn").addEventListener("click", () => openSprintModal(null));
+  for (const btn of root.querySelectorAll("[data-rename]")) {
+    btn.addEventListener("click", () => {
+      const s = project.sprints.find((x) => x.id === btn.getAttribute("data-rename"));
+      if (s) openSprintModal(s);
+    });
+  }
+  for (const btn of root.querySelectorAll("[data-delete]")) {
+    btn.addEventListener("click", async () => {
+      const sid = btn.getAttribute("data-delete");
+      const s = project.sprints.find((x) => x.id === sid);
+      if (!s) return;
+      if (!confirm(`Delete sprint ${s.sprintId} (${s.name})? Its ${Number(s.ticketCount ?? 0)} ticket(s) will be kept but removed from this sprint.`)) return;
+      btn.disabled = true;
+      try {
+        await api.del(`/projects/${project.id}/sprints/${sid}`);
+        toast(`${s.sprintId} deleted`, "ok");
+        project = await api.get(`/projects/${project.id}`);
+        drawSprints(sprintsRoot);
+      } catch (err) {
+        toast(err.message, "err");
+        btn.disabled = false;
+      }
+    });
+  }
+}
+
+function sprintRow(s, canManage) {
+  return `
+    <tr>
+      <td><span class="ticket-id">${esc(s.sprintId)}</span></td>
+      <td>${esc(s.name)}</td>
+      <td>${Number(s.ticketCount ?? 0)}</td>
+      <td style="text-align:right">
+        <a class="btn sm ghost" href="/projects/${encodeURIComponent(project.id)}?sprint=${encodeURIComponent(s.id)}" data-nav>Open board</a>
+        ${canManage ? `<button class="btn ghost sm" data-rename="${esc(s.id)}">Rename</button>
+        <button class="btn danger sm" data-delete="${esc(s.id)}">Delete</button>` : ""}
+      </td>
+    </tr>`;
+}
+
+function openSprintModal(existing) {
+  const isEdit = Boolean(existing);
+  openModal({
+    title: isEdit ? "Rename sprint" : "New sprint",
+    body: `
+      <div class="field">
+        <label for="sp-name">Name</label>
+        <input type="text" id="sp-name" placeholder="e.g. Sprint 2" value="${isEdit ? esc(existing.name) : ""}" />
+        ${isEdit
+          ? `<div style="color:var(--text-dim);font-size:12px;margin-top:4px">ID <span class="ticket-id">${esc(existing.sprintId)}</span> cannot be changed.</div>`
+          : `<div style="color:var(--text-dim);font-size:12px;margin-top:4px">ID is assigned automatically (<span class="ticket-id">${esc(nextSprintPreview())}</span>).</div>`}
+      </div>
+      <div class="modal-actions">
+        <span></span>
+        <span class="right">
+          <button class="btn ghost" id="sp-cancel">Cancel</button>
+          <button class="btn" id="sp-save">${isEdit ? "Save" : "Create"}</button>
+        </span>
+      </div>`,
+    onMount(modalEl, close) {
+      modalEl.querySelector("#sp-cancel").addEventListener("click", close);
+      const save = modalEl.querySelector("#sp-save");
+      save.addEventListener("click", async () => {
+        const name = modalEl.querySelector("#sp-name").value.trim();
+        if (!name) { toast("Name is required", "err"); return; }
+        save.disabled = true;
+        try {
+          if (isEdit) {
+            await api.patch(`/projects/${project.id}/sprints/${existing.id}`, { name });
+            toast("Sprint renamed", "ok");
+          } else {
+            await api.post(`/projects/${project.id}/sprints`, { name });
+            toast("Sprint created", "ok");
+          }
+          close();
+          project = await api.get(`/projects/${project.id}`);
+          drawSprints(sprintsRoot);
+        } catch (err) {
+          toast(err.message, "err");
+          save.disabled = false;
+        }
+      });
+    },
+  });
+}
+
 /* ---------------- Shell ---------------- */
 
 function headHtml(activeTab) {
@@ -116,6 +280,7 @@ function headHtml(activeTab) {
       <nav class="tabs">
         <button class="tab ${activeTab === "board" ? "active" : ""}" data-tab="board">Board (${tasks.length})</button>
         <button class="tab ${activeTab === "members" ? "active" : ""}" data-tab="members">Members (${project.members.length})</button>
+        <button class="tab ${activeTab === "sprints" ? "active" : ""}" data-tab="sprints">Sprints (${project.sprints.length})</button>
       </nav>
     </div>`;
 }
@@ -123,9 +288,9 @@ function headHtml(activeTab) {
 function bindTabs() {
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
-      navigate(btn.dataset.tab === "members"
-        ? `/projects/${project.id}/members`
-        : `/projects/${project.id}`);
+      const tab = btn.dataset.tab;
+      const base = `/projects/${project.id}`;
+      navigate(tab === "members" ? `${base}/members` : tab === "sprints" ? `${base}/sprints` : base);
     });
   });
 }
@@ -139,17 +304,34 @@ function drawShell(root) {
         <option value="">All assignees</option>
         ${project.members.map((m) => `<option value="${esc(m.userId)}">${esc(m.name)}</option>`).join("")}
       </select>
-      <span style="flex:1"></span>
-      <button class="btn sm" id="new-task-btn">+ New ticket</button>
+      <div class="btn-group">
+        <button class="btn sm ghost" id="export-btn">Export JSON</button>
+        <button class="btn sm" id="new-task-btn">+ New ticket</button>
+      </div>
     </div>
     <div class="board-scroll">
       <div class="board">
-        ${STATUSES.map((s) => columnHtml(s)).join("")}
+        ${project.sprints.map((s) => laneHtml(s)).join("")}
+        ${backlogLaneHtml()}
       </div>
     </div>`;
 
   bindTabs();
   document.getElementById("new-task-btn").addEventListener("click", () => taskModal(null));
+  document.getElementById("export-btn").addEventListener("click", async () => {
+    try {
+      const data = await api.get(`/projects/${encodeURIComponent(project.id)}/export`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project.prefix}-export.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast(err.message || "Export failed", "error");
+    }
+  });
   openBoardStream(project.id);
 
   const searchEl = document.getElementById("filter-text");
@@ -159,40 +341,64 @@ function drawShell(root) {
   assigneeEl.value = filterAssignee;
   assigneeEl.addEventListener("change", () => { filterAssignee = assigneeEl.value; refreshColumns(); });
 
+  // Lane collapse toggles
+  root.querySelectorAll(".sprint-lane-head").forEach((head) => {
+    head.addEventListener("click", (e) => {
+      if (e.target.closest("button")) return;
+      const id = head.dataset.toggle;
+      if (collapsedLanes.has(id)) collapsedLanes.delete(id);
+      else collapsedLanes.add(id);
+      drawShell(root);
+    });
+  });
+
+  // "+ Create" inside each lane column
+  root.querySelectorAll(".col-add").forEach((btn) =>
+    btn.addEventListener("click", () => taskModal(null, btn.dataset.add, btn.dataset.lane || ""))
+  );
+
   bindDragAndDrop();
   refreshColumns();
 }
 
-function visibleTasks(status) {
-  return tasks
-    .filter((t) => t.status === status)
-    .filter((t) => !filterText ||
-      t.title.toLowerCase().includes(filterText) ||
-      t.ticketId.toLowerCase().includes(filterText))
-    .filter((t) => !filterAssignee || t.assigneeId === filterAssignee)
-    .sort((a, b) => a.position - b.position);
-}
+/* ---------- Swim-lane helpers ---------- */
 
-function memberById(id) {
-  return project.members.find((m) => m.userId === id) || null;
-}
-
-// Members may only drag/edit tickets assigned to them or created by them;
-// project admins (and super admins) can modify anything.
-function canModifyTask(t) {
-  if (myRole === "ADMIN") return true;
-  return t.assigneeId === state.user.id || t.createdBy === state.user.id;
-}
-
-function columnHtml(status) {
-  const list = visibleTasks(status);
+function laneHtml(sprint) {
+  const collapsed = collapsedLanes.has(sprint.id);
   return `
-    <section class="column" data-status="${status}">
+    <section class="sprint-lane${collapsed ? " collapsed" : ""}" data-lane="${esc(sprint.id)}">
+      <div class="sprint-lane-head" data-toggle="${esc(sprint.id)}">
+        <span class="lane-arrow">${collapsed ? "\u25B6" : "\u25BC"}</span>
+        <span class="ticket-id lane-id">${esc(sprint.sprintId)}</span>
+        <span class="lane-name">${esc(sprint.name)}</span>
+        <span class="lane-count">${Number(sprint.ticketCount ?? 0)} work items</span>
+      </div>
+      ${collapsed ? "" : `<div class="lane-columns">${STATUSES.map((s) => laneColumnHtml(sprint.id, s)).join("")}</div>`}
+    </section>`;
+}
+
+function backlogLaneHtml() {
+  const count = tasks.filter((t) => !t.sprintId).length;
+  const collapsed = collapsedLanes.has("backlog");
+  return `
+    <section class="sprint-lane backlog-lane${collapsed ? " collapsed" : ""}" data-lane="backlog">
+      <div class="sprint-lane-head" data-toggle="backlog">
+        <span class="lane-arrow">${collapsed ? "\u25B6" : "\u25BC"}</span>
+        <span class="lane-name">Everything else</span>
+        <span class="lane-count">${count} work items</span>
+      </div>
+      ${collapsed ? "" : `<div class="lane-columns">${STATUSES.map((s) => laneColumnHtml("backlog", s)).join("")}</div>`}
+    </section>`;
+}
+
+function laneColumnHtml(laneId, status) {
+  return `
+    <section class="column" data-lane="${esc(laneId)}" data-status="${status}">
       <header class="col-head">
-        <span class="col-dot" style="background:${STATUS_COLORS[status]}"></span>
+        <span class="col-dot" style="background:${getStatusColor(status)}"></span>
         <span class="col-label">${STATUS_LABELS[status]}</span>
-        <span class="col-count" data-count>${list.length}</span>
-        <button class="col-add" data-add="${status}" title="Add ticket here">+</button>
+        <span class="col-count" data-count>0</span>
+        <button class="col-add" data-add="${status}" data-lane="${esc(laneId)}" title="Add ticket here">+</button>
       </header>
       <div class="col-body" data-body="${status}"></div>
     </section>`;
@@ -215,16 +421,39 @@ function cardHtml(t) {
         </span>
       </div>
       <p class="title">${esc(t.title)}</p>
-      ${t.ticketId ? `<div class="branch-line"><span class="branch-ico">&#9123;</span>${esc(branchName(t))}</div>` : ""}
     </article>`;
+}
+
+function memberById(id) {
+  return project.members.find((m) => m.userId === id) || null;
+}
+
+function canModifyTask(t) {
+  if (myRole === "ADMIN") return true;
+  return t.assigneeId === state.user.id || t.createdBy === state.user.id;
+}
+
+function visibleTasks(status, laneId) {
+  return tasks
+    .filter((t) => t.status === status)
+    .filter((t) => {
+      if (laneId === "backlog") return !t.sprintId;
+      return t.sprintId === laneId;
+    })
+    .filter((t) => !filterText ||
+      t.title.toLowerCase().includes(filterText) ||
+      t.ticketId.toLowerCase().includes(filterText))
+    .filter((t) => !filterAssignee || t.assigneeId === filterAssignee)
+    .sort((a, b) => a.position - b.position);
 }
 
 function refreshColumns() {
   document.querySelectorAll(".column").forEach((col) => {
     const status = col.dataset.status;
+    const laneId = col.dataset.lane;
     const body = col.querySelector("[data-body]");
     body.innerHTML = "";
-    const list = visibleTasks(status);
+    const list = visibleTasks(status, laneId);
     if (list.length === 0) {
       body.innerHTML = `<div class="col-empty">No tickets</div>`;
     } else {
@@ -250,10 +479,6 @@ function refreshColumns() {
       if (t) taskModal(t);
     });
   });
-
-  document.querySelectorAll(".col-add").forEach((btn) =>
-    btn.addEventListener("click", () => taskModal(null, btn.dataset.add))
-  );
 }
 
 /* ---------------- Drag & drop ---------------- */
@@ -292,6 +517,7 @@ function showIndicator(body, idx, ok) {
 function bindDragAndDrop() {
   document.querySelectorAll(".column").forEach((col) => {
     const status = col.dataset.status;
+    const laneId = col.dataset.lane;
     const body = col.querySelector("[data-body]");
     let lastOk = false;
 
@@ -305,7 +531,6 @@ function bindDragAndDrop() {
 
       const sameColumn = dragged.status === status;
       const legal = sameColumn || canTransition(dragged.status, status);
-      // Same-column moves are always allowed; cross-column must pass transition rules.
       lastOk = legal;
       e.dataTransfer.dropEffect = legal ? "move" : "none";
       col.classList.toggle("drop-ok", legal);
@@ -333,48 +558,63 @@ function bindDragAndDrop() {
         toast(`Illegal move: ${STATUS_LABELS[dragged.status]} \u2192 ${STATUS_LABELS[status]}`, "err");
         return;
       }
-      if (sameColumnOrderUnchanged(dragged, status, beforeTaskId)) return;
 
-      await moveTask(dragged, status, beforeTaskId);
+      // Determine new sprint: moving across lanes changes the sprint assignment.
+      const newSprintId = laneId === "backlog" ? null : laneId;
+      const sprintChanged = dragged.sprintId !== newSprintId;
+
+      if (sameColumn && !sprintChanged && sameColumnOrderUnchanged(dragged, status, beforeTaskId, laneId)) return;
+
+      await moveTask(dragged, status, beforeTaskId, newSprintId);
     });
   });
 }
 
-// True when a same-column drop lands back in exactly the same spot.
-function sameColumnOrderUnchanged(task, status, beforeTaskId) {
+function sameColumnOrderUnchanged(task, status, beforeTaskId, laneId) {
   if (task.status !== status) return false;
-  const ordered = visibleTasks(status);
+  const ordered = visibleTasks(status, laneId);
   const rest = ordered.filter((t) => t.id !== task.id);
   const at = beforeTaskId ? rest.findIndex((t) => t.id === beforeTaskId) : rest.length;
   const next = [...rest.slice(0, at), task, ...rest.slice(at)];
   return next.map((t) => t.id).join("|") === ordered.map((t) => t.id).join("|");
 }
 
-async function moveTask(task, newStatus, beforeTaskId) {
+async function moveTask(task, newStatus, beforeTaskId, newSprintId) {
   const oldStatus = task.status;
+  const oldSprintId = task.sprintId;
   // Optimistic local reorder
   removeLocal(task.id);
   const siblings = tasks
     .filter((t) => t.status === newStatus)
     .sort((a, b) => a.position - b.position);
   task.status = newStatus;
+  task.sprintId = newSprintId ?? oldSprintId;
   task.position = beforeTaskId
     ? localNeighborPosition(siblings, beforeTaskId)
     : (siblings.at(-1)?.position ?? 0) + 1;
   tasks.push(task);
 
+  const payload = { status: newStatus, beforeTaskId: beforeTaskId || undefined };
+  if (newSprintId !== undefined && newSprintId !== oldSprintId) {
+    payload.sprintId = newSprintId;
+  }
+
   try {
-    const updated = await api.patch(`/projects/${project.id}/tasks/${task.id}`, {
-      status: newStatus,
-      beforeTaskId: beforeTaskId || undefined,
-    });
+    const updated = await api.patch(`/projects/${project.id}/tasks/${task.id}`, payload);
     Object.assign(task, updated);
     if (oldStatus !== newStatus) {
       toast(`${task.ticketId} moved to ${STATUS_LABELS[newStatus]}`, "ok");
     }
+    if (oldSprintId !== task.sprintId) {
+      const label = task.sprintId
+        ? project.sprints.find((s) => s.id === task.sprintId)?.sprintId ?? "sprint"
+        : "backlog";
+      toast(`${task.ticketId} moved to ${label}`, "ok");
+    }
   } catch (err) {
     toast(err.message, "err");
     task.status = oldStatus;
+    task.sprintId = oldSprintId;
     try {
       tasks = await api.get(`/projects/${project.id}/tasks`);
     } catch { /* keep optimistic state */ }
@@ -408,7 +648,7 @@ function assigneeOptions(selectedId) {
     .join("");
 }
 
-function taskModal(task, presetStatus = "TODO") {
+function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
   const isEdit = Boolean(task);
   const mayEdit = !isEdit || canModifyTask(task);
   const dis = mayEdit ? "" : "disabled";
@@ -457,16 +697,40 @@ function taskModal(task, presetStatus = "TODO") {
             <div class="modal-actions">
               ${isEdit && mayEdit && myRole === "ADMIN" ? `<button type="button" class="btn danger" id="tf-delete">Delete</button>` : ""}
               ${!mayEdit ? `<span class="ro-note">Read-only &mdash; only the assignee, the ticket creator or a project admin can modify this ticket.</span>` : ""}
+              <span id="tf-savestate" class="save-state"></span>
               <span class="right">
-                <button type="button" class="btn ghost" data-close>Cancel</button>
-                ${mayEdit ? `<button type="submit" class="btn" id="tf-save">${isEdit ? "Save changes" : "Create ticket"}</button>` : ""}
+                ${mayEdit ? `<button type="submit" class="btn" id="tf-save">${isEdit ? "Save" : "Create ticket"}</button>` : ""}
+                <button type="button" class="btn ghost" data-close>${isEdit ? "Close" : "Cancel"}</button>
               </span>
             </div>
             ${isEdit ? `
             <div class="comments-block">
               <div class="activity-head">Comments</div>
               <div class="comment-box">
-                <textarea id="tf-comment-input" rows="2" placeholder="Write a comment&hellip; type @ to mention someone (Ctrl+Enter to send)"></textarea>
+                <div class="comment-rte-wrap">
+                  <div class="rte-toolbar" id="tf-comment-toolbar">
+                    <button type="button" data-cmd="bold" title="Bold"><b>B</b></button>
+                    <button type="button" data-cmd="italic" title="Italic"><i>I</i></button>
+                    <button type="button" data-cmd="underline" title="Underline"><u>U</u></button>
+                    <button type="button" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+                    <span class="rte-sep"></span>
+                    <button type="button" data-block="h2" title="Heading">H2</button>
+                    <button type="button" data-block="h3" title="Subheading">H3</button>
+                    <button type="button" data-block="p" title="Paragraph">&para;</button>
+                    <span class="rte-sep"></span>
+                    <button type="button" data-cmd="insertUnorderedList" title="Bullet list">&bull; &#8801;</button>
+                    <button type="button" data-cmd="insertOrderedList" title="Numbered list">1. &#8801;</button>
+                    <span class="rte-sep"></span>
+                    <button type="button" id="tf-comment-link" title="Insert link">&#128279;</button>
+                    <button type="button" id="tf-comment-code" title="Code block">&lt;/&gt;</button>
+                    <button type="button" id="tf-comment-image" title="Insert image">&#128444;</button>
+                    <button type="button" id="tf-comment-video" title="Insert video">&#127916;</button>
+                    <span class="rte-sep"></span>
+                    <button type="button" data-cmd="removeFormat" title="Clear formatting">&#10539;</button>
+                  </div>
+                  <input type="file" id="tf-comment-media-input" hidden />
+                  <div id="tf-comment-input" class="rte comment-rte" contenteditable="true" data-placeholder="Write a comment&hellip; type @ to mention someone (Ctrl+Enter to send)"></div>
+                </div>
                 <button type="button" class="btn sm" id="tf-comment-send">Send</button>
                 <div id="tf-mention-menu" class="mention-menu hidden"></div>
               </div>
@@ -515,6 +779,15 @@ function taskModal(task, presetStatus = "TODO") {
                 </span>
               </div>
               <div class="detail-row">
+                <span class="k">Sprint</span>
+                <span class="v">
+                  <select id="tf-sprint" ${dis}>
+                    <option value="">Backlog (no sprint)</option>
+                    ${project.sprints.map((s) => `<option value="${esc(s.id)}" ${(isEdit ? task.sprintId : presetSprintId) === s.id ? "selected" : ""}>${esc(s.sprintId)} &mdash; ${esc(s.name)}</option>`).join("")}
+                  </select>
+                </span>
+              </div>
+              <div class="detail-row">
                 <span class="k">Assignee${isEdit && mayEdit && myRole !== "ADMIN" ? " (admin only)" : ""}</span>
                 <span class="v">
                   <select id="tf-assignee" ${mayEdit && (myRole === "ADMIN" || !isEdit) ? "" : "disabled"}>${assigneeOptions(isEdit ? task.assigneeId : "")}</select>
@@ -546,6 +819,113 @@ function taskModal(task, presetStatus = "TODO") {
       modalEl.querySelector("[data-close]").addEventListener("click", close);
       const errBox = modalEl.querySelector("#task-error");
       const form = modalEl.querySelector("#task-form");
+
+      // ---- Auto-save ----
+      // Every field change persists immediately. In create mode the ticket is
+      // created automatically once a title exists; before that, edits are
+      // remembered in `pendingDraft` and flushed on creation.
+      let saveChain = Promise.resolve();
+      let created = isEdit;
+      let taskRef = task;
+      const pendingDraft = {};
+      const saveStateEl = modalEl.querySelector("#tf-savestate");
+      function setSaveState(s, msg = "") {
+        if (!saveStateEl) return;
+        saveStateEl.className = `save-state ${s}`;
+        saveStateEl.textContent =
+          s === "saving" ? "Saving…" :
+          s === "saved" ? "All changes saved" :
+          s === "error" ? (msg || "Couldn’t save — check your connection") :
+          s === "draft" ? "Start typing a title to create the ticket" : "";
+      }
+      const debounce = (fn, ms) => {
+        let t;
+        return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+      };
+      function commit(patch) {
+        saveChain = saveChain.then(() => doCommit(patch)).catch(() => {});
+        return saveChain;
+      }
+      async function doCommit(patch) {
+        if (created) {
+          setSaveState("saving");
+          const updated = await api.patch(`/projects/${project.id}/tasks/${taskRef.id}`, patch);
+          Object.assign(taskRef, updated);
+          setSaveState("saved");
+          refreshColumns();
+        } else {
+          Object.assign(pendingDraft, patch);
+          if (pendingDraft.title && pendingDraft.title.trim()) {
+            setSaveState("saving");
+            await flushCreate();
+          } else {
+            setSaveState("draft");
+          }
+        }
+      }
+      async function flushCreate() {
+        const payload = {
+          title: pendingDraft.title.trim(),
+          description: pendingDraft.description ?? "",
+          status: pendingDraft.status || presetStatus,
+          sprintId: pendingDraft.sprintId ?? (presetSprintId || null),
+          type: pendingDraft.type || "TASK",
+          priority: pendingDraft.priority || "MEDIUM",
+          assigneeId: pendingDraft.assigneeId || null,
+        };
+        const createdTask = await api.post(`/projects/${project.id}/tasks`, payload);
+        created = true;
+        taskRef = createdTask;
+        tasks.push(createdTask);
+        const h = modalEl.querySelector(".modal-head h2");
+        if (h) h.innerHTML = `<span class="ticket-id">${esc(createdTask.ticketId)}</span> Edit ticket`;
+        setSaveState("saved");
+        refreshColumns();
+        toast(`${createdTask.ticketId} created`, "ok");
+      }
+      if (!isEdit) setSaveState("draft");
+
+      // Full, explicit save of every field (manual "backup" button).
+      async function fullSave() {
+        const descHtml = sanitizeDesc(form.querySelector("#tf-desc").innerHTML);
+        const payload = {
+          title: form.querySelector("#tf-title").value.trim(),
+          description: isEmptyDesc(descHtml) ? "" : descHtml,
+        };
+        if (myRole === "ADMIN" || !isEdit) {
+          payload.assigneeId = form.querySelector("#tf-assignee").value || null;
+          payload.type = form.querySelector("#tf-type").value;
+          payload.priority = form.querySelector("#tf-priority").value;
+        }
+        const sprintVal = form.querySelector("#tf-sprint").value;
+        payload.sprintId = sprintVal || null;
+        if (isEdit) payload.status = form.querySelector("#tf-status").value;
+
+        if (created) {
+          setSaveState("saving");
+          const updated = await api.patch(`/projects/${project.id}/tasks/${taskRef.id}`, payload);
+          Object.assign(taskRef, updated);
+          setSaveState("saved");
+          refreshColumns();
+          toast(`${taskRef.ticketId} saved`, "ok");
+        } else {
+          if (!payload.title) {
+            setSaveState("draft");
+            form.querySelector("#tf-title").focus();
+            return;
+          }
+          setSaveState("saving");
+          const createdTask = await api.post(`/projects/${project.id}/tasks`, payload);
+          created = true;
+          taskRef = createdTask;
+          tasks.push(createdTask);
+          const h = modalEl.querySelector(".modal-head h2");
+          if (h) h.innerHTML = `<span class="ticket-id">${esc(createdTask.ticketId)}</span> Edit ticket`;
+          setSaveState("saved");
+          refreshColumns();
+          toast(`${createdTask.ticketId} created`, "ok");
+        }
+      }
 
       const actList = modalEl.querySelector("#tf-activity");
       if (actList) loadActivity(actList, task.id);
@@ -672,41 +1052,52 @@ function taskModal(task, presetStatus = "TODO") {
         ensureTrailingLine();
       }
 
+      // Auto-save every field as it changes.
+      if (mayEdit) {
+        const titleEl = modalEl.querySelector("#tf-title");
+        const descEl = modalEl.querySelector("#tf-desc");
+        const statusSel = modalEl.querySelector("#tf-status");
+        const sprintSel = modalEl.querySelector("#tf-sprint");
+        const prioritySel = modalEl.querySelector("#tf-priority");
+        const typeSel = modalEl.querySelector("#tf-type");
+        const assigneeSel = modalEl.querySelector("#tf-assignee");
+
+        if (statusSel && !statusSel.disabled) statusSel.addEventListener("change", () => commit({ status: statusSel.value }));
+        if (sprintSel && !sprintSel.disabled) sprintSel.addEventListener("change", () => commit({ sprintId: sprintSel.value || null }));
+        if (prioritySel && !prioritySel.disabled) prioritySel.addEventListener("change", () => commit({ priority: prioritySel.value }));
+        if (typeSel && !typeSel.disabled) typeSel.addEventListener("change", () => commit({ type: typeSel.value }));
+        if (assigneeSel && !assigneeSel.disabled) assigneeSel.addEventListener("change", () => commit({ assigneeId: assigneeSel.value || null }));
+
+        if (titleEl) {
+          const saveTitle = debounce(() => {
+            const v = titleEl.value.trim();
+            if (!v) { if (!created) setSaveState("draft"); return; }
+            commit({ title: v });
+          }, 500);
+          titleEl.addEventListener("input", saveTitle);
+        }
+        if (descEl) {
+          const saveDesc = debounce(() => {
+            const html = sanitizeDesc(descEl.innerHTML);
+            commit({ description: isEmptyDesc(html) ? "" : html });
+          }, 700);
+          descEl.addEventListener("input", saveDesc);
+        }
+      }
+
+      // Explicit save button: also catches Enter in the title field.
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
         if (!mayEdit) return;
-        errBox.classList.add("hidden");
         const saveBtn = form.querySelector("#tf-save");
-        saveBtn.disabled = true;
-        const descHtml = sanitizeDesc(form.querySelector("#tf-desc").innerHTML);
-        const payload = {
-          title: form.querySelector("#tf-title").value.trim(),
-          description: isEmptyDesc(descHtml) ? "" : descHtml,
-        };
-        if (myRole === "ADMIN" || !isEdit) {
-          payload.assigneeId = form.querySelector("#tf-assignee").value || null;
-          payload.type = form.querySelector("#tf-type").value;
-          payload.priority = form.querySelector("#tf-priority").value;
-        }
+        if (saveBtn) saveBtn.disabled = true;
         try {
-          if (isEdit) {
-            const newStatus = form.querySelector("#tf-status").value;
-            if (newStatus !== task.status) payload.status = newStatus;
-            const updated = await api.patch(`/projects/${project.id}/tasks/${task.id}`, payload);
-            Object.assign(task, updated);
-            toast(`${task.ticketId} updated`, "ok");
-          } else {
-            payload.status = form.querySelector("#tf-status").value;
-            const created = await api.post(`/projects/${project.id}/tasks`, payload);
-            tasks.push(created);
-            toast(`${created.ticketId} created`, "ok");
-          }
-          close();
-          refreshColumns();
+          await fullSave();
         } catch (err) {
-          errBox.textContent = err.message;
-          errBox.classList.remove("hidden");
-          saveBtn.disabled = false;
+          setSaveState("error", err.message);
+          toast(err.message, "err");
+        } finally {
+          if (saveBtn) saveBtn.disabled = false;
         }
       });
 
@@ -749,9 +1140,9 @@ function actText(ev) {
   const arrow = `<span class="act-arrow">&rarr;</span>`;
   switch (ev.type) {
     case "CREATED":
-      return ev.newStatus ? `created this ticket as ${statusPill(ev.newStatus)}` : "created this ticket";
+      return ev.newStatus ? `created this ticket as ${statusPill(ev.newStatus, undefined, true)}` : "created this ticket";
     case "STATUS_CHANGED":
-      return `moved ${statusPill(ev.oldStatus)} ${arrow} ${statusPill(ev.newStatus)}`;
+      return `moved ${statusPill(ev.oldStatus, undefined, true)} ${arrow} ${statusPill(ev.newStatus, undefined, true)}`;
     case "TITLE_CHANGED":
       return `renamed <del class="act-old">${esc(truncate(ev.oldValue, 80))}</del> ${arrow} <b>${esc(truncate(ev.newValue, 80))}</b>`;
     case "DESCRIPTION_CHANGED": {
@@ -762,6 +1153,8 @@ function actText(ev) {
     }
     case "ASSIGNEE_CHANGED":
       return `changed assignee <b>${esc(ev.oldValue || "Unassigned")}</b> ${arrow} <b>${esc(ev.newValue || "Unassigned")}</b>`;
+    case "SPRINT_CHANGED":
+      return `changed sprint <b>${esc(ev.oldValue || "Backlog")}</b> ${arrow} <b>${esc(ev.newValue || "Backlog")}</b>`;
     default:
       return esc(String(ev.type || "").toLowerCase().replaceAll("_", " "));
   }
@@ -796,11 +1189,15 @@ function loadActivity(listEl, taskId) {
 /* ---------- Comments (any member can comment on any ticket; @mentions supported) ---------- */
 
 function renderCommentBody(body) {
-  // Escape first, then turn @[Name](userId) tokens into mention chips.
-  return esc(body)
-    .replace(/\[@([^\]]+)\]\(([^)]+)\)/g, (_m, name, id) =>
-      `<span class="mention${id === state.user?.id ? " me" : ""}">@${name}</span>`)
-    .replaceAll("\n", "<br>");
+  // Sanitize HTML from the contenteditable, then turn @[Name](userId) tokens into mention chips.
+  let html = body
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/\bon\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/<\/?(?:iframe|object|embed|form|input|textarea|select|button|meta|link)[^>]*>/gi, "");
+  html = html.replace(/\[@([^\]]+)\]\(([^)]+)\)/g, (_m, name, id) =>
+    `<span class="mention${id === state.user?.id ? " me" : ""}">@${name}</span>`);
+  return html;
 }
 
 function commentItemHtml(c) {
@@ -817,16 +1214,113 @@ function commentItemHtml(c) {
 
 function setupComments(modalEl, listEl, taskId) {
   const input = modalEl.querySelector("#tf-comment-input");
+  const toolbar = modalEl.querySelector("#tf-comment-toolbar");
   const sendBtn = modalEl.querySelector("#tf-comment-send");
   const menu = modalEl.querySelector("#tf-mention-menu");
   let items = [];
+
+  /* Comment RTE toolbar (same as the description editor) */
+  document.execCommand("styleWithCSS", false, "false");
+  toolbar.addEventListener("mousedown", (e) => e.preventDefault());
+  toolbar.addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn || btn.disabled) return;
+    input.focus();
+    if (btn.dataset.cmd) {
+      document.execCommand(btn.dataset.cmd, false, null);
+    } else if (btn.dataset.block) {
+      document.execCommand("formatBlock", false, btn.dataset.block.toUpperCase());
+    }
+    syncActive();
+  });
+  modalEl.querySelector("#tf-comment-link").addEventListener("click", () => {
+    const url = prompt("Link URL (https://...)");
+    if (!url) return;
+    input.focus();
+    document.execCommand("createLink", false, url);
+    syncActive();
+  });
+  modalEl.querySelector("#tf-comment-code").addEventListener("click", () => {
+    input.focus();
+    const sel = window.getSelection();
+    const txt = sel && !sel.isCollapsed ? sel.toString() : "";
+    document.execCommand("insertHTML", false, `<pre><code>${esc(txt)}</code></pre><p></p>`);
+    syncActive();
+  });
+
+  /* Media upload: remember caret, pick a file, insert returned /media/ URL. */
+  const mediaInput = modalEl.querySelector("#tf-comment-media-input");
+  let savedRange = null;
+  const openPicker = (accept) => {
+    const sel = window.getSelection();
+    savedRange = sel && sel.rangeCount && input.contains(sel.anchorNode)
+      ? sel.getRangeAt(0).cloneRange() : null;
+    mediaInput.accept = accept;
+    mediaInput.click();
+  };
+  modalEl.querySelector("#tf-comment-image").addEventListener("click",
+    () => openPicker("image/png,image/jpeg,image/gif,image/webp"));
+  modalEl.querySelector("#tf-comment-video").addEventListener("click",
+    () => openPicker("video/mp4,video/webm,video/quicktime"));
+  mediaInput.addEventListener("change", async () => {
+    const file = mediaInput.files?.[0];
+    mediaInput.value = "";
+    if (!file) return;
+    toast(`Uploading ${file.name}...`);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await api.upload(`/projects/${project.id}/media`, fd);
+      input.focus();
+      if (savedRange) {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(savedRange);
+      }
+      const html = res.type.startsWith("image/")
+        ? `<img src="${esc(res.url)}" alt="${esc(file.name)}">`
+        : `<video src="${esc(res.url)}" controls playsinline></video>`;
+      document.execCommand("insertHTML", false, html + "<p><br></p>");
+      syncActive();
+      toast(`${file.name} added`, "ok");
+    } catch (err) {
+      toast(err.message || "Upload failed", "err");
+    }
+  });
+
+  /* Highlight toolbar buttons matching the formatting at the caret. */
+  const syncActive = () => {
+    if (!document.contains(input)) return;
+    const sel = window.getSelection();
+    if (!sel || !sel.anchorNode || !input.contains(sel.anchorNode)) return;
+    let block = "";
+    try { block = String(document.queryCommandValue("formatBlock")).toLowerCase(); } catch { /* noop */ }
+    toolbar.querySelectorAll("button").forEach((btn) => {
+      let on = false;
+      if (btn.dataset.cmd) {
+        try { on = document.queryCommandState(btn.dataset.cmd); } catch { /* noop */ }
+      } else if (btn.dataset.block) {
+        on = block === btn.dataset.block.toLowerCase();
+      }
+      btn.classList.toggle("active", on);
+    });
+  };
+  document.addEventListener("selectionchange", syncActive);
+  input.addEventListener("keyup", syncActive);
+  input.addEventListener("mouseup", syncActive);
+
+  /* Placeholder behavior */
+  const updatePlaceholder = () => {
+    input.classList.toggle("empty", input.textContent.trim() === "");
+  };
+  input.addEventListener("input", updatePlaceholder);
+  updatePlaceholder();
 
   const hideMenu = () => menu.classList.add("hidden");
 
   const load = () =>
     api.get(`/projects/${project.id}/tasks/${taskId}/comments`)
       .then((rows) => {
-        // Newest first.
         items = [...rows].sort((a, b) => b.createdAt - a.createdAt);
         listEl.innerHTML = items.length
           ? items.map(commentItemHtml).join("")
@@ -836,14 +1330,15 @@ function setupComments(modalEl, listEl, taskId) {
   load();
 
   const submit = async () => {
-    const body = input.value.trim();
-    if (!body) return;
+    const body = input.innerHTML.trim();
+    if (!body || input.textContent.trim() === "") return;
     sendBtn.disabled = true;
     try {
       const created = await api.post(`/projects/${project.id}/tasks/${taskId}/comments`, { body });
       items.unshift(created);
       listEl.innerHTML = items.map(commentItemHtml).join("");
-      input.value = "";
+      input.innerHTML = "";
+      updatePlaceholder();
       hideMenu();
     } catch (err) {
       toast(err.message || "Comment failed", "err");
@@ -862,15 +1357,25 @@ function setupComments(modalEl, listEl, taskId) {
   let activeIdx = 0;
 
   const applyMatch = (m) => {
-    const pos = input.selectionStart ?? input.value.length;
-    const before = input.value.slice(0, pos);
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return hideMenu();
+    const range = sel.getRangeAt(0);
+    const container = range.startContainer;
+    const offset = range.startOffset;
+    const text = container.nodeType === 3 ? container.textContent : "";
+    const before = text.slice(0, offset);
     const at = before.lastIndexOf("@");
     if (at === -1) return hideMenu();
-    const token = `@[${m.name}](${m.userId})`;
-    input.value = before.slice(0, at) + token + " " + input.value.slice(pos);
-    const newPos = at + token.length + 1;
-    input.focus();
-    input.setSelectionRange(newPos, newPos);
+    const token = `@[${m.name}](${m.userId}) `;
+    const after = text.slice(offset);
+    if (container.nodeType === 3) {
+      container.textContent = before.slice(0, at) + token + after;
+      const newPos = at + token.length;
+      range.setStart(container, newPos);
+      range.setEnd(container, newPos);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
     hideMenu();
   };
 
@@ -883,15 +1388,20 @@ function setupComments(modalEl, listEl, taskId) {
     menu.classList.remove("hidden");
     menu.querySelectorAll(".mention-item").forEach((btn) => {
       btn.addEventListener("mousedown", (e) => {
-        e.preventDefault(); // keep focus in the textarea
+        e.preventDefault();
         applyMatch(matches[Number(btn.dataset.i)]);
+        input.focus();
       });
     });
   };
 
   input.addEventListener("input", () => {
-    const pos = input.selectionStart ?? input.value.length;
-    const before = input.value.slice(0, pos);
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !input.contains(sel.anchorNode)) return hideMenu();
+    const container = sel.anchorContainer || sel.anchorNode;
+    const text = container.nodeType === 3 ? container.textContent : "";
+    const pos = container.nodeType === 3 ? sel.anchorOffset : text.length;
+    const before = text.slice(0, pos);
     const m = before.match(/(^|\s)@([^\s@]*)$/);
     if (!m) return hideMenu();
     const q = m[2].toLowerCase();
@@ -904,7 +1414,7 @@ function setupComments(modalEl, listEl, taskId) {
     if (menu.classList.contains("hidden")) return;
     if (e.key === "ArrowDown") { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, matches.length - 1); showMenu(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); showMenu(); }
-    else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); applyMatch(matches[activeIdx]); }
+    else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); applyMatch(matches[activeIdx]); input.focus(); }
     else if (e.key === "Escape") hideMenu();
   });
   input.addEventListener("blur", () => setTimeout(hideMenu, 120));

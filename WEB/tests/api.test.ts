@@ -649,3 +649,99 @@ describe("invitation expiry", () => {
     assert.equal(res.status, 410);
   });
 });
+
+describe("export / import", () => {
+  it("exports a project as JSON", async () => {
+    const res = await req(`/api/projects/${PROJECT_ID}/export`, { cookie: superCookie });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.project.name, "Test Project");
+    assert.equal(data.project.prefix, PREFIX);
+    assert.ok(Array.isArray(data.sprints));
+    assert.ok(data.sprints.length >= 1);
+    assert.ok(Array.isArray(data.tasks));
+  });
+
+  it("rejects export from non-member", async () => {
+    const res = await req(`/api/projects/${PROJECT_ID}/export`, { cookie: outsider });
+    assert.equal(res.status, 403);
+  });
+
+  it("imports a new project from JSON", async () => {
+    const payload = {
+      project: { name: "Imported Project", prefix: "IMP" },
+      sprints: [
+        { name: "Phase 1" },
+        { name: "Phase 2" },
+      ],
+      tasks: [
+        { title: "Task one", status: "TODO", priority: "HIGH", sprint: 0 },
+        { title: "Task two", status: "IN_PROGRESS", type: "BUG", sprint: 0 },
+        { title: "Task three", status: "DONE", sprint: 1, assigneeId: "u_ayse" },
+        { title: "No sprint task", status: "TODO" },
+      ],
+    };
+    const res = await req("/api/projects/import", { method: "POST", cookie: superCookie, body: payload });
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.equal(data.ok, true);
+    assert.ok(data.projectId);
+    assert.equal(data.sprintsCreated, 2);
+    assert.equal(data.tasksCreated, 4);
+
+    // Verify project exists
+    const projRes = await req(`/api/projects/${data.projectId}`, { cookie: superCookie });
+    assert.equal(projRes.status, 200);
+    const proj = await projRes.json();
+    assert.equal(proj.name, "Imported Project");
+    assert.equal(proj.sprints.length, 2);
+    assert.equal(proj.sprints[0].name, "Phase 1");
+    assert.equal(proj.sprints[1].name, "Phase 2");
+
+    // Verify tickets were created with correct IDs (sort by ticketId for stable order)
+    const taskRes = await req(`/api/projects/${data.projectId}/tasks`, { cookie: superCookie });
+    assert.equal(taskRes.status, 200);
+    const tasks = (await taskRes.json()).sort((a: any, b: any) => a.ticketId.localeCompare(b.ticketId));
+    assert.equal(tasks[0].ticketId, "IMP-1");
+    assert.equal(tasks[0].title, "Task one");
+    assert.equal(tasks[0].priority, "HIGH");
+    assert.equal(tasks[1].ticketId, "IMP-2");
+    assert.equal(tasks[1].type, "BUG");
+    assert.equal(tasks[2].ticketId, "IMP-3");
+    assert.equal(tasks[2].assigneeId, "u_ayse");
+    assert.equal(tasks[3].ticketId, "IMP-4");
+    assert.equal(tasks[3].sprintId, null);
+  });
+
+  it("rejects import with missing project name", async () => {
+    const res = await req("/api/projects/import", {
+      method: "POST", cookie: superCookie,
+      body: { sprints: [{ name: "S1" }], tasks: [] },
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it("rejects import with invalid prefix", async () => {
+    const res = await req("/api/projects/import", {
+      method: "POST", cookie: superCookie,
+      body: { project: { name: "X", prefix: "x" }, sprints: [{ name: "S1" }], tasks: [] },
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it("rejects import with no sprints", async () => {
+    const res = await req("/api/projects/import", {
+      method: "POST", cookie: superCookie,
+      body: { project: { name: "X", prefix: "XX" }, sprints: [], tasks: [] },
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it("rejects import from non-admin", async () => {
+    const res = await req("/api/projects/import", {
+      method: "POST", cookie: member1,
+      body: { project: { name: "X", prefix: "XX" }, sprints: [{ name: "S1" }], tasks: [] },
+    });
+    assert.ok(res.status === 401 || res.status === 403, `expected 401 or 403, got ${res.status}`);
+  });
+});
