@@ -41,9 +41,9 @@ function jobForCron(cron: string): string | null {
   switch (cron) {
     case "0 0 * * *":
       return "daily";
-    case "0 22 * * 0":
+    case "0 22 * * 1": // Cloudflare cron: 1 = Sunday
       return "weekly";
-    case "0 21 * * 0":
+    case "0 21 * * 1": // Cloudflare cron: 1 = Sunday
       return "security";
     default:
       return null;

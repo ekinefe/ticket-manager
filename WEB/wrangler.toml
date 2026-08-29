@@ -69,9 +69,10 @@ database_id = "e0d6576a-7c8d-47f2-a8cb-ccf81d3017fb"
 #   daily   -> runDailyDigest  (daily 00:00)
 #   weekly  -> runWeeklyReport (Sunday 22:00)
 #   security-> runSecurityScan (Sunday 21:00)
+# NOTE: Cloudflare cron follows Quartz where day-of-week 1 = Sunday (0 is invalid).
 [triggers]
 crons = [
   "0 0 * * *",    # daily digest
-  "0 22 * * 0",   # weekly report (Sun)
-  "0 21 * * 0",   # security scan (Sun)
+  "0 22 * * 1",   # weekly report (Sun)
+  "0 21 * * 1",   # security scan (Sun)
 ]
