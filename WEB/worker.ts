@@ -1,7 +1,7 @@
 import type { D1Database, R2Bucket, ExecutionContext } from "@cloudflare/workers-types";
 import { createApp } from "./src/app";
 import { createD1Db } from "./src/db/d1";
-import { createR2Storage } from "./src/lib/media";
+import { createR2Storage, createDisabledStorage } from "./src/lib/media";
 import { runJob } from "./src/cron/scheduler";
 
 // Raw bindings wrangler injects from wrangler.toml ([d1_databases] DB,
@@ -20,11 +20,12 @@ interface WorkerEnv {
 
 function buildEnv(raw: WorkerEnv): Env {
   if (!raw.DB) throw new Error("D1 binding `DB` is missing");
-  if (!raw.BUCKET) throw new Error("R2 binding `BUCKET` is missing");
+  // R2 is optional: until an attachments bucket is provisioned, uploads are
+  // disabled (HTTP 503) rather than crashing the whole app. See media.ts.
   return {
     DB: createD1Db(raw.DB),
     BUCKET: raw.BUCKET,
-    STORAGE: createR2Storage(raw.BUCKET),
+    STORAGE: raw.BUCKET ? createR2Storage(raw.BUCKET) : createDisabledStorage(),
     APP_URL: raw.APP_URL ?? "http://localhost:8788",
     MAIL_FROM: raw.MAIL_FROM ?? "Ticket Manager <no-reply@tickets.local>",
     MAIL_TRANSPORT: (raw.MAIL_TRANSPORT as Env["MAIL_TRANSPORT"]) ?? "resend",

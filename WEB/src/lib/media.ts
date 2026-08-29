@@ -1,4 +1,5 @@
 import type { R2Bucket } from "@cloudflare/workers-types";
+import { ApiError } from "./http";
 
 // Storage-agnostic media (attachment) layer. Local development persists to the
 // filesystem; Cloudflare Workers persists to R2. The upload/serve/gc code uses
@@ -14,6 +15,22 @@ export interface MediaStorage {
   get(key: string): Promise<MediaObject | null>;
   remove(key: string): Promise<void>;
   list(): Promise<string[]>;
+}
+
+// ---- Disabled (no backend configured) ----
+// Used when no attachament store is configured (e.g. R2 not enabled yet on the
+// Workers deploy). Uploads are rejected with a clear message instead of the
+// whole app crashing. Remove this once a storage backend is provisioned.
+export function createDisabledStorage(): MediaStorage {
+  const disabled = () => {
+    throw new ApiError(503, "File uploads are not yet configured on this deployment");
+  };
+  return {
+    put: disabled,
+    get: async () => null,
+    remove: disabled,
+    list: async () => [],
+  };
 }
 
 // ---- R2 (Cloudflare Workers) ----

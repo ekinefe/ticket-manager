@@ -35,9 +35,12 @@ binding = "DB"
 database_name = "ticket-manager-preview"
 database_id = "73ea90c7-2db3-4566-825b-e884bfc29b35"
 
-[[env.preview.r2_buckets]]
-binding = "BUCKET"
-bucket_name = "ticket-manager-uploads-preview"
+# R2 attachments are DISABLED for v1 (no metered/billed storage). The Worker
+# falls back to a "disabled storage" that returns HTTP 503 on upload until a
+# bucket is provisioned. Uncomment below when enabling attachments:
+# [[env.preview.r2_buckets]]
+# binding = "BUCKET"
+# bucket_name = "ticket-manager-uploads-preview"
 
 # -----------------------------------------------------------------------------
 # PRODUCTION environment — used for the production branch / live deploys.
@@ -55,9 +58,11 @@ binding = "DB"
 database_name = "ticket-manager-prod"
 database_id = "e0d6576a-7c8d-47f2-a8cb-ccf81d3017fb"
 
-[[env.production.r2_buckets]]
-binding = "BUCKET"
-bucket_name = "ticket-manager-uploads-prod"
+# R2 attachments are DISABLED for v1 (no metered/billed storage). See the same
+# note under [env.preview]. Uncomment when enabling attachments:
+# [[env.production.r2_buckets]]
+# binding = "BUCKET"
+# bucket_name = "ticket-manager-uploads-prod"
 
 # Workers Cron Triggers. Run these once per environment (they apply to the
 # default environment; add [env.<name>.triggers] if you want per-env crons).
