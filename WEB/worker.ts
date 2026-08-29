@@ -1,14 +1,15 @@
-import type { D1Database, R2Bucket, ExecutionContext } from "@cloudflare/workers-types";
+import type { D1Database, R2Bucket, ExecutionContext, Fetcher } from "@cloudflare/workers-types";
 import { createApp } from "./src/app";
 import { createD1Db } from "./src/db/d1";
 import { createR2Storage, createDisabledStorage } from "./src/lib/media";
 import { runJob } from "./src/cron/scheduler";
 
 // Raw bindings wrangler injects from wrangler.toml ([d1_databases] DB,
-// [r2_buckets] BUCKET) plus runtime env vars / secrets.
+// [r2_buckets] BUCKET, [assets] ASSETS) plus runtime env vars / secrets.
 interface WorkerEnv {
   DB: D1Database;
   BUCKET?: R2Bucket;
+  ASSETS?: Fetcher;
   APP_URL?: string;
   MAIL_FROM?: string;
   MAIL_TRANSPORT?: string;
@@ -52,6 +53,19 @@ function jobForCron(cron: string): string | null {
 
 export default {
   async fetch(request: Request, rawEnv: WorkerEnv, ctx: ExecutionContext) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const isApp = path === "/api" || path.startsWith("/api/") || path.startsWith("/media/");
+
+    // API + media routes go to the Hono app. Everything else (the vanilla-JS
+    // SPA) is delegated to the ASSETS binding: it serves the real file or, via
+    // not_found_handling = single-page-application, falls back to index.html
+    // so client-side routes (/setup, /login, board deep-links, refresh) work.
+    if (isApp) {
+      const env = buildEnv(rawEnv);
+      return createApp(env).fetch(request, rawEnv as never, ctx);
+    }
+    if (rawEnv.ASSETS) return rawEnv.ASSETS.fetch(request);
     const env = buildEnv(rawEnv);
     return createApp(env).fetch(request, rawEnv as never, ctx);
   },

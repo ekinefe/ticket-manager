@@ -15,10 +15,12 @@ compatibility_flags = ["nodejs_compat"]
 
 # Static assets: serve the current vanilla-JS client from WEB/client.
 # Hono owns every /api/* route; Cloudflare serves client files directly.
-# SPA fallback: any non-API path (e.g. /setup, /login, board deep-links) that
-# doesn't match a real file serves client/index.html for client-side routing.
+# ASSETS binding + single-page-application: the Worker delegates non-API GETs to
+# env.ASSETS, which serves the real file or falls back to client/index.html for
+# client-side routes (/setup, /login, board deep-links, refresh).
 [assets]
 directory = "./client"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
 
 # -----------------------------------------------------------------------------
@@ -32,6 +34,7 @@ name = "ticket-manager-preview"
 
 [env.preview.assets]
 directory = "./client"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
 
 [[env.preview.d1_databases]]
@@ -56,6 +59,7 @@ name = "ticket-manager-production"
 
 [env.production.assets]
 directory = "./client"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
 
 [[env.production.d1_databases]]
