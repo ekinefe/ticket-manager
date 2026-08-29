@@ -4,13 +4,20 @@ compatibility_date = "2026-01-01"
 compatibility_flags = ["nodejs_compat"]
 
 # -----------------------------------------------------------------------------
-# TOP-LEVEL config is used for LOCAL DEVELOPMENT only (`npm run dev` boots the
-# Node bootstrap, so this block mainly feeds `wrangler dev`). Real deployments
-# use the named environments below: [env.preview] and [env.production].
+# SINGLE-WORKER config (Cloudflare Git-integration model).
 #
-# Cloudflare bindings are NON-INHERITABLE: every named environment must
-# redeclare every binding it uses (D1, R2, assets). If you add a binding here,
-# mirror it in BOTH environments or it will silently be missing there.
+# One Worker (`ticket-manager`) serves BOTH:
+#   - production  -> https://ticket-manager.gnrdigital.workers.dev
+#                    (deploys from the `production` git branch)
+#   - preview/branch -> automatic `*-ticket-manager...workers.dev` aliases
+#                    (non-production branches, e.g. `dev`, via
+#                     `wrangler versions upload` in the dashboard Builds config)
+#
+# Previously this used two separate Wrangler environments
+# ([env.preview] + [env.production]) that created TWO Workers
+# (`ticket-manager-pre` + `ticket-manager`). That split is removed; the
+# `ticket-manager-pre` Worker will be deleted after the consolidated worker is
+# verified. The `ticket-manager-preview` D1 stays as a backup only.
 # -----------------------------------------------------------------------------
 
 # Static assets: serve the current vanilla-JS client from WEB/client.
@@ -23,79 +30,34 @@ directory = "./client"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
-# -----------------------------------------------------------------------------
-# PREVIEW environment — used for `dev` branch / pull-request previews.
-# More workers.*.cloudflare.dev
-# Create with: wrangler d1 create ticket-manager-preview
-#              wrangler r2 bucket create ticket-manager-uploads-preview
-# -----------------------------------------------------------------------------
-[env.preview]
-name = "ticket-manager-pre"
-
-[env.preview.vars]
-APP_URL = "https://ticket-manager-pre.gnrdigital.workers.dev"
-MAIL_FROM = "Ticket Manager <no-reply@ticket-manager.gnrdigital.workers.dev>"
-
-[env.preview.assets]
-directory = "./client"
-binding = "ASSETS"
-not_found_handling = "single-page-application"
-
-[[env.preview.d1_databases]]
-binding = "DB"
-database_name = "ticket-manager-preview"
-database_id = "73ea90c7-2db3-4566-825b-e884bfc29b35"
-
-# R2 attachments are DISABLED for v1 (no metered/billed storage). The Worker
-# falls back to a "disabled storage" that returns HTTP 503 on upload until a
-# bucket is provisioned. Uncomment below when enabling attachments:
-# [[env.preview.r2_buckets]]
-# binding = "BUCKET"
-# bucket_name = "ticket-manager-uploads-preview"
-
-# -----------------------------------------------------------------------------
-# PRODUCTION environment — used for the production branch / live deploys.
-# Create with: wrangler d1 create ticket-manager-prod
-#              wrangler r2 bucket create ticket-manager-uploads-prod
-# -----------------------------------------------------------------------------
-[env.production]
-name = "ticket-manager"
-
-[env.production.vars]
+[vars]
 APP_URL = "https://ticket-manager.gnrdigital.workers.dev"
 MAIL_FROM = "Ticket Manager <no-reply@ticket-manager.gnrdigital.workers.dev>"
 
-[env.production.assets]
-directory = "./client"
-binding = "ASSETS"
-not_found_handling = "single-page-application"
-
-[[env.production.d1_databases]]
+# Primary database (production). `ticket-manager-preview` is retained as a
+# backup database only and is intentionally not bound here.
+[[d1_databases]]
 binding = "DB"
 database_name = "ticket-manager-prod"
 database_id = "e0d6576a-7c8d-47f2-a8cb-ccf81d3017fb"
 
-# R2 attachments are DISABLED for v1 (no metered/billed storage). See the same
-# note under [env.preview]. Uncomment when enabling attachments:
-# [[env.production.r2_buckets]]
+# R2 attachments are DISABLED for v1 (no metered/billed storage). The Worker
+# falls back to a "disabled storage" that returns HTTP 503 on upload until a
+# bucket is provisioned. Uncomment below when enabling attachments:
+# [[r2_buckets]]
 # binding = "BUCKET"
 # bucket_name = "ticket-manager-uploads-prod"
 
-# Scheduled (cron) jobs run ONLY on production. The Workers FREE plan caps total
-# cron triggers at 5 per ACCOUNT; preview uses none to stay under the limit, and
-# running daily/weekly/security jobs against production data is also the correct
-# behavior (preview is only for testing).
+# Scheduled (cron) jobs. Preview/branch versions (wrangler versions upload) do
+# not add cron triggers, so these run only on the active production deployment.
+# The Workers FREE plan caps total cron triggers at 5 per ACCOUNT.
 #   daily   -> runDailyDigest  (daily 00:00)
 #   weekly  -> runWeeklyReport (Sunday 22:00)
 #   security-> runSecurityScan (Sunday 21:00)
 # NOTE: Cloudflare cron follows Quartz where day-of-week 1 = Sunday (0 invalid).
-[env.production.triggers]
+[triggers]
 crons = [
   "0 0 * * *",    # daily digest
   "0 22 * * 1",   # weekly report (Sun)
   "0 21 * * 1",   # security scan (Sun)
 ]
-
-# Preview: explicitly NO cron triggers (keeps account under the 5-trigger cap).
-[env.preview.triggers]
-crons = []
