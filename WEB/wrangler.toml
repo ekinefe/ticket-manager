@@ -64,15 +64,21 @@ database_id = "e0d6576a-7c8d-47f2-a8cb-ccf81d3017fb"
 # binding = "BUCKET"
 # bucket_name = "ticket-manager-uploads-prod"
 
-# Workers Cron Triggers. Run these once per environment (they apply to the
-# default environment; add [env.<name>.triggers] if you want per-env crons).
+# Scheduled (cron) jobs run ONLY on production. The Workers FREE plan caps total
+# cron triggers at 5 per ACCOUNT; preview uses none to stay under the limit, and
+# running daily/weekly/security jobs against production data is also the correct
+# behavior (preview is only for testing).
 #   daily   -> runDailyDigest  (daily 00:00)
 #   weekly  -> runWeeklyReport (Sunday 22:00)
 #   security-> runSecurityScan (Sunday 21:00)
-# NOTE: Cloudflare cron follows Quartz where day-of-week 1 = Sunday (0 is invalid).
-[triggers]
+# NOTE: Cloudflare cron follows Quartz where day-of-week 1 = Sunday (0 invalid).
+[env.production.triggers]
 crons = [
   "0 0 * * *",    # daily digest
   "0 22 * * 1",   # weekly report (Sun)
   "0 21 * * 1",   # security scan (Sun)
 ]
+
+# Preview: explicitly NO cron triggers (keeps account under the 5-trigger cap).
+[env.preview.triggers]
+crons = []
