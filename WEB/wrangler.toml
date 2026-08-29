@@ -30,7 +30,7 @@ not_found_handling = "single-page-application"
 #              wrangler r2 bucket create ticket-manager-uploads-preview
 # -----------------------------------------------------------------------------
 [env.preview]
-name = "ticket-manager-preview"
+name = "ticket-manager-pre"
 
 [env.preview.assets]
 directory = "./client"
@@ -55,7 +55,7 @@ database_id = "73ea90c7-2db3-4566-825b-e884bfc29b35"
 #              wrangler r2 bucket create ticket-manager-uploads-prod
 # -----------------------------------------------------------------------------
 [env.production]
-name = "ticket-manager-production"
+name = "ticket-manager"
 
 [env.production.assets]
 directory = "./client"

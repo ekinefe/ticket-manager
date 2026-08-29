@@ -169,8 +169,22 @@ directory = "client"                # serve current vanilla-JS frontend
 
 ## 10. Progress (updated 2026-08-29)
 
+### Live deployment
+
+- **Production:** `https://ticket-manager.gnrdigital.workers.dev`
+  (Worker `ticket-manager`, D1 `ticket-manager-prod`, cron daily/weekly/security)
+- **Preview:** `https://ticket-manager-pre.gnrdigital.workers.dev`
+  (Worker `ticket-manager-pre`, D1 `ticket-manager-preview`, no cron)
+- Both use the **`gnrdigital`** account workers.dev subdomain (changed from
+  `ekinefegnr`). Old workers `ticket-manager-production` / `ticket-manager-preview`
+  were deleted after the rename.
+- **R2 attachments disabled** for v1 (uploads return 503 until storage is
+  provisioned) — no metered/billed storage.
+- **First-run setup:** `/setup` bootstraps the initial SUPER_ADMIN; admin panel
+  at `/admin` handles roles/memberships.
+
 The backend migration to a Cloudflare-ready layout is **DONE on the `dev` /
-`production` branches** (commit `41d4856`):
+`production` branches**:
 
 - Single Hono app factory (`WEB/src/app.ts`) — the routes live here once.
 - `server/main.ts` slimmed to a local Node bootstrap (`npm run dev`/`test`).
@@ -204,9 +218,9 @@ Branch layout for deploys:
    - `npx wrangler d1 execute ticket-manager-preview --file migrations/0001_init.sql`
    - (repeat for 0002..0009, then same for `ticket-manager-prod`)
 5. Connect GitHub in the dashboard to BOTH environment Workers
-   (`ticket-manager-preview`, `ticket-manager-production`); set branch controls
-   and deploy commands with `--env preview` / `--env production` (see the
-   Workers Builds "Advanced Setups" docs).
+   (`ticket-manager` = production, `ticket-manager-pre` = preview); set branch
+   controls and deploy commands with `--env production` / `--env preview` (see
+   the Workers Builds "Advanced Setups" docs).
 6. Deploy: `npx wrangler deploy --env preview` and
    `npx wrangler deploy --env production`.
 
