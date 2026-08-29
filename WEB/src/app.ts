@@ -28,6 +28,8 @@ import {
   findUserIdByEmail,
   hasPendingPasswordReset,
   validatePasswordReset,
+  changePassword,
+  verifyUserPassword,
 } from "./lib/password-reset";
 import { clientIp, rateLimit } from "./lib/ratelimit";
 import { renderTemplate, htmlToText } from "./lib/mail/templates";
@@ -174,6 +176,22 @@ app.post("/api/auth/reset-password", (c) =>
     const body = await readBody<{ token?: string; password?: string }>(c);
     const userId = await validatePasswordReset(env.DB, body.token ?? "");
     await applyPasswordReset(env.DB, userId, body.password ?? "");
+    return c.json({ ok: true });
+  })
+);
+
+// Authenticated self-service password change (no e-mail required).
+app.post("/api/auth/change-password", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    const body = await readBody<{ currentPassword?: string; newPassword?: string }>(c);
+    if (!body.currentPassword) throw new ApiError(400, "Current password is required");
+    if (!body.newPassword || body.newPassword.length < 8) {
+      throw new ApiError(400, "New password must be at least 8 characters");
+    }
+    const ok = await verifyUserPassword(env.DB, u.id, body.currentPassword);
+    if (!ok) throw new ApiError(400, "Current password is incorrect");
+    await changePassword(env.DB, u.id, body.newPassword);
     return c.json({ ok: true });
   })
 );
@@ -487,6 +505,21 @@ app.patch("/api/admin/users/:id", (c) =>
       .returning({ id: user.id, email: user.email, role: user.role });
     if (!updated) throw new ApiError(404, "User not found");
     return c.json(updated);
+  })
+);
+
+app.post("/api/admin/users/:id/password", (c) =>
+  guard(c, async () => {
+    const actor = await getSessionUser(c.req.raw, env);
+    requireSuperAdmin(actor);
+    const id = c.req.param("id");
+    const body = await readBody<{ password?: string }>(c);
+    if (!body.password || body.password.length < 8) {
+      throw new ApiError(400, "Password must be at least 8 characters");
+    }
+    // Reset the target's password and revoke their sessions (forces re-login).
+    await applyPasswordReset(env.DB, id, body.password);
+    return c.json({ ok: true });
   })
 );
 

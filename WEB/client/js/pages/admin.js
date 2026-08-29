@@ -73,12 +73,61 @@ async function renderUsersTab(body) {
     openInviteUserModal(() => renderUsersTab(body))
   );
 
+  appendChangeOwnPassword(body);
+
   for (const tr of body.querySelectorAll("tr[data-user-id]")) {
     tr.addEventListener("click", () => {
       const u = users.find((x) => x.id === tr.getAttribute("data-user-id"));
       if (u) openUserModal(u, () => renderUsersTab(body));
     });
   }
+}
+
+/* ---------------- Change my own password ---------------- */
+
+function appendChangeOwnPassword(body) {
+  const wrap = document.createElement("div");
+  wrap.className = "table-card";
+  wrap.style.marginTop = "16px";
+  wrap.innerHTML = `
+    <div style="font-weight:700;margin-bottom:10px">Change your password</div>
+    <form id="change-pw-form" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+      <div class="field" style="margin:0">
+        <label for="cp-current">Current password</label>
+        <input type="password" id="cp-current" autocomplete="current-password" required />
+      </div>
+      <div class="field" style="margin:0">
+        <label for="cp-new">New password (min 8 chars)</label>
+        <input type="password" id="cp-new" autocomplete="new-password" required />
+      </div>
+      <button class="btn" type="submit" id="cp-btn">Update password</button>
+      <span id="cp-msg" style="font-size:13px;color:var(--text-dim)"></span>
+    </form>`;
+  body.appendChild(wrap);
+
+  wrap.querySelector("#change-pw-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = wrap.querySelector("#cp-btn");
+    const msg = wrap.querySelector("#cp-msg");
+    btn.disabled = true;
+    msg.textContent = "";
+    try {
+      await api.changePassword(
+        wrap.querySelector("#cp-current").value,
+        wrap.querySelector("#cp-new").value
+      );
+      msg.textContent = "Password updated.";
+      msg.style.color = "var(--ok)";
+      wrap.querySelector("#cp-current").value = "";
+      wrap.querySelector("#cp-new").value = "";
+      toast("Password updated", "ok");
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.style.color = "var(--danger)";
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 
 function confirmDeleteUser(u, reload, closeEditor) {
@@ -255,13 +304,17 @@ async function openUserModal(u, reload) {
       </div>
 
       <div class="modal-actions">
-        ${isSelf ? "<span></span>" : `<button class="btn danger" id="um-delete">Delete user</button>`}
+        ${state.user.role === "SUPER_ADMIN"
+          ? `<button class="btn ghost" id="um-password" style="color:var(--danger)">Set password</button>`
+          : isSelf ? "<span></span>" : `<button class="btn danger" id="um-delete">Delete user</button>`}
         <span class="right">
           <button class="btn ghost" id="um-cancel">Cancel</button>
           <button class="btn" id="um-save">Save</button>
         </span>
       </div>`,
     onMount(modalEl, close) {
+      const setPwBtn = modalEl.querySelector("#um-password");
+      if (setPwBtn) setPwBtn.addEventListener("click", () => openSetPasswordModal(detail, reload, close));
       const delBtn = modalEl.querySelector("#um-delete");
       if (delBtn) delBtn.addEventListener("click", () => confirmDeleteUser(detail, reload, close));
       // enable/disable the project role select with the checkbox
@@ -299,6 +352,47 @@ async function openUserModal(u, reload) {
           reload();
         } catch (err) {
           saveBtn.disabled = false;
+          toast(err.message, "err");
+        }
+      });
+    },
+  });
+}
+
+/* ---------------- Set a user's password (super admin) ---------------- */
+
+function openSetPasswordModal(u, reload) {
+  openModal({
+    title: `Set password for ${u.name}`,
+    body: `
+      <div class="field">
+        <label for="sp-password">New password (min 8 chars)</label>
+        <input type="password" id="sp-password" autocomplete="new-password" required />
+        <div style="color:var(--text-dim);font-size:12px;margin-top:6px">
+          This resets the account password and signs the user out everywhere.
+          No e-mail is required.
+        </div>
+      </div>
+      <div class="modal-actions">
+        <span></span>
+        <span class="right">
+          <button class="btn ghost" id="sp-cancel">Cancel</button>
+          <button class="btn" id="sp-save">Set password</button>
+        </span>
+      </div>`,
+    onMount(modalEl, close) {
+      modalEl.querySelector("#sp-cancel").addEventListener("click", close);
+      modalEl.querySelector("#sp-save").addEventListener("click", async () => {
+        const btn = modalEl.querySelector("#sp-save");
+        btn.disabled = true;
+        try {
+          const password = modalEl.querySelector("#sp-password").value;
+          await api.adminSetPassword(u.id, password);
+          toast(`Password set for ${u.name}`, "ok");
+          close();
+          reload();
+        } catch (err) {
+          btn.disabled = false;
           toast(err.message, "err");
         }
       });

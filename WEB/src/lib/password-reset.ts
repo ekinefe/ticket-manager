@@ -1,5 +1,5 @@
 import { and, eq, isNull, gt } from "drizzle-orm";
-import { hashPassword } from "better-auth/crypto";
+import { hashPassword, verifyPassword } from "better-auth/crypto";
 import { account, passwordResets, session, user } from "../db/schema";
 import type { AppDB } from "../db/client";
 import { getDb } from "../db/client";
@@ -95,4 +95,37 @@ export async function findUserIdByEmail(db: AppDB, email: string): Promise<strin
     .from(user)
     .where(eq(user.email, email));
   return row?.id ?? null;
+}
+
+/** Returns the stored credential password hash for a user, or null if absent. */
+export async function getPasswordHash(db: AppDB, userId: string): Promise<string | null> {
+  const [row] = await getDb(db)
+    .select({ password: account.password })
+    .from(account)
+    .where(and(eq(account.userId, userId), eq(account.providerId, "credential")));
+  return row?.password ?? null;
+}
+
+/** Verifies a plaintext password against the stored hash without creating a session. */
+export async function verifyUserPassword(db: AppDB, userId: string, plaintext: string): Promise<boolean> {
+  const hash = await getPasswordHash(db, userId);
+  if (!hash) return false;
+  return verifyPassword({ hash, password: plaintext });
+}
+
+/**
+ * Sets a new password for a user's credential account. Unlike applyPasswordReset
+ * this keeps the user's existing sessions valid (used for self-service changes).
+ */
+export async function changePassword(db: AppDB, userId: string, newPassword: string): Promise<void> {
+  if (!newPassword || newPassword.length < 8) {
+    throw new ApiError(400, "Password must be at least 8 characters");
+  }
+  const passwordHash = await hashPassword(newPassword);
+  const updated = await getDb(db)
+    .update(account)
+    .set({ password: passwordHash })
+    .where(and(eq(account.userId, userId), eq(account.providerId, "credential")))
+    .returning({ userId: account.userId });
+  if (updated.length === 0) throw new ApiError(404, "No password credential found for this account");
 }

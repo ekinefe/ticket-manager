@@ -55,4 +55,18 @@ export const api = {
   signOut() {
     return fetch("/api/auth/sign-out", { method: "POST", credentials: "same-origin" });
   },
+
+  async changePassword(currentPassword, newPassword) {
+    return request("/auth/change-password", {
+      method: "POST",
+      body: { currentPassword, newPassword },
+    });
+  },
+
+  async adminSetPassword(userId, password) {
+    return request(`/admin/users/${userId}/password`, {
+      method: "POST",
+      body: { password },
+    });
+  },
 };
