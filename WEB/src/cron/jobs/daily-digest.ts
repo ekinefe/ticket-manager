@@ -12,7 +12,7 @@ export async function runDailyDigest(env: Env, dateKey: string): Promise<void> {
   const start = Date.parse(`${dateKey}T00:00:00Z`);
   const end = start + 86_400_000;
   const db = getDb(env.DB);
-  const transport = getTransport(env);
+  const transport = await getTransport(env);
 
   const allProjects = await db.select({ id: projects.id, name: projects.name }).from(projects);
 

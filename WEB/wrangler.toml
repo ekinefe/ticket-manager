@@ -1,0 +1,83 @@
+name = "ticket-manager"
+main = "worker.ts"
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# -----------------------------------------------------------------------------
+# TOP-LEVEL config is used for LOCAL DEVELOPMENT only (`npm run dev` boots the
+# Node bootstrap, so this block mainly feeds `wrangler dev`). Real deployments
+# use the named environments below: [env.preview] and [env.production].
+#
+# Cloudflare bindings are NON-INHERITABLE: every named environment must
+# redeclare every binding it uses (D1, R2, assets). If you add a binding here,
+# mirror it in BOTH environments or it will silently be missing there.
+# -----------------------------------------------------------------------------
+
+# Static assets: serve the current vanilla-JS client from WEB/client.
+# Hono owns every /api/* route; Cloudflare serves client files directly.
+[assets]
+directory = "./client"
+
+# Local dev database binding (optional — `wrangler dev` only).
+[[d1_databases]]
+binding = "DB"
+database_name = "ticket-manager-dev"
+database_id = "<YOUR_LOCAL_DEV_D1_DATABASE_ID>"
+
+# Local dev uploads bucket (optional — `wrangler dev` only).
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "ticket-manager-uploads-dev"
+
+# -----------------------------------------------------------------------------
+# PREVIEW environment — used for `dev` branch / pull-request previews.
+# More workers.*.cloudflare.dev
+# Create with: wrangler d1 create ticket-manager-preview
+#              wrangler r2 bucket create ticket-manager-uploads-preview
+# -----------------------------------------------------------------------------
+[env.preview]
+name = "ticket-manager-preview"
+
+[env.preview.assets]
+directory = "./client"
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "ticket-manager-preview"
+database_id = "<YOUR_PREVIEW_D1_DATABASE_ID>"
+
+[[env.preview.r2_buckets]]
+binding = "BUCKET"
+bucket_name = "ticket-manager-uploads-preview"
+
+# -----------------------------------------------------------------------------
+# PRODUCTION environment — used for the production branch / live deploys.
+# Create with: wrangler d1 create ticket-manager-prod
+#              wrangler r2 bucket create ticket-manager-uploads-prod
+# -----------------------------------------------------------------------------
+[env.production]
+name = "ticket-manager-production"
+
+[env.production.assets]
+directory = "./client"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "ticket-manager-prod"
+database_id = "<YOUR_PRODUCTION_D1_DATABASE_ID>"
+
+[[env.production.r2_buckets]]
+binding = "BUCKET"
+bucket_name = "ticket-manager-uploads-prod"
+
+# Workers Cron Triggers. Run these once per environment (they apply to the
+# default environment; add [env.<name>.triggers] if you want per-env crons).
+#   daily   -> runDailyDigest  (daily 00:00)
+#   weekly  -> runWeeklyReport (Sunday 22:00)
+#   security-> runSecurityScan (Sunday 21:00)
+[triggers]
+crons = [
+  "0 0 * * *",    # daily digest
+  "0 22 * * 0",   # weekly report (Sun)
+  "0 21 * * 0",   # security scan (Sun)
+]

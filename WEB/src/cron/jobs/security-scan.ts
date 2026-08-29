@@ -126,7 +126,7 @@ export async function runSecurityScan(env: Env, dateKey: string): Promise<void> 
     findings_rows: rows,
   });
 
-  const transport = getTransport(env);
+  const transport = await getTransport(env);
   const recipients = await listSuperAdminEmails(env.DB);
   await Promise.all(
     recipients.map((to) =>

@@ -2,10 +2,9 @@ import { mkdirSync } from "node:fs";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
-
-export type AppDB = BetterSQLite3Database<typeof schema>;
+import type { AppDB } from "./client";
 
 export const PROJECT_ROOT = join(import.meta.dirname, "..", "..");
 export const DATA_DIR = join(PROJECT_ROOT, "data");
@@ -36,5 +35,5 @@ function migrate(db: Database.Database): void {
 }
 
 export function createLocalDb(file?: string): AppDB {
-  return drizzle(openLocalDb(file), { schema });
+  return drizzle(openLocalDb(file), { schema }) as unknown as AppDB;
 }

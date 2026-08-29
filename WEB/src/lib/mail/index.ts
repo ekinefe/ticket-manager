@@ -1,8 +1,5 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { ApiError } from "../http";
 import { sendViaResend } from "./resend";
-import { MAIL_OUT_DIR } from "../../db/local";
 
 export interface MailMessage {
   to: string;
@@ -16,11 +13,20 @@ export interface MailTransport {
   send(msg: MailMessage): Promise<void>;
 }
 
-function sanitize(s: string): string {
-  return s.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+// The local ".mail-out" file transport depends on node:fs (and, transitively,
+// better-sqlite3 via local DB paths). Those cannot run on Workers, so the
+// shared getTransport() never imports it directly — that would put node:fs in
+// the Worker bundle. Instead the Node-only bootstrap (server/main.ts) registers
+// the factory here, keeping the file transport entirely out of the Worker
+// import graph.
+type FileTransportFactory = () => MailTransport;
+let fileTransportFactory: FileTransportFactory | null = null;
+
+export function registerFileTransport(factory: FileTransportFactory): void {
+  fileTransportFactory = factory;
 }
 
-export function getTransport(env: Env): MailTransport {
+export async function getTransport(env: Env): Promise<MailTransport> {
   if (env.MAIL_TRANSPORT === "resend") {
     if (!env.RESEND_API_KEY) throw new ApiError(500, "RESEND_API_KEY is not configured");
     return {
@@ -29,14 +35,9 @@ export function getTransport(env: Env): MailTransport {
     };
   }
 
-  return {
-    kind: "file",
-    send: async (msg) => {
-      mkdirSync(MAIL_OUT_DIR, { recursive: true });
-      const name = `${Date.now()}-${sanitize(msg.to)}-${sanitize(msg.subject)}`;
-      writeFileSync(join(MAIL_OUT_DIR, `${name}.html`), msg.html);
-      writeFileSync(join(MAIL_OUT_DIR, `${name}.txt`), msg.text);
-      console.log(`[mail] -> ${msg.to} : ${msg.subject} (.mail-out/${name}.html)`);
-    },
-  };
+  if (!fileTransportFactory) {
+    throw new ApiError(500, "File transport is not registered (local dev only)");
+  }
+  return fileTransportFactory();
 }
+

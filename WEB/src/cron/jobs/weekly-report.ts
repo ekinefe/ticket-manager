@@ -12,7 +12,7 @@ export async function runWeeklyReport(env: Env, dateKey: string): Promise<void> 
 
   const { start, end } = weekBounds(dateKey);
   const db = getDb(env.DB);
-  const transport = getTransport(env);
+  const transport = await getTransport(env);
 
   const allProjects = await db.select({ id: projects.id, name: projects.name }).from(projects);
   const superAdmins = await listSuperAdminEmails(env.DB);

@@ -48,7 +48,7 @@ export async function notifyStatusChanged(env: Env, change: StatusChangeNotifica
   };
 
   const html = renderTemplate(`status-${statusSlug(change.newStatus)}`, vars);
-  const transport = getTransport(env);
+  const transport = await getTransport(env);
 
   await Promise.all(
     emails.map((to) =>
