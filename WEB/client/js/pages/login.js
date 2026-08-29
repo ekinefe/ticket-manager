@@ -24,14 +24,6 @@ export async function renderLogin(root) {
           <button class="btn" type="submit" style="width:100%" id="login-btn">Sign in</button>
         </form>
         <p style="text-align:center;margin:12px 0 0"><a href="/reset-password" data-nav>Forgot password?</a></p>
-        <div class="demo-box">
-          <strong>Demo accounts</strong> (seeded locally)
-          <table>
-            <tr><td><code>ekin@plannedlost.dev</code></td><td><code>admin123!</code></td><td>super admin</td></tr>
-            <tr><td><code>ayse@plannedlost.dev</code></td><td><code>member123!</code></td><td>member</td></tr>
-            <tr><td><code>mehmet@plannedlost.dev</code></td><td><code>member123!</code></td><td>member</td></tr>
-          </table>
-        </div>
       </div>
     </div>`;
 
