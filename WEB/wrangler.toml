@@ -32,6 +32,10 @@ not_found_handling = "single-page-application"
 [env.preview]
 name = "ticket-manager-pre"
 
+[env.preview.vars]
+APP_URL = "https://ticket-manager-pre.gnrdigital.workers.dev"
+MAIL_FROM = "Ticket Manager <no-reply@ticket-manager.gnrdigital.workers.dev>"
+
 [env.preview.assets]
 directory = "./client"
 binding = "ASSETS"
@@ -56,6 +60,10 @@ database_id = "73ea90c7-2db3-4566-825b-e884bfc29b35"
 # -----------------------------------------------------------------------------
 [env.production]
 name = "ticket-manager"
+
+[env.production.vars]
+APP_URL = "https://ticket-manager.gnrdigital.workers.dev"
+MAIL_FROM = "Ticket Manager <no-reply@ticket-manager.gnrdigital.workers.dev>"
 
 [env.production.assets]
 directory = "./client"
