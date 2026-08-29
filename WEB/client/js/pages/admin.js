@@ -89,19 +89,24 @@ function appendChangeOwnPassword(body) {
   const wrap = document.createElement("div");
   wrap.className = "table-card";
   wrap.style.marginTop = "16px";
+  wrap.style.padding = "18px 20px";
   wrap.innerHTML = `
-    <div style="font-weight:700;margin-bottom:10px">Change your password</div>
-    <form id="change-pw-form" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
-      <div class="field" style="margin:0">
+    <div style="font-weight:700;margin-bottom:14px">Change your password</div>
+    <form id="change-pw-form" style="max-width:420px">
+      <div class="field">
         <label for="cp-current">Current password</label>
         <input type="password" id="cp-current" autocomplete="current-password" required />
       </div>
-      <div class="field" style="margin:0">
+      <div class="field">
         <label for="cp-new">New password (min 8 chars)</label>
         <input type="password" id="cp-new" autocomplete="new-password" required />
       </div>
-      <button class="btn" type="submit" id="cp-btn">Update password</button>
-      <span id="cp-msg" style="font-size:13px;color:var(--text-dim)"></span>
+      <div class="modal-actions" style="margin-top:16px">
+        <span id="cp-msg" style="font-size:13px;color:var(--text-dim)"></span>
+        <span class="right">
+          <button class="btn" type="submit" id="cp-btn">Update password</button>
+        </span>
+      </div>
     </form>`;
   body.appendChild(wrap);
 
