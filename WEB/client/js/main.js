@@ -7,6 +7,7 @@ import { renderAcceptInvite } from "./pages/accept-invite.js";
 import { renderAdmin } from "./pages/admin.js";
 import { renderMyTickets } from "./pages/my-tickets.js";
 import { renderResetPassword } from "./pages/reset-password.js";
+import { renderSetup } from "./pages/setup.js";
 import { renderDashboard } from "./pages/dashboard.js";
 import { closeBoardStream } from "./pages/board.js";
 
@@ -341,6 +342,12 @@ async function route() {
   if (path === "/reset-password") {
     topbar.classList.add("hidden");
     await renderResetPassword(appEl);
+    return;
+  }
+
+  if (path === "/setup") {
+    topbar.classList.add("hidden");
+    await renderSetup(appEl);
     return;
   }
 

@@ -33,7 +33,7 @@ import { clientIp, rateLimit } from "./lib/ratelimit";
 import { renderTemplate, htmlToText } from "./lib/mail/templates";
 import { getTransport } from "./lib/mail";
 import { runJob } from "./cron/scheduler";
-import { and, asc, eq, ne, sql, gte, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, ne, sql, gte, inArray, isNull, count } from "drizzle-orm";
 import { projects, projectMembers, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications } from "./db/schema";
 import {
   createNotification,
@@ -206,6 +206,66 @@ app.get("/api/projects", (c) =>
 
 // Unauthenticated liveness probe for monitoring / reverse-proxy checks.
 app.get("/api/health", (c) => c.json({ ok: true, time: Date.now() }));
+
+// ---------- First-run bootstrap (public) ----------
+// Creates the initial SUPER_ADMIN. Only reachable while no super admin exists,
+// so it is a secure one-time step: after the first admin is created it returns
+// 409. Public sign-up is otherwise invitation-only, and the rate limit blocks
+// brute-forcing this during setup.
+const setupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  keyFor: (c) => `setup:${clientIp(c)}`,
+});
+
+// Tells the first-run setup page whether a super admin already exists.
+app.get("/api/setup/status", (c) =>
+  guard(c, async () => {
+    const [{ superAdminCount }] = await env.DB
+      .select({ superAdminCount: count() })
+      .from(user)
+      .where(eq(user.role, "SUPER_ADMIN"));
+    return c.json({ needed: Number(superAdminCount) === 0 });
+  })
+);
+
+app.post("/api/setup/complete", setupLimiter, (c) =>
+  guard(c, async () => {
+    const [{ superAdminCount }] = await env.DB
+      .select({ superAdminCount: count() })
+      .from(user)
+      .where(eq(user.role, "SUPER_ADMIN"));
+    if (Number(superAdminCount) > 0) throw new ApiError(409, "Super admin already exists");
+
+    const body = await readBody<{ email?: string; name?: string; password?: string }>(c);
+    const email = body.email?.trim().toLowerCase();
+    const name = body.name?.trim();
+    const password = body.password ?? "";
+    if (!email || !EMAIL_RE.test(email)) throw new ApiError(400, "A valid e-mail address is required");
+    if (!name) throw new ApiError(400, "Name is required");
+    if (!password || password.length < 8) throw new ApiError(400, "Password must be at least 8 characters");
+
+    const auth = createAuth(env);
+    const internalHeaders = new Headers({ "x-internal-signup": INTERNAL_SIGNUP_SECRET });
+    let userId: string;
+    try {
+      const result = await auth.api.signUpEmail({
+        headers: internalHeaders,
+        body: { email, name, password },
+      });
+      userId = result.user.id;
+    } catch {
+      throw new ApiError(409, "Could not create admin account (email may already be registered)");
+    }
+
+    await env.DB
+      .update(user)
+      .set({ role: "SUPER_ADMIN", updatedAt: new Date() })
+      .where(eq(user.id, userId));
+
+    return c.json({ ok: true, email, role: "SUPER_ADMIN" }, 201);
+  })
+);
 
 app.get("/api/my-tickets", (c) =>
   guard(c, async () => {
