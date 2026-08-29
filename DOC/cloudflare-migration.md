@@ -166,3 +166,49 @@ directory = "client"                # serve current vanilla-JS frontend
   sessions**, no frontend changes.
 - Full Vite + React + TS frontend rewrite (later): **substantially larger**
   (multi-week), independent of this plan.
+
+## 10. Progress (updated 2026-08-29)
+
+The backend migration to a Cloudflare-ready layout is **DONE on the `dev` /
+`production` branches** (commit `41d4856`):
+
+- Single Hono app factory (`WEB/src/app.ts`) — the routes live here once.
+- `server/main.ts` slimmed to a local Node bootstrap (`npm run dev`/`test`).
+- D1 Drizzle adapter (`WEB/src/db/d1.ts`); local better-sqlite3 still works.
+- R2 <-> filesystem media abstraction wired to `env.STORAGE`.
+- Worker entry (`WEB/worker.ts`): fetch + scheduled handlers, cron routing.
+- `wrangler.toml` with separate `[env.preview]` and `[env.production]`
+  environments, each own D1 + R2 (non-inheritable bindings) + static assets.
+- Verified: `tsc --noEmit` clean, 70/70 tests pass, `wrangler deploy --dry-run`
+  clean for both envs. `nodejs_compat` enabled for better-auth.
+
+Branch layout for deploys:
+- `production` (app code)  -> Cloudflare PRODUCTION Worker
+- `dev`          (app code)  -> Cloudflare PREVIEW Worker
+- `main`          (docs only) -> untouched / not deployed
+
+### Remaining — human/account steps (require `wrangler login`)
+
+1. Create preview D1 + R2; paste ids into `env.preview`:
+   - `npx wrangler d1 create ticket-manager-preview`
+   - `npx wrangler r2 bucket create ticket-manager-uploads-preview`
+2. Create prod D1 + R2; paste ids into `env.production`:
+   - `npx wrangler d1 create ticket-manager-prod`
+   - `npx wrangler r2 bucket create ticket-manager-uploads-prod`
+3. Secrets (per env):
+   - `npx wrangler secret put BETTER_AUTH_SECRET --env preview`
+   - `npx wrangler secret put BETTER_AUTH_SECRET --env production`
+   - `npx wrangler secret put RESEND_API_KEY --env preview`
+   - `npx wrangler secret put RESEND_API_KEY --env production`
+4. Apply the 9 migrations to BOTH D1 databases:
+   - `npx wrangler d1 execute ticket-manager-preview --file migrations/0001_init.sql`
+   - (repeat for 0002..0009, then same for `ticket-manager-prod`)
+5. Connect GitHub in the dashboard to BOTH environment Workers
+   (`ticket-manager-preview`, `ticket-manager-production`); set branch controls
+   and deploy commands with `--env preview` / `--env production` (see the
+   Workers Builds "Advanced Setups" docs).
+6. Deploy: `npx wrangler deploy --env preview` and
+   `npx wrangler deploy --env production`.
+
+Root directory: when connecting the repo, use root directory `WEB/` so wrangler
+runs from the folder that owns `wrangler.toml` / `worker.ts` / `migrations/`.
