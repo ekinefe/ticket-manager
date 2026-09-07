@@ -171,7 +171,13 @@ app.post("/api/auth/request-password-reset", passwordResetRequestLimiter, (c) =>
   })
 );
 
-app.post("/api/auth/reset-password", (c) =>
+const passwordResetApplyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyFor: (c) => `pwapply:${clientIp(c)}`,
+});
+
+app.post("/api/auth/reset-password", passwordResetApplyLimiter, (c) =>
   guard(c, async () => {
     const body = await readBody<{ token?: string; password?: string }>(c);
     const userId = await validatePasswordReset(env.DB, body.token ?? "");
@@ -1563,9 +1569,15 @@ app.post("/api/projects/:id/tasks/:taskId/comments", (c) =>
     const u = await getSessionUser(c.req.raw, env);
     await requireProjectRole(env.DB, u, projectId);
 
-    const body = (await readBody<{ body?: string }>(c)).body?.trim();
+    const rawBody = (await readBody<{ body?: string }>(c)).body?.trim();
+    if (!rawBody) throw new ApiError(400, "Comment cannot be empty");
+    if (rawBody.length > 4000) throw new ApiError(400, "Comment is too long (max 4000 characters)");
+    // Comments use the same rich-text editor as ticket descriptions, so they
+    // get the same server-side allowlist sanitization: the client's denylist
+    // filter (renderCommentBody) is not trusted, since it can be bypassed by
+    // posting directly to this endpoint (e.g. a `javascript:` href).
+    const body = sanitizeDescHtml(rawBody);
     if (!body) throw new ApiError(400, "Comment cannot be empty");
-    if (body.length > 4000) throw new ApiError(400, "Comment is too long (max 4000 characters)");
 
     const [task] = await env.DB
       .select({ id: tasks.id })
@@ -1626,6 +1638,12 @@ app.delete("/api/projects/:id/tasks/:taskId", (c) =>
   })
 );
 
+// Uploaded media keys are always `<uuid>.<ext>`, generated server-side (see
+// the upload handler below). Enforcing that shape on lookup closes off path
+// traversal on the filesystem storage backend (`../../.env`-style keys),
+// where a raw `name` param would otherwise be joined straight into a path.
+const MEDIA_NAME_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{3,4}$/i;
+
 const MEDIA_EXT: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
@@ -1660,6 +1678,7 @@ app.post("/api/projects/:id/media", (c) =>
 // filesystem locally). Public by design: URLs are unguessable UUIDs.
 app.get("/media/uploads/:name", async (c) => {
   const name = c.req.param("name");
+  if (!MEDIA_NAME_RE.test(name)) return c.notFound();
   const obj = await env.STORAGE.get(name);
   if (!obj) return c.notFound();
   return new Response(obj.body, {
