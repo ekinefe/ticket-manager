@@ -14,6 +14,12 @@ export function weekBounds(dateKey: string): { start: number; end: number } {
   return { start, end };
 }
 
+// Calendar-month bounds for the month `dateKey` falls in (UTC).
+export function monthBounds(dateKey: string): { start: number; end: number } {
+  const [y, m] = dateKey.split("-").map(Number);
+  return { start: Date.UTC(y, m - 1, 1), end: Date.UTC(y, m, 1) };
+}
+
 export interface TrTime {
   hour: number;
   weekday: string;

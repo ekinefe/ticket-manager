@@ -24,7 +24,7 @@ export function ticketRow(ticketId: string, title: string, url: string, status?:
   return (
     `<tr>` +
     `<td style="padding:8px 12px;border-bottom:1px solid #ececec;font-size:13px;white-space:nowrap;">` +
-    `<a href="${escapeHtml(url)}" style="color:#964826;font-weight:bold;text-decoration:none;">` +
+    `<a href="${escapeHtml(url)}" style="color:#0090a8;font-weight:bold;text-decoration:none;">` +
     `${escapeHtml(ticketId)}</a></td>` +
     `<td style="padding:8px 12px;border-bottom:1px solid #ececec;font-size:13px;color:#4b4b4b;">` +
     `${escapeHtml(title)}</td>` +

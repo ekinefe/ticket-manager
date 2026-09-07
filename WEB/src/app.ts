@@ -8,6 +8,15 @@ import {
   requirePanelAccess,
   listAccessibleProjects,
   listAssignedTickets,
+  getProjectAccess,
+  requireProjectPermission,
+  getMemberPermissions,
+  setMemberPermissions,
+  ensureDefaultMemberPermissions,
+  PROJECT_PERMISSIONS,
+  DEFAULT_MEMBER_PERMISSIONS,
+  type ProjectPermission,
+  type ProjectAccess,
 } from "./lib/rbac";
 import { allocateTicketId } from "./lib/ticket-id";
 import { logActivity } from "./lib/activity";
@@ -35,8 +44,8 @@ import { clientIp, rateLimit } from "./lib/ratelimit";
 import { renderTemplate, htmlToText } from "./lib/mail/templates";
 import { getTransport } from "./lib/mail";
 import { runJob } from "./cron/scheduler";
-import { and, asc, eq, ne, sql, gte, inArray, isNull, count } from "drizzle-orm";
-import { projects, projectMembers, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications } from "./db/schema";
+import { and, asc, eq, ne, or, sql, gte, inArray, isNull, count } from "drizzle-orm";
+import { projects, projectMembers, projectMemberPermissions, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications } from "./db/schema";
 import {
   createNotification,
   createProjectNotification,
@@ -59,6 +68,19 @@ export function createApp(env: Env): Hono {
     console.error(e);
     return c.json({ error: "Internal server error" }, 500);
   }
+}
+
+// A MEMBER without VIEW_ALL_TICKETS only gets to see tickets that are theirs
+// (assigned or created by them). 404, not 403: hides that the ticket exists
+// at all, same as an unknown taskId would.
+function assertTaskVisible(
+  access: ProjectAccess,
+  u: { id: string },
+  task: { assigneeId: string | null; createdBy: string | null }
+): void {
+  if (access.can("VIEW_ALL_TICKETS")) return;
+  if (task.assigneeId === u.id || task.createdBy === u.id) return;
+  throw new ApiError(404, "Task not found");
 }
 
 async function readBody<T>(c: Context): Promise<T> {
@@ -365,7 +387,7 @@ app.post("/api/projects/:id/sprints", (c) =>
   guard(c, async () => {
     const projectId = c.req.param("id");
     const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId, "ADMIN");
+    await requireProjectPermission(env.DB, u, projectId, "MANAGE_SPRINTS");
 
     const body = await readBody<{ name?: string }>(c);
     const [project] = await env.DB
@@ -390,7 +412,7 @@ app.patch("/api/projects/:id/sprints/:sid", (c) =>
     const projectId = c.req.param("id");
     const sid = c.req.param("sid");
     const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId, "ADMIN");
+    await requireProjectPermission(env.DB, u, projectId, "MANAGE_SPRINTS");
 
     const body = await readBody<{ name?: string }>(c);
     const name = body.name?.trim();
@@ -411,7 +433,7 @@ app.delete("/api/projects/:id/sprints/:sid", (c) =>
     const projectId = c.req.param("id");
     const sid = c.req.param("sid");
     const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId, "ADMIN");
+    await requireProjectPermission(env.DB, u, projectId, "MANAGE_SPRINTS");
 
     const [{ total }] = await env.DB
       .select({ total: sql<number>`count(*)` })
@@ -561,7 +583,20 @@ app.get("/api/admin/users/:id", (c) =>
       .select({ projectId: projectMembers.projectId, role: projectMembers.role })
       .from(projectMembers)
       .where(eq(projectMembers.userId, id));
-    return c.json({ ...u, projects: memberships });
+    const permRows = await env.DB
+      .select({ projectId: projectMemberPermissions.projectId, permission: projectMemberPermissions.permission })
+      .from(projectMemberPermissions)
+      .where(eq(projectMemberPermissions.userId, id));
+    const permsByProject = new Map<string, string[]>();
+    for (const r of permRows) permsByProject.set(r.projectId, [...(permsByProject.get(r.projectId) ?? []), r.permission]);
+    return c.json({
+      ...u,
+      projects: memberships.map((m) => ({
+        ...m,
+        permissions: m.role === "ADMIN" ? [...PROJECT_PERMISSIONS] : permsByProject.get(m.projectId) ?? [],
+      })),
+      availablePermissions: PROJECT_PERMISSIONS,
+    });
   })
 );
 
@@ -584,7 +619,35 @@ app.post("/api/admin/users/:id/projects", (c) =>
         target: [projectMembers.projectId, projectMembers.userId],
         set: { role: memberRole },
       });
+    await ensureDefaultMemberPermissions(env.DB, body.projectId, id, memberRole);
     return c.json({ ok: true });
+  })
+);
+
+app.patch("/api/admin/users/:id/projects/:projectId/permissions", (c) =>
+  guard(c, async () => {
+    const actor = await getSessionUser(c.req.raw, env);
+    requireSuperAdmin(actor);
+    const id = c.req.param("id");
+    const projectId = c.req.param("projectId");
+
+    const [membership] = await env.DB
+      .select({ role: projectMembers.role })
+      .from(projectMembers)
+      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, id)));
+    if (!membership) throw new ApiError(404, "This user is not a member of this project");
+    if (membership.role === "ADMIN") {
+      throw new ApiError(400, "Project admins already have full access; permissions only apply to members");
+    }
+
+    const body = await readBody<{ permissions?: string[] }>(c);
+    if (!Array.isArray(body.permissions)) throw new ApiError(400, "permissions must be an array");
+    const valid = new Set<string>(PROJECT_PERMISSIONS);
+    const invalid = body.permissions.filter((p) => !valid.has(p));
+    if (invalid.length > 0) throw new ApiError(400, `Unknown permission(s): ${invalid.join(", ")}`);
+
+    await setMemberPermissions(env.DB, projectId, id, body.permissions as ProjectPermission[]);
+    return c.json({ ok: true, permissions: body.permissions });
   })
 );
 
@@ -592,9 +655,10 @@ app.delete("/api/admin/users/:id/projects/:projectId", (c) =>
   guard(c, async () => {
     const actor = await getSessionUser(c.req.raw, env);
     requireSuperAdmin(actor);
-    await env.DB
-      .delete(projectMembers)
-      .where(and(eq(projectMembers.userId, c.req.param("id")), eq(projectMembers.projectId, c.req.param("projectId"))));
+    const userId = c.req.param("id");
+    const projectId = c.req.param("projectId");
+    await env.DB.delete(projectMembers).where(and(eq(projectMembers.userId, userId), eq(projectMembers.projectId, projectId)));
+    await env.DB.delete(projectMemberPermissions).where(and(eq(projectMemberPermissions.userId, userId), eq(projectMemberPermissions.projectId, projectId)));
     return c.json({ ok: true });
   })
 );
@@ -619,7 +683,45 @@ app.get("/api/admin/projects/:id/members", (c) =>
       .from(projectMembers)
       .innerJoin(user, eq(user.id, projectMembers.userId))
       .where(eq(projectMembers.projectId, projectId));
-    return c.json({ members });
+
+    const permRows = await env.DB
+      .select({ userId: projectMemberPermissions.userId, permission: projectMemberPermissions.permission })
+      .from(projectMemberPermissions)
+      .where(eq(projectMemberPermissions.projectId, projectId));
+    const permsByUser = new Map<string, string[]>();
+    for (const r of permRows) permsByUser.set(r.userId, [...(permsByUser.get(r.userId) ?? []), r.permission]);
+
+    return c.json({
+      members: members.map((m) => ({ ...m, permissions: m.role === "ADMIN" ? [...PROJECT_PERMISSIONS] : permsByUser.get(m.userId) ?? [] })),
+      availablePermissions: PROJECT_PERMISSIONS,
+    });
+  })
+);
+
+app.patch("/api/admin/projects/:id/members/:userId/permissions", (c) =>
+  guard(c, async () => {
+    const actor = await getSessionUser(c.req.raw, env);
+    requireSuperAdmin(actor);
+    const projectId = c.req.param("id");
+    const userId = c.req.param("userId");
+
+    const [membership] = await env.DB
+      .select({ role: projectMembers.role })
+      .from(projectMembers)
+      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)));
+    if (!membership) throw new ApiError(404, "This user is not a member of this project");
+    if (membership.role === "ADMIN") {
+      throw new ApiError(400, "Project admins already have full access; permissions only apply to members");
+    }
+
+    const body = await readBody<{ permissions?: string[] }>(c);
+    if (!Array.isArray(body.permissions)) throw new ApiError(400, "permissions must be an array");
+    const valid = new Set<string>(PROJECT_PERMISSIONS);
+    const invalid = body.permissions.filter((p) => !valid.has(p));
+    if (invalid.length > 0) throw new ApiError(400, `Unknown permission(s): ${invalid.join(", ")}`);
+
+    await setMemberPermissions(env.DB, projectId, userId, body.permissions as ProjectPermission[]);
+    return c.json({ ok: true, permissions: body.permissions });
   })
 );
 
@@ -644,6 +746,7 @@ app.post("/api/admin/projects/:id/members", (c) =>
         target: [projectMembers.projectId, projectMembers.userId],
         set: { role: memberRole },
       });
+    await ensureDefaultMemberPermissions(env.DB, projectId, body.userId, memberRole);
     return c.json({ ok: true });
   })
 );
@@ -652,9 +755,10 @@ app.delete("/api/admin/projects/:id/members/:userId", (c) =>
   guard(c, async () => {
     const actor = await getSessionUser(c.req.raw, env);
     requireSuperAdmin(actor);
-    await env.DB
-      .delete(projectMembers)
-      .where(and(eq(projectMembers.projectId, c.req.param("id")), eq(projectMembers.userId, c.req.param("userId"))));
+    const projectId = c.req.param("id");
+    const userId = c.req.param("userId");
+    await env.DB.delete(projectMembers).where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)));
+    await env.DB.delete(projectMemberPermissions).where(and(eq(projectMemberPermissions.projectId, projectId), eq(projectMemberPermissions.userId, userId)));
     return c.json({ ok: true });
   })
 );
@@ -1148,7 +1252,7 @@ app.get("/api/projects/:id/tasks", (c) =>
   guard(c, async () => {
     const projectId = c.req.param("id");
     const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId);
+    const access = await getProjectAccess(env.DB, u, projectId);
 
     // Optional pagination (?page=&perPage= or &limit=&offset=); the board
     // client fetches everything (no params) since it needs the full set.
@@ -1157,7 +1261,13 @@ app.get("/api/projects/:id/tasks", (c) =>
     const limit = Number(c.req.query("limit") ?? 0);
     const offset = Number(c.req.query("offset") ?? 0);
 
-    let query = env.DB.select().from(tasks).where(eq(tasks.projectId, projectId)).$dynamic();
+    // A MEMBER without VIEW_ALL_TICKETS (e.g. a restricted freelancer) only
+    // sees tickets they created or are assigned to.
+    const scope = access.can("VIEW_ALL_TICKETS")
+      ? eq(tasks.projectId, projectId)
+      : and(eq(tasks.projectId, projectId), or(eq(tasks.assigneeId, u.id), eq(tasks.createdBy, u.id)));
+
+    let query = env.DB.select().from(tasks).where(scope).$dynamic();
     if (page >= 1) {
       query = query.limit(perPage).offset((page - 1) * perPage);
     } else if (limit > 0) {
@@ -1172,7 +1282,7 @@ app.post("/api/projects/:id/tasks", (c) =>
   guard(c, async () => {
     const projectId = c.req.param("id");
     const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId);
+    await requireProjectPermission(env.DB, u, projectId, "CREATE_TICKET");
 
     const body = await readBody<{ title?: string; description?: string; status?: string; assigneeId?: string; type?: string; priority?: string; sprintId?: string | null }>(c);
     const title = body.title?.trim();
@@ -1258,7 +1368,8 @@ app.patch("/api/projects/:id/tasks/:taskId", (c) =>
     const projectId = c.req.param("id");
     const taskId = c.req.param("taskId");
     const u = await getSessionUser(c.req.raw, env);
-    const myRole = await requireProjectRole(env.DB, u, projectId);
+    const access = await getProjectAccess(env.DB, u, projectId);
+    const myRole = access.role;
 
     const body = await readBody<{
       title?: string;
@@ -1277,10 +1388,12 @@ app.patch("/api/projects/:id/tasks/:taskId", (c) =>
       .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)));
     if (!task) throw new ApiError(404, "Task not found");
 
-    // Members may only modify tickets they are assigned to or created;
-    // project admins and super admins can modify anything.
-    if (myRole !== "ADMIN" && task.assigneeId !== u.id && task.createdBy !== u.id) {
-      throw new ApiError(403, "Only the assignee, the ticket creator or a project admin can modify this ticket");
+    // Members may only modify tickets they are assigned to or created,
+    // unless explicitly granted MOVE_OTHERS_TICKETS; project admins and
+    // super admins can modify anything.
+    const isOwnTicket = task.assigneeId === u.id || task.createdBy === u.id;
+    if (myRole !== "ADMIN" && !isOwnTicket && !access.can("MOVE_OTHERS_TICKETS")) {
+      throw new ApiError(403, "Only the assignee, the ticket creator, a project admin, or someone granted MOVE_OTHERS_TICKETS can modify this ticket");
     }
 
     const oldTitle = task.title;
@@ -1474,13 +1587,14 @@ app.get("/api/projects/:id/tasks/:taskId/events", (c) =>
     const projectId = c.req.param("id");
     const taskId = c.req.param("taskId");
     const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId);
+    const access = await getProjectAccess(env.DB, u, projectId);
 
     const [task] = await env.DB
-      .select({ id: tasks.id })
+      .select({ id: tasks.id, assigneeId: tasks.assigneeId, createdBy: tasks.createdBy })
       .from(tasks)
       .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)));
     if (!task) throw new ApiError(404, "Task not found");
+    assertTaskVisible(access, u, task);
 
     const perPage = Math.min(Number(c.req.query("perPage") ?? 500), 500);
     const page = Math.max(Number(c.req.query("page") ?? 1), 1);
@@ -1537,13 +1651,14 @@ app.get("/api/projects/:id/tasks/:taskId/comments", (c) =>
     const projectId = c.req.param("id");
     const taskId = c.req.param("taskId");
     const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId);
+    const access = await getProjectAccess(env.DB, u, projectId);
 
     const [task] = await env.DB
-      .select({ id: tasks.id })
+      .select({ id: tasks.id, assigneeId: tasks.assigneeId, createdBy: tasks.createdBy })
       .from(tasks)
       .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)));
     if (!task) throw new ApiError(404, "Task not found");
+    assertTaskVisible(access, u, task);
 
     const rows = await env.DB
       .select({
@@ -1567,7 +1682,7 @@ app.post("/api/projects/:id/tasks/:taskId/comments", (c) =>
     const projectId = c.req.param("id");
     const taskId = c.req.param("taskId");
     const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId);
+    const access = await getProjectAccess(env.DB, u, projectId);
 
     const rawBody = (await readBody<{ body?: string }>(c)).body?.trim();
     if (!rawBody) throw new ApiError(400, "Comment cannot be empty");
@@ -1579,21 +1694,22 @@ app.post("/api/projects/:id/tasks/:taskId/comments", (c) =>
     const body = sanitizeDescHtml(rawBody);
     if (!body) throw new ApiError(400, "Comment cannot be empty");
 
-    const [task] = await env.DB
-      .select({ id: tasks.id })
+    const [taskRow] = await env.DB
+      .select({ id: tasks.id, assigneeId: tasks.assigneeId, createdBy: tasks.createdBy, ticketId: tasks.ticketId, title: tasks.title })
       .from(tasks)
       .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)));
-    if (!task) throw new ApiError(404, "Task not found");
+    if (!taskRow) throw new ApiError(404, "Task not found");
+    assertTaskVisible(access, u, taskRow);
+    const isOwnTicket = taskRow.assigneeId === u.id || taskRow.createdBy === u.id;
+    if (access.role !== "ADMIN" && !isOwnTicket && !access.can("COMMENT_ON_OTHERS_TICKETS")) {
+      throw new ApiError(403, "You don't have permission to comment on this ticket");
+    }
 
     const [row] = await env.DB
       .insert(taskComments)
       .values({ id: crypto.randomUUID(), taskId, authorId: u.id, body, createdAt: Date.now() })
       .returning();
 
-    const [taskRow] = await env.DB
-      .select({ assigneeId: tasks.assigneeId, createdBy: tasks.createdBy, ticketId: tasks.ticketId, title: tasks.title })
-      .from(tasks)
-      .where(eq(tasks.id, taskId));
     if (taskRow) {
       const commentNotifyUsers = [taskRow.createdBy, taskRow.assigneeId].filter((v): v is string => Boolean(v) && v !== u.id);
       for (const uid of commentNotifyUsers) {
@@ -1626,7 +1742,7 @@ app.delete("/api/projects/:id/tasks/:taskId", (c) =>
     const projectId = c.req.param("id");
     const taskId = c.req.param("taskId");
     const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId, "ADMIN");
+    await requireProjectPermission(env.DB, u, projectId, "DELETE_TICKET");
 
     const deleted = await env.DB
       .delete(tasks)
@@ -1693,7 +1809,8 @@ app.get("/api/projects/:id/invitations", (c) =>
   guard(c, async () => {
     const projectId = c.req.param("id");
     const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId);    const rows = await env.DB
+    await requireProjectPermission(env.DB, u, projectId, "MANAGE_MEMBERS");
+    const rows = await env.DB
       .select({
         id: invitations.id,
         email: invitations.email,
@@ -1713,12 +1830,17 @@ app.post("/api/projects/:id/invitations", inviteLimiter, (c) =>
     // The rate-limit middleware widens Hono's inferred param type.
     const projectId = c.req.param("id") as string;
     const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId, "ADMIN");
+    const access = await requireProjectPermission(env.DB, u, projectId, "MANAGE_MEMBERS");
 
     const body = await readBody<{ email?: string; role?: "ADMIN" | "MEMBER" }>(c);
     const email = body.email?.trim().toLowerCase();
     if (!email || !EMAIL_RE.test(email)) throw new ApiError(400, "Valid e-mail address is required");
     const invitedRole = body.role === "ADMIN" ? "ADMIN" : "MEMBER";
+    // A MEMBER granted MANAGE_MEMBERS may invite other MEMBERs, but only an
+    // actual project/super admin can grant the ADMIN role via invite.
+    if (invitedRole === "ADMIN" && access.role !== "ADMIN") {
+      throw new ApiError(403, "Only a project admin can invite someone as an admin");
+    }
 
     const [project] = await env.DB
       .select({ id: projects.id, name: projects.name })
@@ -1785,7 +1907,7 @@ app.post("/api/projects/:id/invitations", inviteLimiter, (c) =>
           invitedRole: invitation.invitedRole,
           expiresAt: invitation.expiresAt,
         },
-        devInviteUrl: inviteUrl,
+        inviteUrl,
       },
       201
     );
@@ -1836,6 +1958,7 @@ app.post("/api/invitations/accept", (c) =>
           userId,
           role: projectInvitation.invitedRole,
         });
+        await ensureDefaultMemberPermissions(env.DB, projectInvitation.projectId, userId, projectInvitation.invitedRole);
         await createProjectNotification({
           db: env.DB,
           projectId: projectInvitation.projectId,
@@ -1896,7 +2019,7 @@ app.post("/api/admin/invites", inviteLimiter, (c) =>
     return c.json(
       {
         invite: { id: invite.id, email: invite.email, expiresAt: invite.expiresAt },
-        devInviteUrl: inviteUrl,
+        inviteUrl,
       },
       201
     );
@@ -2013,7 +2136,9 @@ app.get("/api/projects/:id/export", (c) =>
   guard(c, async () => {
     const projectId = c.req.param("id");
     const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId);
+    // A full-project export doesn't make sense as a partial dump, so a
+    // restricted member (no VIEW_ALL_TICKETS) can't use it at all.
+    await requireProjectPermission(env.DB, u, projectId, "VIEW_ALL_TICKETS");
 
     const [project] = await env.DB
       .select()

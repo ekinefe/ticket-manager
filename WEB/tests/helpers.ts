@@ -11,8 +11,9 @@ process.env.TM_DB_FILE = join(dir, "test.db");
 process.env.MAIL_TRANSPORT = "file";
 
 const { app, env } = await import("../server/main.ts");
-const { user, account, projectMembers, projects, sprints } = await import("../src/db/schema.ts");
+const { user, account, projectMembers, projectMemberPermissions, projects, sprints } = await import("../src/db/schema.ts");
 const { getDb } = await import("../src/db/client.ts");
+const { DEFAULT_MEMBER_PERMISSIONS } = await import("../src/lib/rbac.ts");
 
 export interface TestUser {
   id: string;
@@ -61,6 +62,13 @@ export async function seed(): Promise<void> {
     ["u_super", "ADMIN"], ["u_admin", "ADMIN"], ["u_ayse", "MEMBER"], ["u_mehmet", "MEMBER"],
   ] as const) {
     await db.insert(projectMembers).values({ projectId: PROJECT_ID, userId, role });
+    // Matches production: a new MEMBER starts with today's historical
+    // default behavior (see ensureDefaultMemberPermissions).
+    if (role === "MEMBER") {
+      await db.insert(projectMemberPermissions).values(
+        DEFAULT_MEMBER_PERMISSIONS.map((permission) => ({ projectId: PROJECT_ID, userId, permission }))
+      );
+    }
   }
 }
 

@@ -197,7 +197,7 @@ function openInviteUserModal(reload) {
           const res = await api.post("/admin/invites", { email });
           toast(`Invite sent to ${email}`, "ok");
           reload();
-          showInviteLink(modalEl, close, res.devInviteUrl);
+          showInviteLink(modalEl, close, res.inviteUrl);
         } catch (err) {
           toast(err.message, "err");
         }
@@ -214,7 +214,7 @@ function openInviteUserModal(reload) {
 function showInviteLink(modalEl, close, url) {
   const body = modalEl.querySelector(".modal-body") || modalEl;
   body.innerHTML = `
-    <p style="margin-top:0">Invitation sent. In local development no mail server runs, so copy the invite link:</p>
+    <p style="margin-top:0">Invitation sent. If the e-mail doesn't arrive, share this link directly instead:</p>
     <div style="display:flex;gap:8px">
       <input type="text" id="iu-link" value="${esc(url)}" readonly style="font-size:12px" />
       <button class="btn sm ghost" id="iu-copy">Copy</button>
@@ -249,6 +249,54 @@ function userRow(u, isSuper) {
 /* ---------------- User detail / edit modal ---------------- */
 
 const MEMBER_ROLES = ["MEMBER", "ADMIN"];
+
+/* ---------------- Per-project, per-member granular permissions ---------------- */
+// Mirrors PROJECT_PERMISSIONS / DEFAULT_MEMBER_PERMISSIONS in src/lib/rbac.ts.
+// Project/super admins always have every permission implicitly; these only
+// apply to (and are only shown/editable for) plain MEMBER rows.
+const PERMISSION_LABELS = {
+  VIEW_ALL_TICKETS: "View all tickets (off = only their own)",
+  CREATE_TICKET: "Create tickets",
+  COMMENT_ON_OTHERS_TICKETS: "Comment on others' tickets",
+  MOVE_OTHERS_TICKETS: "Edit / move others' tickets",
+  DELETE_TICKET: "Delete tickets",
+  MANAGE_MEMBERS: "Invite / remove members",
+  MANAGE_SPRINTS: "Manage sprints",
+};
+const DEFAULT_MEMBER_PERMS = ["VIEW_ALL_TICKETS", "CREATE_TICKET", "COMMENT_ON_OTHERS_TICKETS"];
+
+function permsBlockHtml(scopeId, available, granted) {
+  const perms = available && available.length ? available : Object.keys(PERMISSION_LABELS);
+  return `
+    <div class="up-perms" data-scope="${esc(scopeId)}" style="display:none;grid-template-columns:1fr 1fr;gap:4px 14px;padding:2px 4px 10px 34px">
+      ${perms.map((key) => `
+        <label style="display:flex;align-items:center;gap:6px;font-weight:400;font-size:12px;color:var(--text-dim);margin:0;cursor:pointer">
+          <input type="checkbox" class="perm-cb" value="${esc(key)}" ${granted.includes(key) ? "checked" : ""} />
+          ${esc(PERMISSION_LABELS[key] || key)}
+        </label>`).join("")}
+    </div>`;
+}
+
+// Keeps a permission block's visibility/enabled-state in sync with its row's
+// membership checkbox and role select. `granted` is that member's saved
+// permission set (or DEFAULT_MEMBER_PERMS for a not-yet-a-member row) —
+// restored whenever the role flips back to MEMBER from ADMIN.
+function wirePermsToggle(row, permsBlock, granted) {
+  const cb = row.querySelector("input[type=checkbox]");
+  const sel = row.querySelector(".up-role");
+  const update = () => {
+    const isMember = cb.checked;
+    const isAdmin = sel.value === "ADMIN";
+    permsBlock.style.display = isMember ? "grid" : "none";
+    for (const pcb of permsBlock.querySelectorAll(".perm-cb")) {
+      pcb.disabled = isAdmin;
+      pcb.checked = isAdmin || granted.includes(pcb.value);
+    }
+  };
+  cb.addEventListener("change", update);
+  sel.addEventListener("change", update);
+  update();
+}
 
 async function openUserModal(u, reload) {
   let detail, projects;
@@ -293,7 +341,9 @@ async function openUserModal(u, reload) {
       </div>
       <div id="um-projects">
         ${projects.map((p) => {
-          const memberRole = memberships.get(p.id);
+          const membership = detail.projects.find((m) => m.projectId === p.id);
+          const memberRole = membership?.role;
+          const granted = membership ? (membership.permissions || []) : DEFAULT_MEMBER_PERMS;
           return `
           <div class="up-row" data-project="${esc(p.id)}" style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border)">
             <input type="checkbox" id="up-${esc(p.id)}" ${memberRole ? "checked" : ""} />
@@ -303,7 +353,8 @@ async function openUserModal(u, reload) {
             <select class="up-role" ${memberRole ? "" : "disabled"} style="max-width:120px">
               ${MEMBER_ROLES.map((r) => `<option value="${r}"${(memberRole || "MEMBER") === r ? " selected" : ""}>${r}</option>`).join("")}
             </select>
-          </div>`;
+          </div>
+          ${permsBlockHtml(p.id, detail.availablePermissions, granted)}`;
         }).join("")}
         ${projects.length === 0 ? `<div class="empty-note">No projects exist yet.</div>` : ""}
       </div>
@@ -322,11 +373,16 @@ async function openUserModal(u, reload) {
       if (setPwBtn) setPwBtn.addEventListener("click", () => openSetPasswordModal(detail, reload, close));
       const delBtn = modalEl.querySelector("#um-delete");
       if (delBtn) delBtn.addEventListener("click", () => confirmDeleteUser(detail, reload, close));
-      // enable/disable the project role select with the checkbox
+      // enable/disable the project role select with the checkbox, and keep
+      // each project's permission checkboxes in sync with it
       for (const row of modalEl.querySelectorAll(".up-row")) {
         const cb = row.querySelector("input[type=checkbox]");
         const sel = row.querySelector(".up-role");
         cb.addEventListener("change", () => { sel.disabled = !cb.checked; });
+        const projectId = row.dataset.project;
+        const membership = detail.projects.find((m) => m.projectId === projectId);
+        const permsBlock = modalEl.querySelector(`.up-perms[data-scope="${CSS.escape(projectId)}"]`);
+        wirePermsToggle(row, permsBlock, membership ? (membership.permissions || []) : DEFAULT_MEMBER_PERMS);
       }
 
       modalEl.querySelector("#um-cancel").addEventListener("click", close);
@@ -350,6 +406,11 @@ async function openUserModal(u, reload) {
               await api.post(`/admin/users/${detail.id}/projects`, { projectId, role });
             } else if (!checked && original !== undefined) {
               await api.del(`/admin/users/${detail.id}/projects/${projectId}`);
+            }
+            if (checked && role === "MEMBER") {
+              const permsBlock = modalEl.querySelector(`.up-perms[data-scope="${CSS.escape(projectId)}"]`);
+              const selected = [...permsBlock.querySelectorAll(".perm-cb:checked")].map((cb2) => cb2.value);
+              await api.patch(`/admin/users/${detail.id}/projects/${projectId}/permissions`, { permissions: selected });
             }
           }
           toast(`Saved changes for ${detail.name}`, "ok");
@@ -500,6 +561,8 @@ async function openProjectAccessModal(p, reload) {
           const memberRole = memberMap.get(u.id);
           const global = u.role === "SUPER_ADMIN";
           const checked = memberRole !== undefined || global;
+          const existing = data.members.find((m) => m.userId === u.id);
+          const granted = existing ? (existing.permissions || []) : DEFAULT_MEMBER_PERMS;
           return `
           <div class="up-row" data-user="${esc(u.id)}"${global ? ' data-global="1"' : ""} style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border)${global ? ";opacity:.75" : ""}">
             <input type="checkbox" id="pm-${esc(u.id)}" ${checked ? "checked" : ""}${global ? " disabled" : ""} />
@@ -512,7 +575,8 @@ async function openProjectAccessModal(p, reload) {
               : `<select class="up-role" ${memberRole ? "" : "disabled"} style="max-width:120px">
                   ${MEMBER_ROLES.map((r) => `<option value="${r}"${(memberRole || "MEMBER") === r ? " selected" : ""}>${r}</option>`).join("")}
                 </select>`}
-          </div>`;
+          </div>
+          ${global ? "" : permsBlockHtml(u.id, data.availablePermissions, granted)}`;
         }).join("")}
         ${users.length === 0 ? `<div class="empty-note">No users yet.</div>` : ""}
       </div>
@@ -529,6 +593,10 @@ async function openProjectAccessModal(p, reload) {
         const cb = row.querySelector("input[type=checkbox]");
         const sel = row.querySelector(".up-role");
         cb.addEventListener("change", () => { sel.disabled = !cb.checked; });
+        const userId = row.dataset.user;
+        const existing = data.members.find((m) => m.userId === userId);
+        const permsBlock = modalEl.querySelector(`.up-perms[data-scope="${CSS.escape(userId)}"]`);
+        wirePermsToggle(row, permsBlock, existing ? (existing.permissions || []) : DEFAULT_MEMBER_PERMS);
       }
 
       modalEl.querySelector("#pm-cancel").addEventListener("click", close);
@@ -547,6 +615,11 @@ async function openProjectAccessModal(p, reload) {
               await api.post(`/admin/projects/${p.id}/members`, { userId, role });
             } else if (!checked && original !== undefined) {
               await api.del(`/admin/projects/${p.id}/members/${userId}`);
+            }
+            if (checked && role === "MEMBER") {
+              const permsBlock = modalEl.querySelector(`.up-perms[data-scope="${CSS.escape(userId)}"]`);
+              const selected = [...permsBlock.querySelectorAll(".perm-cb:checked")].map((cb2) => cb2.value);
+              await api.patch(`/admin/projects/${p.id}/members/${userId}/permissions`, { permissions: selected });
             }
           }
           toast(`Saved access for ${p.prefix}`, "ok");
