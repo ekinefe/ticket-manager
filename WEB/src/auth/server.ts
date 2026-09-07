@@ -8,7 +8,11 @@ export function createAuth(env: Env) {
   return betterAuth({
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.APP_URL,
-    trustedOrigins: [env.APP_URL],
+    // Cloudflare git-integration previews get their own subdomain per branch
+    // (e.g. dev-ticket-manager.gnrdigital.workers.dev). Without this wildcard,
+    // Better Auth's origin check 403s every sign-in attempt made from a
+    // preview deploy since only the production APP_URL would be trusted.
+    trustedOrigins: [env.APP_URL, "https://*-ticket-manager.gnrdigital.workers.dev"],
     database: drizzleAdapter(db, {
       provider: "sqlite",
       schema,
