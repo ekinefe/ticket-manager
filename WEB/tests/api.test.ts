@@ -259,6 +259,69 @@ describe("tickets", () => {
   });
 });
 
+describe("bulk task updates", () => {
+  it("rejects an empty or missing taskIds/update", async () => {
+    const noIds = await req("/api/tasks/bulk", { method: "PATCH", cookie: adminCookie, body: { update: { status: "DONE" } } });
+    assert.equal(noIds.status, 400);
+    const noUpdate = await req("/api/tasks/bulk", { method: "PATCH", cookie: adminCookie, body: { taskIds: ["x"] } });
+    assert.equal(noUpdate.status, 400);
+  });
+
+  it("moves status in bulk, skipping tickets the actor can't touch", async () => {
+    const mine = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: member1, body: { title: "Bulk mine", assigneeId: "u_ayse" },
+    });
+    const notMine = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: adminCookie, body: { title: "Bulk not mine" },
+    });
+    const mineId = (await mine.json()).id;
+    const notMineId = (await notMine.json()).id;
+
+    const res = await req("/api/tasks/bulk", {
+      method: "PATCH", cookie: member1,
+      body: { taskIds: [mineId, notMineId, "nonexistent-id"], update: { status: "IN_PROGRESS" } },
+    });
+    assert.equal(res.status, 200);
+    const { updated, skipped } = await res.json();
+    assert.deepEqual(updated, [mineId]);
+    assert.equal(skipped.length, 2);
+    assert.ok(skipped.some((s: { taskId: string }) => s.taskId === notMineId));
+    assert.ok(skipped.some((s: { taskId: string }) => s.taskId === "nonexistent-id"));
+  });
+
+  it("applies admin-only fields (priority) in bulk only for an admin", async () => {
+    const t1 = await req(`/api/projects/${PROJECT_ID}/tasks`, { method: "POST", cookie: member1, body: { title: "Bulk prio 1" } });
+    const t2 = await req(`/api/projects/${PROJECT_ID}/tasks`, { method: "POST", cookie: member1, body: { title: "Bulk prio 2" } });
+    const ids = [(await t1.json()).id, (await t2.json()).id];
+
+    const asMember = await req("/api/tasks/bulk", {
+      method: "PATCH", cookie: member1, body: { taskIds: ids, update: { priority: "URGENT" } },
+    });
+    assert.deepEqual((await asMember.json()).updated, []);
+
+    const asAdmin = await req("/api/tasks/bulk", {
+      method: "PATCH", cookie: adminCookie, body: { taskIds: ids, update: { priority: "URGENT" } },
+    });
+    const { updated } = await asAdmin.json();
+    assert.equal(updated.length, 2);
+  });
+
+  it("works across multiple projects in one call", async () => {
+    const otherProject = await req("/api/projects", {
+      method: "POST", cookie: superCookie, body: { name: "Bulk Other", prefix: "BLK" },
+    });
+    const otherId = (await otherProject.json()).id;
+    const t1 = await req(`/api/projects/${PROJECT_ID}/tasks`, { method: "POST", cookie: superCookie, body: { title: "P1 bulk" } });
+    const t2 = await req(`/api/projects/${otherId}/tasks`, { method: "POST", cookie: superCookie, body: { title: "P2 bulk" } });
+
+    const res = await req("/api/tasks/bulk", {
+      method: "PATCH", cookie: superCookie,
+      body: { taskIds: [(await t1.json()).id, (await t2.json()).id], update: { status: "DONE" } },
+    });
+    assert.equal((await res.json()).updated.length, 2);
+  });
+});
+
 describe("invitations", () => {
   it("creates, accepts, and single-uses a project invitation", async () => {
     const create = await req(`/api/projects/${PROJECT_ID}/invitations`, {
