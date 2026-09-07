@@ -1918,6 +1918,8 @@ app.post("/api/invitations/accept", (c) =>
   guard(c, async () => {
     const body = await readBody<{ token?: string; name?: string; password?: string }>(c);
     if (!body.token) throw new ApiError(400, "Missing invite token");
+    const name = body.name?.trim();
+    if (!name) throw new ApiError(400, "Name is required");
     const password = body.password;
     if (!password || password.length < 8) throw new ApiError(400, "Password must be at least 8 characters");
 
@@ -1926,11 +1928,7 @@ app.post("/api/invitations/accept", (c) =>
     const signUp = async (email: string) => {
       const result = await auth.api.signUpEmail({
         headers: internalHeaders,
-        body: {
-          email,
-          name: body.name?.trim() || email.split("@")[0],
-          password,
-        },
+        body: { email, name, password },
       });
       return result.user.id;
     };

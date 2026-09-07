@@ -19,8 +19,8 @@ export async function renderAcceptInvite(root) {
         <div id="invite-error" class="form-error hidden"></div>
         <form id="invite-form">
           <div class="field">
-            <label for="iv-name">Your name <span style="font-weight:400">(optional)</span></label>
-            <input id="iv-name" type="text" autocomplete="name" />
+            <label for="iv-name">Your name</label>
+            <input id="iv-name" type="text" autocomplete="name" required />
           </div>
           <div class="field">
             <label for="iv-password">Password <span style="font-weight:400">(min. 8 characters)</span></label>
@@ -81,7 +81,7 @@ function renderResult(root, title, message, showLoginLink = true) {
   root.innerHTML = `
     <div class="auth-wrap">
       <div class="auth-card" style="text-align:center">
-        <div class="brand-big" style="margin-inline:auto;background:${showLoginLink ? "#b3261e" : "#964826"}">${showLoginLink ? "!" : "TM"}</div>
+        <div class="brand-big" style="margin-inline:auto${showLoginLink ? ";background:#b3261e" : ""}">${showLoginLink ? "!" : "TM"}</div>
         <h1>${esc(title)}</h1>
         <p class="sub">${esc(message)}</p>
         ${showLoginLink ? `<a class="btn ghost" href="/" data-nav>Go to homepage</a>` : ""}

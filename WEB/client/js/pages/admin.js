@@ -360,9 +360,12 @@ async function openUserModal(u, reload) {
       </div>
 
       <div class="modal-actions">
-        ${state.user.role === "SUPER_ADMIN"
-          ? `<button class="btn ghost" id="um-password" style="color:var(--danger)">Set password</button>`
-          : isSelf ? "<span></span>" : `<button class="btn danger" id="um-delete">Delete user</button>`}
+        ${state.user.role === "SUPER_ADMIN" && !isSelf
+          ? `<span style="display:flex;gap:8px">
+              <button class="btn ghost" id="um-password">Set password</button>
+              <button class="btn danger" id="um-delete">Delete user</button>
+            </span>`
+          : "<span></span>"}
         <span class="right">
           <button class="btn ghost" id="um-cancel">Cancel</button>
           <button class="btn" id="um-save">Save</button>

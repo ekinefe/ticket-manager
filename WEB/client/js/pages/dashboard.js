@@ -649,7 +649,7 @@ function renderCharts(stats, isSuper, isAdmin) {
       type: "bar",
       data: {
         labels: stats.topAssignees.map((a) => a.name.split(" ")[0]),
-        datasets: [{ data: stats.topAssignees.map((a) => a.total), backgroundColor: "#964826", borderRadius: 4 }],
+        datasets: [{ data: stats.topAssignees.map((a) => a.total), backgroundColor: "#286EB4", borderRadius: 4 }],
       },
       options: {
         ...chartDefaults,
