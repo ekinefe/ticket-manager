@@ -97,6 +97,23 @@ export const projectMembers = sqliteTable(
   (t) => [primaryKey({ columns: [t.projectId, t.userId] })]
 );
 
+export const projectMemberPermissions = sqliteTable(
+  "project_member_permissions",
+  {
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    permission: text("permission").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.userId, t.permission] }),
+    index("idx_project_member_permissions_member").on(t.projectId, t.userId),
+  ]
+);
+
 export const sprints = sqliteTable(
   "sprints",
   {

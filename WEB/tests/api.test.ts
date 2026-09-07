@@ -227,8 +227,8 @@ describe("invitations", () => {
       body: { email: "newbie@test.local", role: "MEMBER" },
     });
     assert.equal(create.status, 201);
-    const { devInviteUrl } = await create.json();
-    const token = new URL(devInviteUrl).searchParams.get("token")!;
+    const { inviteUrl } = await create.json();
+    const token = new URL(inviteUrl).searchParams.get("token")!;
 
     const accept = await req("/api/invitations/accept", {
       method: "POST",
@@ -267,8 +267,8 @@ describe("invitations", () => {
       method: "POST", cookie: superCookie, body: { email: "acct@test.local" },
     });
     assert.equal(asSuper.status, 201);
-    const { devInviteUrl } = await asSuper.json();
-    const token = new URL(devInviteUrl).searchParams.get("token")!;
+    const { inviteUrl } = await asSuper.json();
+    const token = new URL(inviteUrl).searchParams.get("token")!;
     const accept = await req("/api/invitations/accept", {
       method: "POST", body: { token, password: "acct1234!" },
     });
@@ -439,6 +439,35 @@ describe("email jobs", () => {
       [...mailFiles()].some((f) => f.includes("super-test-local") && f.includes("weekly-report")),
       "super admin is a recipient"
     );
+  });
+
+  it("admin summary (daily/weekly/monthly) goes only to super admins", async () => {
+    const { runAdminSummary } = await import("../src/cron/jobs/admin-summary.ts");
+
+    for (const [period, dateKey] of [["daily", "2030-03-01"], ["weekly", "2030-03-03"], ["monthly", "2030-03-01"]] as const) {
+      const before = mailFiles();
+      await runAdminSummary(env, period, dateKey);
+      const mails = readNewMails(before);
+      const summary = mails.find((m) => m.includes(`${period[0].toUpperCase()}${period.slice(1)} summary`));
+      assert.ok(summary, `${period} summary mail written`);
+      assert.ok(
+        [...mailFiles()].some((f) => f.includes("super-test-local") && f.includes(`${period}-summary`)),
+        `${period} summary sent to super admin`
+      );
+      assert.ok(
+        ![...mailFiles()].some((f) => f.includes("admin-test-local") && f.includes(`${period}-summary`)),
+        `${period} summary NOT sent to a non-super global admin`
+      );
+      assert.ok(
+        ![...mailFiles()].some((f) => f.includes("ayse-test-local") && f.includes(`${period}-summary`)),
+        `${period} summary NOT sent to a plain member`
+      );
+
+      // Idempotent per period key.
+      const snapshot = mailFiles();
+      await runAdminSummary(env, period, dateKey);
+      assert.deepEqual(mailFiles(), snapshot);
+    }
   });
 
   it("security scan reports HIGH findings once, then de-duplicates", async () => {
@@ -761,5 +790,121 @@ describe("export / import", () => {
       body: { project: { name: "X", prefix: "XX" }, sprints: [{ name: "S1" }], tasks: [] },
     });
     assert.ok(res.status === 401 || res.status === 403, `expected 401 or 403, got ${res.status}`);
+  });
+});
+
+describe("granular project permissions", () => {
+  let projId = "";
+
+  before(async () => {
+    const create = await req("/api/projects", {
+      method: "POST", cookie: superCookie, body: { name: "Perm Test", prefix: "PMT" },
+    });
+    projId = (await create.json()).id;
+    const add = await req(`/api/admin/projects/${projId}/members`, {
+      method: "POST", cookie: superCookie, body: { userId: "u_mehmet", role: "MEMBER" },
+    });
+    assert.equal(add.status, 200);
+  });
+
+  it("defaults a new member to VIEW_ALL_TICKETS, CREATE_TICKET and COMMENT_ON_OTHERS_TICKETS only", async () => {
+    const res = await req(`/api/admin/projects/${projId}/members`, { cookie: superCookie });
+    const data = await res.json();
+    const mehmet = data.members.find((m: { userId: string }) => m.userId === "u_mehmet");
+    assert.deepEqual(
+      [...mehmet.permissions].sort(),
+      ["COMMENT_ON_OTHERS_TICKETS", "CREATE_TICKET", "VIEW_ALL_TICKETS"]
+    );
+  });
+
+  it("rejects setting permissions on a project admin", async () => {
+    const res = await req(`/api/admin/projects/${projId}/members/u_super/permissions`, {
+      method: "PATCH", cookie: superCookie, body: { permissions: ["DELETE_TICKET"] },
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it("a member without VIEW_ALL_TICKETS only sees and can access their own tickets", async () => {
+    const others = await req(`/api/projects/${projId}/tasks`, { method: "POST", cookie: superCookie, body: { title: "not mehmet's" } });
+    const othersTask = await others.json();
+    await req(`/api/projects/${projId}/tasks`, {
+      method: "POST", cookie: superCookie, body: { title: "mehmet's", assigneeId: "u_mehmet" },
+    });
+
+    let list = await req(`/api/projects/${projId}/tasks`, { cookie: member2 });
+    assert.equal((await list.json()).length, 2);
+
+    const revoke = await req(`/api/admin/projects/${projId}/members/u_mehmet/permissions`, {
+      method: "PATCH", cookie: superCookie, body: { permissions: ["CREATE_TICKET", "COMMENT_ON_OTHERS_TICKETS"] },
+    });
+    assert.equal(revoke.status, 200);
+
+    list = await req(`/api/projects/${projId}/tasks`, { cookie: member2 });
+    const rows = await list.json();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].title, "mehmet's");
+
+    const events = await req(`/api/projects/${projId}/tasks/${othersTask.id}/events`, { cookie: member2 });
+    assert.equal(events.status, 404);
+
+    // restore for later tests in this block
+    await req(`/api/admin/projects/${projId}/members/u_mehmet/permissions`, {
+      method: "PATCH", cookie: superCookie, body: { permissions: ["VIEW_ALL_TICKETS", "CREATE_TICKET", "COMMENT_ON_OTHERS_TICKETS"] },
+    });
+  });
+
+  it("MANAGE_SPRINTS lets a granted member create sprints without being a project admin", async () => {
+    let res = await req(`/api/projects/${projId}/sprints`, { method: "POST", cookie: member2, body: { name: "Sprint X" } });
+    assert.equal(res.status, 403);
+
+    await req(`/api/admin/projects/${projId}/members/u_mehmet/permissions`, {
+      method: "PATCH", cookie: superCookie, body: { permissions: ["VIEW_ALL_TICKETS", "MANAGE_SPRINTS"] },
+    });
+    res = await req(`/api/projects/${projId}/sprints`, { method: "POST", cookie: member2, body: { name: "Sprint X" } });
+    assert.equal(res.status, 201);
+  });
+
+  it("MOVE_OTHERS_TICKETS lets a granted member edit tickets they don't own", async () => {
+    const create = await req(`/api/projects/${projId}/tasks`, { method: "POST", cookie: superCookie, body: { title: "someone else's" } });
+    const task = await create.json();
+
+    let res = await req(`/api/projects/${projId}/tasks/${task.id}`, { method: "PATCH", cookie: member2, body: { title: "hijacked" } });
+    assert.equal(res.status, 403);
+
+    await req(`/api/admin/projects/${projId}/members/u_mehmet/permissions`, {
+      method: "PATCH", cookie: superCookie, body: { permissions: ["VIEW_ALL_TICKETS", "MOVE_OTHERS_TICKETS"] },
+    });
+    res = await req(`/api/projects/${projId}/tasks/${task.id}`, { method: "PATCH", cookie: member2, body: { title: "edited" } });
+    assert.equal(res.status, 200);
+  });
+
+  it("DELETE_TICKET permission gates ticket deletion for non-admins", async () => {
+    const create = await req(`/api/projects/${projId}/tasks`, { method: "POST", cookie: superCookie, body: { title: "to delete" } });
+    const task = await create.json();
+
+    let res = await req(`/api/projects/${projId}/tasks/${task.id}`, { method: "DELETE", cookie: member2 });
+    assert.equal(res.status, 403);
+
+    await req(`/api/admin/projects/${projId}/members/u_mehmet/permissions`, {
+      method: "PATCH", cookie: superCookie, body: { permissions: ["VIEW_ALL_TICKETS", "DELETE_TICKET"] },
+    });
+    res = await req(`/api/projects/${projId}/tasks/${task.id}`, { method: "DELETE", cookie: member2 });
+    assert.equal(res.status, 200);
+  });
+
+  it("MANAGE_MEMBERS lets a granted member invite MEMBERs but not ADMINs", async () => {
+    await req(`/api/admin/projects/${projId}/members/u_mehmet/permissions`, {
+      method: "PATCH", cookie: superCookie, body: { permissions: ["VIEW_ALL_TICKETS", "MANAGE_MEMBERS"] },
+    });
+
+    let res = await req(`/api/projects/${projId}/invitations`, {
+      method: "POST", cookie: member2, body: { email: "wouldbeadmin@test.local", role: "ADMIN" },
+    });
+    assert.equal(res.status, 403);
+
+    res = await req(`/api/projects/${projId}/invitations`, {
+      method: "POST", cookie: member2, body: { email: "wouldbemember@test.local", role: "MEMBER" },
+    });
+    assert.equal(res.status, 201);
   });
 });
