@@ -32,7 +32,12 @@ not_found_handling = "single-page-application"
 
 [vars]
 APP_URL = "https://ticket-manager.gnrdigital.workers.dev"
-MAIL_FROM = "Ticket Manager <no-reply@ticket-manager.gnrdigital.workers.dev>"
+# Resend has no verified custom domain yet, so mail can only go through their
+# shared testing address, which Resend restricts to delivering to the e-mail
+# your Resend account itself is registered with. Invites/resets to anyone
+# else will 403 until a real domain is added and verified in Resend (see
+# https://resend.com/domains) and this is switched to that domain.
+MAIL_FROM = "Ticket Manager <onboarding@resend.dev>"
 
 # Primary database (production). `ticket-manager-preview` is retained as a
 # backup database only and is intentionally not bound here.
