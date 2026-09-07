@@ -520,6 +520,19 @@ describe("comments", () => {
     assert.ok(rows.some((c: { body: string }) => c.body === "first!"));
   });
 
+  it("sanitizes comment HTML server-side (javascript: hrefs stripped)", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: member2, body: { title: "XSS probe" },
+    });
+    const task = await create.json();
+    const post = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}/comments`, {
+      method: "POST", cookie: member2, body: { body: '<a href="javascript:alert(1)">click</a>' },
+    });
+    assert.equal(post.status, 201);
+    const saved = await post.json();
+    assert.ok(!saved.body.includes("javascript:"), `expected javascript: to be stripped, got: ${saved.body}`);
+  });
+
   it("forbids non-members from commenting", async () => {
     const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
       method: "POST", cookie: member2, body: { title: "No comment" },
@@ -549,6 +562,11 @@ describe("media upload", () => {
     form.append("file", new File(["hello"], "a.txt", { type: "text/plain" }));
     const res = await req(`/api/projects/${PROJECT_ID}/media`, { method: "POST", cookie: member2, form });
     assert.equal(res.status, 415);
+  });
+
+  it("rejects path-traversal attempts on the media lookup route", async () => {
+    const res = await req(`/media/uploads/${encodeURIComponent("../../.env")}`, { cookie: member2 });
+    assert.equal(res.status, 404);
   });
 });
 
