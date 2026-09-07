@@ -691,6 +691,27 @@ textarea { resize: vertical; min-height: 84px; }
 }
 .card .assignee .avatar { width: 22px; height: 22px; font-size: 10px; }
 .card .assignee span.nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--avatar-color); }
+.card-select { margin: 0; cursor: pointer; accent-color: var(--accent); flex: 0 0 auto; }
+.card.selected { border-color: var(--accent); box-shadow: var(--glow-soft); }
+
+.bulk-bar {
+  position: sticky; bottom: 0; left: 0; z-index: 20;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 12px; padding: 10px 16px; border-radius: var(--radius);
+  background: var(--surface-raised, var(--card)); border: 1px solid var(--border); box-shadow: var(--shadow);
+}
+.bulk-bar.hidden { display: none; }
+.bulk-bar .bulk-count { font-size: 12.5px; font-weight: 600; color: var(--text); margin-right: 4px; }
+.bulk-bar select { max-width: 160px; }
+
+/* ---------- List view (Board / My Tickets alternate view) ---------- */
+.list-table { margin-bottom: 10px; }
+.list-table .card-select { accent-color: var(--accent); cursor: pointer; }
+.list-table tr.list-row { cursor: pointer; }
+.list-table tr.list-row:hover td { background: var(--hover); }
+.list-table tr.list-row.selected td { background: var(--accent-soft); }
+.list-table .title-cell { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-table td.list-empty { text-align: center; color: var(--text-dim); font-size: 12.5px; padding: 16px 0; }
 
 .drop-indicator { height: 3px; border-radius: 2px; background: var(--accent); margin: -5.5px 2px; pointer-events: none; }
 .col-empty { color: #a0a0a8; font-size: 12.5px; text-align: center; padding: 14px 0; border: 1px dashed #d4d4d8; border-radius: var(--radius); }

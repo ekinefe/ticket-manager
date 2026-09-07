@@ -16,6 +16,8 @@ let filterSprint = "";
 let collapsedLanes = new Set();
 let boardStream = null;
 let refreshTimer = null;
+let selectedIds = new Set();
+let viewMode = localStorage.getItem("tm-ticket-view") || "board";
 
 // Live updates: one EventSource per board; closed on navigation.
 function openBoardStream(projectId) {
@@ -66,6 +68,7 @@ export async function renderBoard(root, projectId, initialSprint = "", initialTa
   filterText = "";
   filterAssignee = "";
   collapsedLanes = new Set();
+  selectedIds = new Set();
   if (initialSprint && (initialSprint === "backlog" || project.sprints.some((s) => s.id === initialSprint))) {
     for (const s of project.sprints) {
       if (s.id !== initialSprint) collapsedLanes.add(s.id);
@@ -304,6 +307,10 @@ function drawShell(root) {
         <option value="">All assignees</option>
         ${project.members.map((m) => `<option value="${esc(m.userId)}">${esc(m.name)}</option>`).join("")}
       </select>
+      <div class="btn-group view-toggle" role="group" aria-label="View">
+        <button class="btn sm ${viewMode === "board" ? "" : "ghost"}" id="view-board-btn" title="Board view">Board</button>
+        <button class="btn sm ${viewMode === "list" ? "" : "ghost"}" id="view-list-btn" title="List view">List</button>
+      </div>
       <div class="btn-group">
         <button class="btn sm ghost" id="export-btn">Export JSON</button>
         <button class="btn sm" id="new-task-btn">+ New ticket</button>
@@ -314,9 +321,12 @@ function drawShell(root) {
         ${project.sprints.map((s) => laneHtml(s)).join("")}
         ${backlogLaneHtml()}
       </div>
-    </div>`;
+    </div>
+    <div class="bulk-bar hidden" id="bulk-bar"></div>`;
 
   bindTabs();
+  document.getElementById("view-board-btn").addEventListener("click", () => setViewMode(root, "board"));
+  document.getElementById("view-list-btn").addEventListener("click", () => setViewMode(root, "list"));
   document.getElementById("new-task-btn").addEventListener("click", () => taskModal(null));
   document.getElementById("export-btn").addEventListener("click", async () => {
     try {
@@ -361,7 +371,20 @@ function drawShell(root) {
   refreshColumns();
 }
 
+function setViewMode(root, mode) {
+  if (mode === viewMode) return;
+  viewMode = mode;
+  localStorage.setItem("tm-ticket-view", mode);
+  drawShell(root);
+}
+
 /* ---------- Swim-lane helpers ---------- */
+
+function laneBodyHtml(laneId) {
+  return viewMode === "list"
+    ? laneListHtml(laneId)
+    : `<div class="lane-columns">${STATUSES.map((s) => laneColumnHtml(laneId, s)).join("")}</div>`;
+}
 
 function laneHtml(sprint) {
   const collapsed = collapsedLanes.has(sprint.id);
@@ -373,7 +396,7 @@ function laneHtml(sprint) {
         <span class="lane-name">${esc(sprint.name)}</span>
         <span class="lane-count">${Number(sprint.ticketCount ?? 0)} work items</span>
       </div>
-      ${collapsed ? "" : `<div class="lane-columns">${STATUSES.map((s) => laneColumnHtml(sprint.id, s)).join("")}</div>`}
+      ${collapsed ? "" : laneBodyHtml(sprint.id)}
     </section>`;
 }
 
@@ -387,8 +410,66 @@ function backlogLaneHtml() {
         <span class="lane-name">Everything else</span>
         <span class="lane-count">${count} work items</span>
       </div>
-      ${collapsed ? "" : `<div class="lane-columns">${STATUSES.map((s) => laneColumnHtml("backlog", s)).join("")}</div>`}
+      ${collapsed ? "" : laneBodyHtml("backlog")}
     </section>`;
+}
+
+/* ---------- List view ---------- */
+
+function laneListHtml(laneId) {
+  return `
+    <table class="data list-table" data-lane="${esc(laneId)}">
+      <thead><tr><th></th><th>Ticket</th><th>Title</th><th>Status</th><th>Type</th><th>Priority</th><th>Assignee</th></tr></thead>
+      <tbody></tbody>
+    </table>`;
+}
+
+function laneTasksForList(laneId) {
+  return STATUSES.flatMap((s) => visibleTasks(s, laneId));
+}
+
+function rowHtml(t) {
+  const assignee = memberById(t.assigneeId);
+  const checked = selectedIds.has(t.id);
+  return `
+    <tr class="list-row${checked ? " selected" : ""}" data-id="${esc(t.id)}">
+      <td><input type="checkbox" class="card-select" data-select="${esc(t.id)}" ${checked ? "checked" : ""} title="Select ticket" /></td>
+      <td class="ticket-id">${esc(t.ticketId)}</td>
+      <td class="title-cell">${esc(t.title)}</td>
+      <td>${statusPill(t.status)}</td>
+      <td>${TYPE_LABELS[t.type]}</td>
+      <td>${priorityPill(t.priority)}</td>
+      <td>${assignee ? esc(assignee.name) : "Unassigned"}</td>
+    </tr>`;
+}
+
+function refreshListTables() {
+  document.querySelectorAll(".list-table").forEach((table) => {
+    const laneId = table.dataset.lane;
+    const tbody = table.querySelector("tbody");
+    const list = laneTasksForList(laneId);
+    tbody.innerHTML = list.length ? list.map(rowHtml).join("") : `<tr><td colspan="7" class="list-empty">No tickets</td></tr>`;
+    tbody.querySelectorAll(".list-row").forEach((row) => {
+      row.addEventListener("click", (e) => {
+        if (e.target.closest(".card-select")) return;
+        const t = tasks.find((x) => x.id === row.dataset.id);
+        if (t) taskModal(t);
+      });
+      bindSelectable(row, row.dataset.id);
+    });
+  });
+}
+
+function bindSelectable(el, taskId) {
+  const cb = el.querySelector(".card-select");
+  if (!cb) return;
+  cb.addEventListener("click", (e) => e.stopPropagation());
+  cb.addEventListener("change", () => {
+    if (cb.checked) selectedIds.add(taskId);
+    else selectedIds.delete(taskId);
+    el.classList.toggle("selected", cb.checked);
+    renderBulkBar();
+  });
 }
 
 function laneColumnHtml(laneId, status) {
@@ -407,9 +488,11 @@ function laneColumnHtml(laneId, status) {
 function cardHtml(t) {
   const assignee = memberById(t.assigneeId);
   const movable = canModifyTask(t);
+  const checked = selectedIds.has(t.id);
   return `
-    <article class="card ${movable ? "" : "locked"}" draggable="${movable}" data-id="${esc(t.id)}">
+    <article class="card ${movable ? "" : "locked"}${checked ? " selected" : ""}" draggable="${movable}" data-id="${esc(t.id)}">
       <div class="row">
+        <input type="checkbox" class="card-select" data-select="${esc(t.id)}" ${checked ? "checked" : ""} title="Select ticket" />
         <span class="ticket-id">${esc(t.ticketId)}</span>
         <span class="card-meta">
           ${priorityPill(t.priority)}
@@ -448,6 +531,11 @@ function visibleTasks(status, laneId) {
 }
 
 function refreshColumns() {
+  if (viewMode === "list") {
+    refreshListTables();
+    renderBulkBar();
+    return;
+  }
   document.querySelectorAll(".column").forEach((col) => {
     const status = col.dataset.status;
     const laneId = col.dataset.lane;
@@ -474,11 +562,88 @@ function refreshColumns() {
       card.classList.remove("dragging");
       clearDropMarkers();
     });
-    card.addEventListener("click", () => {
+    card.addEventListener("click", (e) => {
+      if (e.target.closest(".card-select")) return;
       const t = tasks.find((x) => x.id === card.dataset.id);
       if (t) taskModal(t);
     });
+    bindSelectable(card, card.dataset.id);
   });
+  renderBulkBar();
+}
+
+/* ---------------- Bulk multi-select actions ---------------- */
+
+function renderBulkBar() {
+  // Drop selections for tickets that no longer exist locally (deleted, or
+  // filtered out by a reload) so the count/bar never lies.
+  const known = new Set(tasks.map((t) => t.id));
+  for (const id of [...selectedIds]) if (!known.has(id)) selectedIds.delete(id);
+
+  const bar = document.getElementById("bulk-bar");
+  if (!bar) return;
+  if (selectedIds.size === 0) {
+    bar.classList.add("hidden");
+    bar.innerHTML = "";
+    return;
+  }
+  bar.classList.remove("hidden");
+  bar.innerHTML = `
+    <span class="bulk-count">${selectedIds.size} selected</span>
+    <select id="bulk-status">
+      <option value="">Move to status…</option>
+      ${STATUSES.map((s) => `<option value="${s}">${STATUS_LABELS[s]}</option>`).join("")}
+    </select>
+    <select id="bulk-type">
+      <option value="">Change type…</option>
+      ${TASK_TYPES.map((t) => `<option value="${t}">${TYPE_LABELS[t]}</option>`).join("")}
+    </select>
+    <select id="bulk-priority">
+      <option value="">Change priority…</option>
+      ${PRIORITIES.map((p) => `<option value="${p}">${PRIORITY_LABELS[p]}</option>`).join("")}
+    </select>
+    <select id="bulk-assignee">
+      <option value="">Assign to…</option>
+      <option value="__unassign__">Unassigned</option>
+      ${project.members.map((m) => `<option value="${esc(m.userId)}">${esc(m.name)}${m.userId === state.user.id ? " (me)" : ""}</option>`).join("")}
+    </select>
+    <button class="btn sm ghost" id="bulk-clear">Clear selection</button>`;
+
+  bar.querySelector("#bulk-status").addEventListener("change", (e) => bulkApply({ status: e.target.value }, e.target));
+  bar.querySelector("#bulk-type").addEventListener("change", (e) => bulkApply({ type: e.target.value }, e.target));
+  bar.querySelector("#bulk-priority").addEventListener("change", (e) => bulkApply({ priority: e.target.value }, e.target));
+  bar.querySelector("#bulk-assignee").addEventListener("change", (e) => {
+    bulkApply({ assigneeId: e.target.value === "__unassign__" ? null : e.target.value }, e.target);
+  });
+  bar.querySelector("#bulk-clear").addEventListener("click", () => {
+    selectedIds.clear();
+    refreshColumns();
+    renderBulkBar();
+  });
+}
+
+async function bulkApply(update, selectEl) {
+  const ids = [...selectedIds];
+  if (ids.length === 0) return;
+  selectEl.disabled = true;
+  try {
+    const { updated, skipped } = await api.patch("/tasks/bulk", { taskIds: ids, update });
+    for (const id of updated) {
+      const t = tasks.find((x) => x.id === id);
+      if (t) Object.assign(t, update);
+    }
+    if (updated.length) refreshColumns();
+    if (skipped.length === 0) {
+      toast(`Updated ${updated.length} ticket${updated.length === 1 ? "" : "s"}`, "ok");
+    } else {
+      toast(`Updated ${updated.length}, skipped ${skipped.length} (no permission or invalid change)`, updated.length ? "ok" : "err");
+    }
+  } catch (err) {
+    toast(err.message || "Bulk update failed", "err");
+  } finally {
+    selectEl.value = "";
+    selectEl.disabled = false;
+  }
 }
 
 /* ---------------- Drag & drop ---------------- */

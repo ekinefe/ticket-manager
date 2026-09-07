@@ -17,6 +17,7 @@ import {
   DEFAULT_MEMBER_PERMISSIONS,
   type ProjectPermission,
   type ProjectAccess,
+  type SessionUser,
 } from "./lib/rbac";
 import { allocateTicketId } from "./lib/ticket-id";
 import { logActivity } from "./lib/activity";
@@ -1387,30 +1388,34 @@ app.post("/api/projects/:id/tasks", (c) =>
   })
 );
 
-app.patch("/api/projects/:id/tasks/:taskId", (c) =>
-  guard(c, async () => {
-    const projectId = c.req.param("id");
-    const taskId = c.req.param("taskId");
-    const u = await getSessionUser(c.req.raw, env);
+interface TaskUpdateBody {
+  title?: string;
+  description?: string;
+  assigneeId?: string | null;
+  status?: string;
+  beforeTaskId?: string;
+  type?: string;
+  priority?: string;
+  sprintId?: string | null;
+}
+
+// Shared by the single-ticket PATCH route and the bulk-update endpoint.
+// `expectedProjectId` lets the single-ticket route keep its URL-scoped
+// 404-on-mismatch behavior; the bulk endpoint (not project-scoped in its
+// URL) omits it and trusts each task's own projectId.
+async function applyTaskUpdate(
+  u: SessionUser,
+  taskId: string,
+  body: TaskUpdateBody,
+  expectedProjectId?: string
+): Promise<typeof tasks.$inferSelect> {
+    const [task] = await env.DB.select().from(tasks).where(eq(tasks.id, taskId));
+    if (!task || (expectedProjectId && task.projectId !== expectedProjectId)) {
+      throw new ApiError(404, "Task not found");
+    }
+    const projectId = task.projectId;
     const access = await getProjectAccess(env.DB, u, projectId);
     const myRole = access.role;
-
-    const body = await readBody<{
-      title?: string;
-      description?: string;
-      assigneeId?: string | null;
-      status?: string;
-      beforeTaskId?: string;
-      type?: string;
-      priority?: string;
-      sprintId?: string | null;
-    }>(c);
-
-    const [task] = await env.DB
-      .select()
-      .from(tasks)
-      .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)));
-    if (!task) throw new ApiError(404, "Task not found");
 
     // Members may only modify tickets they are assigned to or created,
     // unless explicitly granted MOVE_OTHERS_TICKETS; project admins and
@@ -1601,7 +1606,47 @@ app.patch("/api/projects/:id/tasks/:taskId", (c) =>
       publish(projectId, { type: "updated", ticketId: updated.ticketId, taskId, actorId: u.id });
     }
 
+    return updated;
+}
+
+app.patch("/api/projects/:id/tasks/:taskId", (c) =>
+  guard(c, async () => {
+    const projectId = c.req.param("id");
+    const taskId = c.req.param("taskId");
+    const u = await getSessionUser(c.req.raw, env);
+    const body = await readBody<TaskUpdateBody>(c);
+    const updated = await applyTaskUpdate(u, taskId, body, projectId);
     return c.json(updated);
+  })
+);
+
+// Bulk update: apply the same change (status/type/priority/assignee/sprint)
+// to many tickets at once, e.g. multi-select on the board or My Tickets.
+// Not project-scoped in the URL — tickets can span multiple projects — so
+// each one is checked and applied independently; a failure on one doesn't
+// block the rest. Reuses applyTaskUpdate, so it enforces exactly the same
+// per-field permission rules as a single-ticket PATCH.
+app.patch("/api/tasks/bulk", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    const body = await readBody<{ taskIds?: string[]; update?: TaskUpdateBody }>(c);
+    const taskIds = Array.isArray(body.taskIds) ? [...new Set(body.taskIds)] : [];
+    if (taskIds.length === 0) throw new ApiError(400, "taskIds is required");
+    if (taskIds.length > 200) throw new ApiError(400, "Too many tickets selected (max 200)");
+    const update = body.update ?? {};
+    if (Object.keys(update).length === 0) throw new ApiError(400, "update is required");
+
+    const updated: string[] = [];
+    const skipped: { taskId: string; reason: string }[] = [];
+    for (const taskId of taskIds) {
+      try {
+        const task = await applyTaskUpdate(u, taskId, update);
+        updated.push(task.id);
+      } catch (e) {
+        skipped.push({ taskId, reason: e instanceof ApiError ? e.message : "Update failed" });
+      }
+    }
+    return c.json({ updated, skipped });
   })
 );
 
