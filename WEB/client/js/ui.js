@@ -89,7 +89,13 @@ export function roleChip(role) {
 
 export function fmtDate(ms) {
   if (!ms) return "-";
-  return new Date(Number(ms)).toLocaleString("en-GB", {
+  // Most timestamps arrive as epoch-ms numbers, but a few columns
+  // (e.g. user.createdAt) are Better Auth / timestamp_ms-mode fields that
+  // serialize as ISO strings instead — Date() parses both correctly,
+  // Number() only the former (an ISO string becomes NaN through it).
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return "-";
+  return d.toLocaleString("en-GB", {
     day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
   });
 }

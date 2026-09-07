@@ -242,6 +242,19 @@ describe("invitations", () => {
       body: { token, name: "Newbie", password: "newbie123!" },
     });
     assert.equal(reuse.status, 410);
+  });
+
+  it("rejects invitation acceptance with no name (name is required, not defaulted)", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/invitations`, {
+      method: "POST", cookie: adminCookie,
+      body: { email: "noname@test.local", role: "MEMBER" },
+    });
+    const { inviteUrl } = await create.json();
+    const token = new URL(inviteUrl).searchParams.get("token")!;
+    const res = await req("/api/invitations/accept", {
+      method: "POST", body: { token, name: "   ", password: "noname123!" },
+    });
+    assert.equal(res.status, 400);
 
     // New account can sign in and has USER role.
     const cookie = await signIn("newbie@test.local", "newbie123!");
@@ -270,7 +283,7 @@ describe("invitations", () => {
     const { inviteUrl } = await asSuper.json();
     const token = new URL(inviteUrl).searchParams.get("token")!;
     const accept = await req("/api/invitations/accept", {
-      method: "POST", body: { token, password: "acct1234!" },
+      method: "POST", body: { token, name: "Acct Holder", password: "acct1234!" },
     });
     assert.equal(accept.status, 200);
     const cookie = await signIn("acct@test.local", "acct1234!");
