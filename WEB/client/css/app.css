@@ -124,6 +124,28 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 .hidden { display: none !important; }
 
+/* ---------- Accessibility: on-brand keyboard focus, reduced motion ---------- */
+.btn:focus-visible,
+.icon-btn:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.card:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* ---------- Component base (soft, shared by both themes) ---------- */
 .btn {
   color: var(--accent-contrast);
@@ -695,13 +717,14 @@ textarea { resize: vertical; min-height: 84px; }
 .card.selected { border-color: var(--accent); box-shadow: var(--glow-soft); }
 
 .bulk-bar {
-  position: sticky; bottom: 0; left: 0; z-index: 20;
+  position: sticky; bottom: 16px; left: 0; z-index: 20;
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  margin-top: 12px; padding: 10px 16px; border-radius: var(--radius);
-  background: var(--surface-raised, var(--card)); border: 1px solid var(--border); box-shadow: var(--shadow);
+  margin-top: 12px; padding: 10px 16px 10px 14px; border-radius: var(--radius);
+  background: var(--surface-raised, var(--card)); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); box-shadow: var(--shadow);
 }
 .bulk-bar.hidden { display: none; }
-.bulk-bar .bulk-count { font-size: 12.5px; font-weight: 600; color: var(--text); margin-right: 4px; }
+.bulk-bar .bulk-count { font-size: 12.5px; font-weight: 600; color: var(--accent); margin-right: 4px; white-space: nowrap; }
 .bulk-bar select { max-width: 160px; }
 
 /* ---------- List view (Board / My Tickets alternate view) ---------- */

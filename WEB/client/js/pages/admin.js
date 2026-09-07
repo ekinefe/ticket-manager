@@ -345,7 +345,8 @@ async function openUserModal(u, reload) {
           const memberRole = membership?.role;
           const granted = membership ? (membership.permissions || []) : DEFAULT_MEMBER_PERMS;
           return `
-          <div class="up-row" data-project="${esc(p.id)}" style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border)">
+          <div class="up-block" style="border-bottom:1px solid var(--border)">
+          <div class="up-row" data-project="${esc(p.id)}" style="display:flex;align-items:center;gap:10px;padding:7px 4px">
             <input type="checkbox" id="up-${esc(p.id)}" ${memberRole ? "checked" : ""} />
             <label for="up-${esc(p.id)}" style="flex:1;display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;font-weight:400;color:var(--text);font-size:13.5px">
               <span class="prefix-chip">${esc(p.prefix)}</span> ${esc(p.name)}
@@ -354,7 +355,8 @@ async function openUserModal(u, reload) {
               ${MEMBER_ROLES.map((r) => `<option value="${r}"${(memberRole || "MEMBER") === r ? " selected" : ""}>${r}</option>`).join("")}
             </select>
           </div>
-          ${permsBlockHtml(p.id, detail.availablePermissions, granted)}`;
+          ${permsBlockHtml(p.id, detail.availablePermissions, granted)}
+          </div>`;
         }).join("")}
         ${projects.length === 0 ? `<div class="empty-note">No projects exist yet.</div>` : ""}
       </div>
@@ -577,7 +579,8 @@ async function openProjectAccessModal(p, reload) {
           const existing = data.members.find((m) => m.userId === u.id);
           const granted = existing ? (existing.permissions || []) : DEFAULT_MEMBER_PERMS;
           return `
-          <div class="up-row" data-user="${esc(u.id)}"${global ? ' data-global="1"' : ""} style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border)${global ? ";opacity:.75" : ""}">
+          <div class="up-block" style="border-bottom:1px solid var(--border)${global ? ";opacity:.75" : ""}">
+          <div class="up-row" data-user="${esc(u.id)}"${global ? ' data-global="1"' : ""} style="display:flex;align-items:center;gap:10px;padding:7px 4px">
             <input type="checkbox" id="pm-${esc(u.id)}" ${checked ? "checked" : ""}${global ? " disabled" : ""} />
             <label for="pm-${esc(u.id)}" style="flex:1;display:flex;align-items:center;gap:8px;margin:0;cursor:${global ? "default" : "pointer"};font-weight:400;color:var(--text);font-size:13.5px">
               ${avatarHtml(u.name, u.id)} ${esc(u.name)}
@@ -589,7 +592,8 @@ async function openProjectAccessModal(p, reload) {
                   ${MEMBER_ROLES.map((r) => `<option value="${r}"${(memberRole || "MEMBER") === r ? " selected" : ""}>${r}</option>`).join("")}
                 </select>`}
           </div>
-          ${global ? "" : permsBlockHtml(u.id, data.availablePermissions, granted)}`;
+          ${global ? "" : permsBlockHtml(u.id, data.availablePermissions, granted)}
+          </div>`;
         }).join("")}
         ${users.length === 0 ? `<div class="empty-note">No users yet.</div>` : ""}
       </div>
