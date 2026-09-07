@@ -456,15 +456,27 @@ app.patch("/api/projects/:id", (c) =>
     const u = await getSessionUser(c.req.raw, env);
     await requireProjectRole(env.DB, u, projectId, "ADMIN");
 
-    const body = await readBody<{ name?: string; prefix?: string }>(c);
-    if (!body.name && !body.prefix) throw new ApiError(400, "Nothing to update");
+    const body = await readBody<{ name?: string; prefix?: string; defaultAssigneeId?: string | null }>(c);
+    if (!body.name && !body.prefix && body.defaultAssigneeId === undefined) throw new ApiError(400, "Nothing to update");
 
-    const values: Partial<{ name: string; prefix: string }> = {};
+    const values: Partial<{ name: string; prefix: string; defaultAssigneeId: string | null }> = {};
     if (body.name) values.name = body.name.trim();
     if (body.prefix) {
       const prefix = body.prefix.trim().toUpperCase();
       if (!/^[A-Z0-9]{2,5}$/.test(prefix)) throw new ApiError(400, "Prefix must be 2-5 uppercase letters/digits");
       values.prefix = prefix;
+    }
+    if (body.defaultAssigneeId !== undefined) {
+      if (body.defaultAssigneeId) {
+        const [member] = await env.DB
+          .select({ userId: projectMembers.userId })
+          .from(projectMembers)
+          .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, body.defaultAssigneeId)));
+        if (!member) throw new ApiError(400, "Default assignee must be a member of this project");
+        values.defaultAssigneeId = body.defaultAssigneeId;
+      } else {
+        values.defaultAssigneeId = null;
+      }
     }
 
     const [updated] = await env.DB.update(projects).set(values).where(eq(projects.id, projectId)).returning();
@@ -659,6 +671,8 @@ app.delete("/api/admin/users/:id/projects/:projectId", (c) =>
     const projectId = c.req.param("projectId");
     await env.DB.delete(projectMembers).where(and(eq(projectMembers.userId, userId), eq(projectMembers.projectId, projectId)));
     await env.DB.delete(projectMemberPermissions).where(and(eq(projectMemberPermissions.userId, userId), eq(projectMemberPermissions.projectId, projectId)));
+    // A removed member can no longer be the project's default assignee.
+    await env.DB.update(projects).set({ defaultAssigneeId: null }).where(and(eq(projects.id, projectId), eq(projects.defaultAssigneeId, userId)));
     return c.json({ ok: true });
   })
 );
@@ -759,6 +773,8 @@ app.delete("/api/admin/projects/:id/members/:userId", (c) =>
     const userId = c.req.param("userId");
     await env.DB.delete(projectMembers).where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)));
     await env.DB.delete(projectMemberPermissions).where(and(eq(projectMemberPermissions.projectId, projectId), eq(projectMemberPermissions.userId, userId)));
+    // A removed member can no longer be the project's default assignee.
+    await env.DB.update(projects).set({ defaultAssigneeId: null }).where(and(eq(projects.id, projectId), eq(projects.defaultAssigneeId, userId)));
     return c.json({ ok: true });
   })
 );
@@ -1303,6 +1319,14 @@ app.post("/api/projects/:id/tasks", (c) =>
       .from(tasks)
       .where(and(eq(tasks.projectId, projectId), eq(tasks.status, status)));
 
+    // A ticket left unassigned falls back to the project's configured
+    // default assignee (admin-set), if any.
+    let assigneeId = body.assigneeId || null;
+    if (!assigneeId) {
+      const [proj] = await env.DB.select({ defaultAssigneeId: projects.defaultAssigneeId }).from(projects).where(eq(projects.id, projectId));
+      assigneeId = proj?.defaultAssigneeId ?? null;
+    }
+
     const now = Date.now();
     const [task] = await env.DB
       .insert(tasks)
@@ -1315,7 +1339,7 @@ app.post("/api/projects/:id/tasks", (c) =>
         status,
         type: (body.type ?? "TASK") as "TASK" | "BUG",
         priority: (body.priority ?? "MEDIUM") as "LOW" | "MEDIUM" | "HIGH" | "URGENT",
-        assigneeId: body.assigneeId || null,
+        assigneeId,
         sprintId: body.sprintId || null,
         createdBy: u.id,
         position: Number(maxPos) + 1,
