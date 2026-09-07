@@ -559,6 +559,16 @@ async function openProjectAccessModal(p, reload) {
         membership below. Global Admins manage users and create projects but
         still need membership to open a project.
       </div>
+      <div class="field" style="margin-bottom:16px">
+        <label for="pm-default-assignee">Default assignee for new unassigned tickets</label>
+        <select id="pm-default-assignee">
+          <option value="">None (stays unassigned)</option>
+          ${data.members.map((m) => `<option value="${esc(m.userId)}"${p.defaultAssigneeId === m.userId ? " selected" : ""}>${esc(m.name)}</option>`).join("")}
+        </select>
+        <div style="color:var(--text-dim);font-size:12px;margin-top:6px">
+          A ticket created without picking an assignee will be assigned to this person instead.
+        </div>
+      </div>
       <div id="pm-users">
         ${users.map((u) => {
           const memberRole = memberMap.get(u.id);
@@ -608,6 +618,10 @@ async function openProjectAccessModal(p, reload) {
         const saveBtn = modalEl.querySelector("#pm-save");
         saveBtn.disabled = true;
         try {
+          const newDefaultAssignee = modalEl.querySelector("#pm-default-assignee").value;
+          if (newDefaultAssignee !== (p.defaultAssigneeId || "")) {
+            await api.patch(`/projects/${p.id}`, { defaultAssigneeId: newDefaultAssignee || null });
+          }
           for (const row of modalEl.querySelectorAll(".up-row")) {
             if (row.dataset.global) continue;
             const userId = row.dataset.user;

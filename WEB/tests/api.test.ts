@@ -218,6 +218,45 @@ describe("tickets", () => {
     const task = await create.json();
     assert.equal(task.description, "<p>ok</p>alert(1)");
   });
+
+  it("falls back new unassigned tickets to the project's default assignee", async () => {
+    const rejectNonMember = await req(`/api/projects/${PROJECT_ID}`, {
+      method: "PATCH", cookie: adminCookie, body: { defaultAssigneeId: "u_zeynep" },
+    });
+    assert.equal(rejectNonMember.status, 400);
+
+    const setDefault = await req(`/api/projects/${PROJECT_ID}`, {
+      method: "PATCH", cookie: adminCookie, body: { defaultAssigneeId: "u_ayse" },
+    });
+    assert.equal(setDefault.status, 200);
+
+    const created = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: member1, body: { title: "No explicit assignee" },
+    });
+    assert.equal(created.status, 201);
+    assert.equal((await created.json()).assigneeId, "u_ayse");
+
+    // An explicit assignee still wins over the default.
+    const explicit = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: member1, body: { title: "Explicit assignee", assigneeId: "u_mehmet" },
+    });
+    assert.equal((await explicit.json()).assigneeId, "u_mehmet");
+
+    // Removing the default assignee as a member clears the setting.
+    const removeMember = await req(`/api/admin/projects/${PROJECT_ID}/members/u_ayse`, {
+      method: "DELETE", cookie: superCookie,
+    });
+    assert.equal(removeMember.status, 200);
+    const afterRemoval = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: adminCookie, body: { title: "Back to unassigned" },
+    });
+    assert.equal((await afterRemoval.json()).assigneeId, null);
+
+    // Restore ayse's membership for later tests in this file.
+    await req(`/api/admin/projects/${PROJECT_ID}/members`, {
+      method: "POST", cookie: superCookie, body: { userId: "u_ayse", role: "MEMBER" },
+    });
+  });
 });
 
 describe("invitations", () => {

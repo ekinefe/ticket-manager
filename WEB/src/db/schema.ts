@@ -57,6 +57,9 @@ export const projects = sqliteTable("projects", {
   name: text("name").notNull(),
   prefix: text("prefix").notNull().unique(),
   currentTicketSequence: integer("current_ticket_sequence").notNull().default(0),
+  // New tickets created without an explicit assignee fall back to this user
+  // (if set) instead of staying unassigned. Null = keep today's behavior.
+  defaultAssigneeId: text("default_assignee_id").references(() => user.id, { onDelete: "set null" }),
   createdAt: integer("created_at").notNull(),
 });
 
