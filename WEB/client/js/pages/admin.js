@@ -222,8 +222,8 @@ function openAddUserModal(reload) {
         try {
           await api.post("/admin/users", payload);
           toast(`${payload.email} created`, "ok");
-          close();
           reload();
+          showCreatedUserMessage(modalEl, close, payload);
         } catch (err) {
           errBox.textContent = err.message;
           errBox.classList.remove("hidden");
@@ -238,6 +238,36 @@ function openAddUserModal(reload) {
       );
     },
   });
+}
+
+function showCreatedUserMessage(modalEl, close, { name, email, password }) {
+  const body = modalEl.querySelector(".modal-body") || modalEl;
+  const loginUrl = `${location.origin}/login`;
+  const message =
+    `You've been added to Ticket Manager.\n\n` +
+    `Sign in: ${loginUrl}\n` +
+    `E-mail: ${email}\n` +
+    `Temporary password: ${password}\n\n` +
+    `You'll be asked to set your own password on first login.`;
+  body.innerHTML = `
+    <p style="margin-top:0">${esc(name)}'s account is ready. Send them this message:</p>
+    <textarea id="au-message" readonly rows="7" style="width:100%;resize:vertical;font-size:12px;font-family:inherit">${esc(message)}</textarea>
+    <div class="modal-actions">
+      <span></span>
+      <span class="right">
+        <button class="btn ghost" id="au-copy">Copy</button>
+        <button class="btn" id="au-done">Done</button>
+      </span>
+    </div>`;
+  body.querySelector("#au-copy").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(message);
+      toast("Copied", "ok");
+    } catch {
+      body.querySelector("#au-message").select();
+    }
+  });
+  body.querySelector("#au-done").addEventListener("click", close);
 }
 
 /* ---------------- Invite user ---------------- */
