@@ -306,8 +306,9 @@ app.post("/api/setup/complete", setupLimiter, (c) =>
         body: { email, name, password },
       });
       userId = result.user.id;
-    } catch {
-      throw new ApiError(409, "Could not create admin account (email may already be registered)");
+    } catch (e) {
+      console.error("setup/complete signup failed:", e);
+      throw new ApiError(409, `Could not create admin account: ${e instanceof Error ? e.message : "unknown error"}`);
     }
 
     await env.DB
@@ -560,8 +561,12 @@ app.post("/api/admin/users", (c) =>
     try {
       const result = await auth.api.signUpEmail({ headers: internalHeaders, body: { email, name, password } });
       userId = result.user.id;
-    } catch {
-      throw new ApiError(409, "Could not create account (email may already be registered)");
+    } catch (e) {
+      // The e-mail-uniqueness case is already handled above, so a failure
+      // here is an unexpected error (bad DB state, etc.) — surface it
+      // instead of a hardcoded, likely-wrong guess.
+      console.error("admin user creation failed:", e);
+      throw new ApiError(500, `Could not create account: ${e instanceof Error ? e.message : "unknown error"}`);
     }
 
     // Admin-set password: force a change on first login.
