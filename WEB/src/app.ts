@@ -531,6 +531,49 @@ app.get("/api/admin/users", (c) =>
   })
 );
 
+// Creates an account directly (name/e-mail/password set by the admin), no
+// invite token and no e-mail sent. Mirrors /api/setup/complete's use of the
+// internal sign-up header, just without the "no super admin yet" gate.
+app.post("/api/admin/users", (c) =>
+  guard(c, async () => {
+    const actor = await getSessionUser(c.req.raw, env);
+    requireSuperAdmin(actor);
+
+    const body = await readBody<{ name?: string; email?: string; password?: string; role?: string }>(c);
+    const email = body.email?.trim().toLowerCase();
+    const name = body.name?.trim();
+    const password = body.password ?? "";
+    if (!email || !EMAIL_RE.test(email)) throw new ApiError(400, "A valid e-mail address is required");
+    if (!name) throw new ApiError(400, "Name is required");
+    if (!password || password.length < 8) throw new ApiError(400, "Password must be at least 8 characters");
+    const role = body.role ?? "USER";
+    if (role !== "SUPER_ADMIN" && role !== "ADMIN" && role !== "USER") throw new ApiError(400, "Invalid role");
+
+    const [existingUser] = await env.DB.select({ id: user.id }).from(user).where(eq(user.email, email));
+    if (existingUser) throw new ApiError(409, "An account with this e-mail already exists");
+
+    const auth = createAuth(env);
+    const internalHeaders = new Headers({ "x-internal-signup": INTERNAL_SIGNUP_SECRET });
+    let userId: string;
+    try {
+      const result = await auth.api.signUpEmail({ headers: internalHeaders, body: { email, name, password } });
+      userId = result.user.id;
+    } catch {
+      throw new ApiError(409, "Could not create account (email may already be registered)");
+    }
+
+    if (role !== "USER") {
+      await env.DB.update(user).set({ role, updatedAt: new Date() }).where(eq(user.id, userId));
+    }
+
+    const [created] = await env.DB
+      .select({ id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt })
+      .from(user)
+      .where(eq(user.id, userId));
+    return c.json(created, 201);
+  })
+);
+
 app.patch("/api/admin/users/:id", (c) =>
   guard(c, async () => {
     const actor = await getSessionUser(c.req.raw, env);

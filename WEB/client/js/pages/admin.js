@@ -67,10 +67,14 @@ async function renderUsersTab(body) {
   head.style.marginBottom = "14px";
   head.innerHTML = `
     <span class="spacer" style="flex:1"></span>
+    <button class="btn sm ghost" id="add-user-btn">+ Add user</button>
     <button class="btn sm" id="invite-user-btn">+ Invite user</button>`;
   body.prepend(head);
   head.querySelector("#invite-user-btn").addEventListener("click", () =>
     openInviteUserModal(() => renderUsersTab(body))
+  );
+  head.querySelector("#add-user-btn").addEventListener("click", () =>
+    openAddUserModal(() => renderUsersTab(body))
   );
 
   appendChangeOwnPassword(body);
@@ -164,6 +168,74 @@ function confirmDeleteUser(u, reload, closeEditor) {
           toast(err.message, "err");
         }
       });
+    },
+  });
+}
+
+/* ---------------- Add user (no invite e-mail) ---------------- */
+
+function openAddUserModal(reload) {
+  openModal({
+    title: "Add user",
+    body: `
+      <div class="field">
+        <label for="au-name">Name</label>
+        <input type="text" id="au-name" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="au-email">E-mail</label>
+        <input type="email" id="au-email" placeholder="name@company.com" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="au-password">Password (min 8 chars)</label>
+        <input type="password" id="au-password" autocomplete="new-password" />
+      </div>
+      <div class="field">
+        <label for="au-role">Role</label>
+        <select id="au-role">
+          ${ROLES.map((r) => `<option value="${r}">${r}</option>`).join("")}
+        </select>
+        <div style="color:var(--text-dim);font-size:12px;margin-top:6px">
+          Account is created immediately with this password — no invite link or e-mail is sent.
+          Assign projects afterwards from this list.
+        </div>
+      </div>
+      <div class="form-error hidden" id="au-error"></div>
+      <div class="modal-actions">
+        <span></span>
+        <span class="right">
+          <button class="btn ghost" id="au-cancel">Cancel</button>
+          <button class="btn" id="au-create">Create user</button>
+        </span>
+      </div>`,
+    onMount(modalEl, close) {
+      const body = modalEl.querySelector(".modal-body") || modalEl;
+      const errBox = body.querySelector("#au-error");
+      const create = async () => {
+        errBox.classList.add("hidden");
+        const payload = {
+          name: body.querySelector("#au-name").value.trim(),
+          email: body.querySelector("#au-email").value.trim(),
+          password: body.querySelector("#au-password").value,
+          role: body.querySelector("#au-role").value,
+        };
+        try {
+          await api.post("/admin/users", payload);
+          toast(`${payload.email} created`, "ok");
+          close();
+          reload();
+        } catch (err) {
+          errBox.textContent = err.message;
+          errBox.classList.remove("hidden");
+        }
+      };
+      body.querySelector("#au-cancel").addEventListener("click", close);
+      body.querySelector("#au-create").addEventListener("click", create);
+      body.querySelectorAll("input").forEach((el) =>
+        el.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") { e.preventDefault(); create(); }
+        })
+      );
     },
   });
 }
