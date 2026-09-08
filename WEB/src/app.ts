@@ -208,6 +208,7 @@ app.post("/api/auth/reset-password", passwordResetApplyLimiter, (c) =>
     const body = await readBody<{ token?: string; password?: string }>(c);
     const userId = await validatePasswordReset(env.DB, body.token ?? "");
     await applyPasswordReset(env.DB, userId, body.password ?? "");
+    await env.DB.update(user).set({ mustChangePassword: false, updatedAt: new Date() }).where(eq(user.id, userId));
     return c.json({ ok: true });
   })
 );
@@ -224,6 +225,7 @@ app.post("/api/auth/change-password", (c) =>
     const ok = await verifyUserPassword(env.DB, u.id, body.currentPassword);
     if (!ok) throw new ApiError(400, "Current password is incorrect");
     await changePassword(env.DB, u.id, body.newPassword);
+    await env.DB.update(user).set({ mustChangePassword: false, updatedAt: new Date() }).where(eq(user.id, u.id));
     return c.json({ ok: true });
   })
 );
@@ -562,9 +564,11 @@ app.post("/api/admin/users", (c) =>
       throw new ApiError(409, "Could not create account (email may already be registered)");
     }
 
-    if (role !== "USER") {
-      await env.DB.update(user).set({ role, updatedAt: new Date() }).where(eq(user.id, userId));
-    }
+    // Admin-set password: force a change on first login.
+    await env.DB
+      .update(user)
+      .set({ mustChangePassword: true, ...(role !== "USER" ? { role } : {}), updatedAt: new Date() })
+      .where(eq(user.id, userId));
 
     const [created] = await env.DB
       .select({ id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt })
@@ -606,6 +610,8 @@ app.post("/api/admin/users/:id/password", (c) =>
     }
     // Reset the target's password and revoke their sessions (forces re-login).
     await applyPasswordReset(env.DB, id, body.password);
+    // Admin-set password: force a change on next login.
+    await env.DB.update(user).set({ mustChangePassword: true, updatedAt: new Date() }).where(eq(user.id, id));
     return c.json({ ok: true });
   })
 );

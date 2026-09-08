@@ -7,6 +7,7 @@ import { renderAcceptInvite } from "./pages/accept-invite.js";
 import { renderAdmin } from "./pages/admin.js";
 import { renderMyTickets } from "./pages/my-tickets.js";
 import { renderResetPassword } from "./pages/reset-password.js";
+import { renderForcePassword } from "./pages/force-password.js";
 import { renderSetup } from "./pages/setup.js";
 import { renderDashboard } from "./pages/dashboard.js";
 import { closeBoardStream } from "./pages/board.js";
@@ -333,7 +334,7 @@ async function route() {
   }
 
   if (path === "/login") {
-    if (state.user) { navigate("/projects"); return; }
+    if (state.user) { navigate(state.user.mustChangePassword ? "/force-password" : "/projects"); return; }
     topbar.classList.add("hidden");
     await renderLogin(appEl);
     return;
@@ -355,6 +356,15 @@ async function route() {
   if (!state.user) {
     const params = new URLSearchParams(location.search);
     navigate(`/login?next=${encodeURIComponent(params.get("next") || path)}`);
+    return;
+  }
+
+  // Admin-issued (or admin-reset) password: block the app until they set
+  // their own, same as an invite would have.
+  if (state.user.mustChangePassword) {
+    if (path !== "/force-password") { navigate("/force-password"); return; }
+    topbar.classList.add("hidden");
+    await renderForcePassword(appEl);
     return;
   }
 

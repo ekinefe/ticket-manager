@@ -28,6 +28,12 @@ export function createAuth(env: Env) {
           defaultValue: "USER",
           input: false,
         },
+        mustChangePassword: {
+          type: "boolean",
+          required: false,
+          defaultValue: false,
+          input: false,
+        },
       },
     },
   });
