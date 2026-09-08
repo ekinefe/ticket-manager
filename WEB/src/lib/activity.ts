@@ -1,3 +1,4 @@
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { activityLog } from "../db/schema";
 import { getDb } from "../db/client";
 import type { AppDB } from "../db/client";
@@ -20,13 +21,44 @@ export interface ActivityInput {
   newStatus?: string | null;
   oldValue?: string | null;
   newValue?: string | null;
+  // When set, and the most recent log entry for this task+eventType+actor
+  // was written within this many ms, that entry is updated in place
+  // (newValue + timestamp bumped) instead of inserting a new row. Keeps
+  // autosave-driven fields (title, description) from spamming the activity
+  // feed with one row per debounce tick while someone is actively editing.
+  coalesceWindowMs?: number;
 }
 
 export async function logActivity(
   db: AppDB,
-  { taskId, actorId, eventType, oldStatus, newStatus, oldValue, newValue }: ActivityInput
+  { taskId, actorId, eventType, oldStatus, newStatus, oldValue, newValue, coalesceWindowMs }: ActivityInput
 ): Promise<void> {
-  await getDb(db).insert(activityLog).values({
+  const d = getDb(db);
+
+  if (coalesceWindowMs) {
+    const [last] = await d
+      .select()
+      .from(activityLog)
+      .where(
+        and(
+          eq(activityLog.taskId, taskId),
+          eq(activityLog.eventType, eventType),
+          actorId ? eq(activityLog.actorId, actorId) : isNull(activityLog.actorId)
+        )
+      )
+      .orderBy(desc(activityLog.createdAt))
+      .limit(1);
+
+    if (last && Date.now() - last.createdAt <= coalesceWindowMs) {
+      await d
+        .update(activityLog)
+        .set({ newValue: newValue ?? null, newStatus: newStatus ?? null, createdAt: Date.now() })
+        .where(eq(activityLog.id, last.id));
+      return;
+    }
+  }
+
+  await d.insert(activityLog).values({
     id: crypto.randomUUID(),
     taskId,
     actorId: actorId ?? null,
