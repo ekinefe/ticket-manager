@@ -222,6 +222,13 @@ export async function renderDashboard(root) {
         </div>
       </div>` : ""}
 
+      <div class="dash-grid hidden" id="gh-activity-grid">
+        <div class="dash-panel dash-full">
+          <div class="panel-head"><h3>Repo Activity</h3></div>
+          <div class="panel-body"><ul class="dev-list" id="gh-activity"></ul></div>
+        </div>
+      </div>
+
       ${isSuper && stats.projectStats.length > 0 ? `
       <div class="dash-grid">
         <div class="dash-panel dash-full">
@@ -262,9 +269,33 @@ export async function renderDashboard(root) {
       </div>` : ""}
     </div>`;
 
+  loadRepoActivity(root);
   renderCharts(stats, isSuper, isAdmin);
   bindTimeframeToggle(stats, isSuper, isAdmin);
   if (isSuper) bindFilterBar();
+}
+
+/* ---------- GitHub repo activity (hidden unless a project has a linked repo) ---------- */
+
+async function loadRepoActivity(root) {
+  let rows;
+  try {
+    rows = await api.get("/github/activity");
+  } catch {
+    return;
+  }
+  const grid = root.querySelector("#gh-activity-grid");
+  const list = root.querySelector("#gh-activity");
+  if (!grid || !list || rows.length === 0) return;
+  list.innerHTML = rows.map((e) => `
+    <li class="dev-item">
+      <span class="prefix-chip">${esc(e.projectPrefix)}</span>
+      <span class="dev-kind">${e.kind === "PR" ? "PR #" + esc(e.ref) : esc(e.ref.slice(0, 7))}</span>
+      ${e.kind === "PR" && e.state ? `<span class="dev-state dev-${esc(e.state)}">${esc(e.state)}</span>` : ""}
+      ${e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer">${esc(e.title)}</a>` : esc(e.title)}
+      <span class="act-when">${esc(e.author || "")} &middot; ${fmtDate(e.updatedAt)}</span>
+    </li>`).join("");
+  grid.classList.remove("hidden");
 }
 
 /* ---------- Filter bar ---------- */

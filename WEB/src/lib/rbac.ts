@@ -1,4 +1,4 @@
-import { and, asc, count, eq, getTableColumns, inArray } from "drizzle-orm";
+import { and, asc, count, eq, getTableColumns, inArray, isNull } from "drizzle-orm";
 import type { AppDB } from "../db/client";
 import { projectMemberPermissions, projectMembers, projects, tasks, user } from "../db/schema";
 import { getDb } from "../db/client";
@@ -214,6 +214,61 @@ export async function listAssignedTickets(db: AppDB, u: SessionUser) {
       eq(tasks.assigneeId, u.id),
       inArray(tasks.projectId, accessible.map((p) => p.id))
     ))
+    .orderBy(asc(projects.name), asc(tasks.position));
+}
+
+const TICKET_LIST_COLUMNS = {
+  id: tasks.id,
+  ticketId: tasks.ticketId,
+  title: tasks.title,
+  status: tasks.status,
+  type: tasks.type,
+  priority: tasks.priority,
+  position: tasks.position,
+  assigneeId: tasks.assigneeId,
+  projectId: tasks.projectId,
+  projectName: projects.name,
+  projectPrefix: projects.prefix,
+};
+
+/** Projects where the user may see every ticket (super admin, project admin, or VIEW_ALL_TICKETS). */
+async function listViewAllProjectIds(db: AppDB, u: SessionUser): Promise<string[] | "ALL"> {
+  if (u.role === "SUPER_ADMIN") return "ALL";
+  const rows = await getDb(db)
+    .select({ projectId: projectMembers.projectId, role: projectMembers.role })
+    .from(projectMembers)
+    .where(eq(projectMembers.userId, u.id));
+  const perms = await getDb(db)
+    .select({ projectId: projectMemberPermissions.projectId })
+    .from(projectMemberPermissions)
+    .where(and(eq(projectMemberPermissions.userId, u.id), eq(projectMemberPermissions.permission, "VIEW_ALL_TICKETS")));
+  const withPerm = new Set(perms.map((r) => r.projectId));
+  return rows.filter((r) => r.role === "ADMIN" || withPerm.has(r.projectId)).map((r) => r.projectId);
+}
+
+/** Unassigned tickets in every project the user is allowed to view in full. */
+export async function listUnassignedTickets(db: AppDB, u: SessionUser) {
+  const ids = await listViewAllProjectIds(db, u);
+  if (ids !== "ALL" && ids.length === 0) return [];
+  return db
+    .select(TICKET_LIST_COLUMNS)
+    .from(tasks)
+    .innerJoin(projects, eq(projects.id, tasks.projectId))
+    .where(and(isNull(tasks.assigneeId), ids === "ALL" ? undefined : inArray(tasks.projectId, ids)))
+    .orderBy(asc(projects.name), asc(tasks.position));
+}
+
+/** Super admin: every ticket in every project, optionally for one assignee ("none" = unassigned). */
+export async function listAllTickets(db: AppDB, assigneeId?: string) {
+  const filter = !assigneeId
+    ? undefined
+    : assigneeId === "none" ? isNull(tasks.assigneeId) : eq(tasks.assigneeId, assigneeId);
+  return db
+    .select({ ...TICKET_LIST_COLUMNS, assigneeName: user.name })
+    .from(tasks)
+    .innerJoin(projects, eq(projects.id, tasks.projectId))
+    .leftJoin(user, eq(user.id, tasks.assigneeId))
+    .where(filter)
     .orderBy(asc(projects.name), asc(tasks.position));
 }
 

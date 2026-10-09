@@ -4,7 +4,7 @@ import {
   STATUSES, getStatusColor, STATUS_LABELS, canTransition,
   esc, avatarHtml, statusPill, openModal, toast, fmtDate,
   sanitizeDesc, descToEditorHtml, isEmptyDesc,
-  TASK_TYPES, TYPE_LABELS, PRIORITIES, PRIORITY_LABELS, priorityPill, branchName,
+  TASK_TYPES, TYPE_LABELS, PRIORITIES, PRIORITY_LABELS, priorityPill, branchName, bulkDeleteTickets,
 } from "../ui.js";
 
 let project = null;
@@ -607,8 +607,16 @@ function renderBulkBar() {
       <option value="__unassign__">Unassigned</option>
       ${project.members.map((m) => `<option value="${esc(m.userId)}">${esc(m.name)}${m.userId === state.user.id ? " (me)" : ""}</option>`).join("")}
     </select>
+    <button class="btn sm danger" id="bulk-delete">Delete…</button>
     <button class="btn sm ghost" id="bulk-clear">Clear selection</button>`;
 
+  bar.querySelector("#bulk-delete").addEventListener("click", async () => {
+    const list = tasks.filter((t) => selectedIds.has(t.id));
+    const deleted = await bulkDeleteTickets(list);
+    if (!deleted) return;
+    for (const id of deleted) { removeLocal(id); selectedIds.delete(id); }
+    refreshColumns();
+  });
   bar.querySelector("#bulk-status").addEventListener("change", (e) => bulkApply({ status: e.target.value }, e.target));
   bar.querySelector("#bulk-type").addEventListener("change", (e) => bulkApply({ type: e.target.value }, e.target));
   bar.querySelector("#bulk-priority").addEventListener("change", (e) => bulkApply({ priority: e.target.value }, e.target));
@@ -861,6 +869,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
             </div>
             <div class="modal-actions">
               ${isEdit && mayEdit && myRole === "ADMIN" ? `<button type="button" class="btn danger" id="tf-delete">Delete</button>` : ""}
+              ${isEdit && myRole === "ADMIN" ? `<button type="button" class="btn ghost" id="tf-share-toggle">Share…</button>` : ""}
               ${!mayEdit ? `<span class="ro-note">Read-only &mdash; only the assignee, the ticket creator or a project admin can modify this ticket.</span>` : ""}
               <span id="tf-savestate" class="save-state"></span>
               <span class="right">
@@ -868,6 +877,8 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
                 <button type="button" class="btn ghost" data-close>${isEdit ? "Close" : "Cancel"}</button>
               </span>
             </div>
+            ${isEdit && myRole === "ADMIN" ? `<div class="share-panel hidden" id="tf-share-panel"></div>` : ""}
+            ${isEdit ? `<div class="dev-panel hidden" id="tf-dev"></div>` : ""}
             ${isEdit ? `
             <div class="comments-block">
               <div class="activity-head">Comments</div>
@@ -1266,6 +1277,8 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
         }
       });
 
+      if (isEdit && myRole === "ADMIN") setupSharePanel(modalEl, task);
+      if (isEdit) loadDevPanel(modalEl, task);
       const delBtn = modalEl.querySelector("#tf-delete");
       if (delBtn) {
         delBtn.addEventListener("click", async () => {
@@ -1301,7 +1314,7 @@ function truncate(s, n) {
   return s.length > n ? `${s.slice(0, n - 1)}…` : s;
 }
 
-function actText(ev) {
+export function actText(ev) {
   const arrow = `<span class="act-arrow">&rarr;</span>`;
   switch (ev.type) {
     case "CREATED":
@@ -1349,6 +1362,110 @@ function loadActivity(listEl, taskId) {
     .catch(() => {
       listEl.innerHTML = `<li class="act-empty">Activity could not be loaded.</li>`;
     });
+}
+
+/* ---------- Development (GitHub commits / PRs, optional branch creation) ---------- */
+
+const PR_STATE_LABEL = { open: "Open", draft: "Draft", closed: "Closed", merged: "Merged" };
+
+async function loadDevPanel(modalEl, task) {
+  const panel = modalEl.querySelector("#tf-dev");
+  if (!panel) return;
+  let info;
+  try {
+    info = await api.get(`/projects/${project.id}/tasks/${task.id}/github`);
+  } catch {
+    return;
+  }
+  if (!info.repo) return;
+  const render = (inf) => {
+    panel.classList.remove("hidden");
+    const rows = inf.events.map((e) => `
+      <li class="dev-item">
+        <span class="dev-kind">${e.kind === "PR" ? "PR #" + esc(e.ref) : esc(e.ref.slice(0, 7))}</span>
+        ${e.kind === "PR" && e.state ? `<span class="dev-state dev-${esc(e.state)}">${esc(PR_STATE_LABEL[e.state] || e.state)}</span>` : ""}
+        ${e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer">${esc(e.title)}</a>` : esc(e.title)}
+        <span class="act-when">${esc(e.author || "")} &middot; ${fmtDate(e.updatedAt)}</span>
+      </li>`).join("");
+    panel.innerHTML = `
+      <div class="dev-head">
+        <h3>Development</h3>
+        <span class="share-note">${esc(inf.repo)}</span>
+        ${inf.branchEnabled ? `<button type="button" class="btn sm ghost" id="dev-branch">Create branch ${esc(inf.branchName)}</button>` : ""}
+      </div>
+      <ul class="dev-list">${rows || `<li class="act-empty">No commits or PRs yet. Mention <b>${esc(task.ticketId)}</b> in a commit message, PR title or branch name.</li>`}</ul>`;
+    panel.querySelector("#dev-branch")?.addEventListener("click", async (ev) => {
+      ev.target.disabled = true;
+      try {
+        const r = await api.post(`/projects/${project.id}/tasks/${task.id}/github/branch`, {});
+        toast(r.created ? `Branch ${r.branch} created` : `Branch ${r.branch} already exists`, "ok");
+      } catch (err) {
+        toast(err.message || "Could not create branch", "err");
+      } finally {
+        ev.target.disabled = false;
+      }
+    });
+  };
+  render(info);
+}
+
+/* ---------- Sharing (project admins only; single ticket, revocable) ---------- */
+
+function setupSharePanel(modalEl, task) {
+  const toggle = modalEl.querySelector("#tf-share-toggle");
+  const panel = modalEl.querySelector("#tf-share-panel");
+  if (!toggle || !panel) return;
+  const base = `/projects/${project.id}/tasks/${task.id}/share`;
+  let loaded = false;
+
+  const render = (st) => {
+    const url = st.token ? `${location.origin}/share/${st.token}` : "";
+    panel.innerHTML = `
+      <label class="share-row">Who can view this ticket (read-only)
+        <select id="share-mode">
+          <option value="OFF"${st.mode === "OFF" ? " selected" : ""}>Not shared</option>
+          <option value="ACCOUNT"${st.mode === "ACCOUNT" ? " selected" : ""}>Anyone signed in to this system</option>
+          <option value="LINK"${st.mode === "LINK" ? " selected" : ""}>Anyone with the link</option>
+        </select>
+      </label>
+      ${url ? `
+      <div class="share-row">
+        <input type="text" id="share-url" readonly value="${esc(url)}" />
+        <button type="button" class="btn sm" id="share-copy">Copy link</button>
+        <button type="button" class="btn sm ghost" id="share-rotate" title="Invalidate the current link and create a new one">New link</button>
+      </div>
+      <p class="share-note">Viewers can see the description, comments, attachments, people's names and activity &mdash; never e-mail addresses. They cannot change anything.</p>` : ""}`;
+    panel.querySelector("#share-mode").addEventListener("change", (e) => save({ mode: e.target.value }));
+    panel.querySelector("#share-copy")?.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(url); toast("Link copied", "ok"); }
+      catch { panel.querySelector("#share-url").select(); }
+    });
+    panel.querySelector("#share-rotate")?.addEventListener("click", () => {
+      if (confirm("The current link will stop working. Create a new one?")) save({ mode: st.mode, regenerate: true });
+    });
+  };
+
+  const save = async (body) => {
+    try {
+      const st = await api.put(base, body);
+      task.shareMode = st.mode;
+      render(st);
+      toast(st.mode === "OFF" ? "Sharing turned off — link revoked" : "Sharing updated", "ok");
+    } catch (err) {
+      toast(err.message || "Could not update sharing", "err");
+    }
+  };
+
+  toggle.addEventListener("click", async () => {
+    panel.classList.toggle("hidden");
+    if (panel.classList.contains("hidden") || loaded) return;
+    try {
+      render(await api.get(base));
+      loaded = true;
+    } catch (err) {
+      panel.innerHTML = `<div class="form-error">${esc(err.message)}</div>`;
+    }
+  });
 }
 
 /* ---------- Comments (any member can comment on any ticket; @mentions supported) ---------- */
