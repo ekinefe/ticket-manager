@@ -314,6 +314,7 @@ function drawShell(root) {
       </div>
       <div class="btn-group">
         <button class="btn sm ghost" id="export-btn">Export JSON</button>
+        <button class="btn sm ghost" id="export-csv-btn">Export CSV</button>
         <button class="btn sm" id="new-task-btn">+ New ticket</button>
       </div>
     </div>
@@ -337,6 +338,20 @@ function drawShell(root) {
       const a = document.createElement("a");
       a.href = url;
       a.download = `${project.prefix}-export.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast(err.message || "Export failed", "error");
+    }
+  });
+  document.getElementById("export-csv-btn").addEventListener("click", async () => {
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/export?format=csv`, { credentials: "same-origin" });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "Export failed");
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project.prefix}-export.csv`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {

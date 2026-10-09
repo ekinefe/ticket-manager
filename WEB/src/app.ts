@@ -2639,6 +2639,24 @@ app.delete("/api/notifications/:id", (c) =>
 
 // ---------- Export / Import ----------
 
+// Detailed export. The original keys (project / sprints[].name / tasks[] with a
+// numeric `sprint` index) are kept so the file can still be fed to Import;
+// everything else is extra context for humans, spreadsheets and backups.
+// E-mail addresses are never included.
+function csvCell(v: unknown): string {
+  let t = v == null ? "" : String(v);
+  if (/^[=+\-@\t\r]/.test(t)) t = `'${t}`; // neutralise spreadsheet formula injection
+  return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+}
+
+function plainText(html: string | null | undefined): string {
+  return String(html ?? "")
+    .replace(/<br\s*\/?>|<\/(p|div|li|h\d)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&")
+    .trim();
+}
+
 app.get("/api/projects/:id/export", (c) =>
   guard(c, async () => {
     const projectId = c.req.param("id");
@@ -2646,11 +2664,10 @@ app.get("/api/projects/:id/export", (c) =>
     // A full-project export doesn't make sense as a partial dump, so a
     // restricted member (no VIEW_ALL_TICKETS) can't use it at all.
     await requireProjectPermission(env.DB, u, projectId, "VIEW_ALL_TICKETS");
+    const format = (c.req.query("format") || "json").toLowerCase();
+    if (format !== "json" && format !== "csv") throw new ApiError(400, "format must be json or csv");
 
-    const [project] = await env.DB
-      .select()
-      .from(projects)
-      .where(eq(projects.id, projectId));
+    const [project] = await env.DB.select().from(projects).where(eq(projects.id, projectId));
     if (!project) throw new ApiError(404, "Project not found");
 
     const projectSprints = await env.DB
@@ -2660,36 +2677,143 @@ app.get("/api/projects/:id/export", (c) =>
       .orderBy(asc(sprints.createdAt));
 
     const projectTasks = await env.DB
-      .select({
-        id: tasks.id,
-        title: tasks.title,
-        description: tasks.description,
-        status: tasks.status,
-        type: tasks.type,
-        priority: tasks.priority,
-        assigneeId: tasks.assigneeId,
-        createdBy: tasks.createdBy,
-        sprintId: tasks.sprintId,
-        position: tasks.position,
-      })
+      .select()
       .from(tasks)
       .where(eq(tasks.projectId, projectId))
       .orderBy(asc(tasks.position));
 
-    const sprintIndexMap = new Map(projectSprints.map((s, i) => [s.id, i]));
+    const members = await env.DB
+      .select({ userId: projectMembers.userId, role: projectMembers.role, name: user.name })
+      .from(projectMembers)
+      .innerJoin(user, eq(user.id, projectMembers.userId))
+      .where(eq(projectMembers.projectId, projectId));
+    const nameById = new Map(members.map((m) => [m.userId, m.name]));
+    // Former members can still be an assignee / creator of old tickets.
+    const extraIds = [...new Set(projectTasks.flatMap((t) => [t.assigneeId, t.createdBy]).filter((id): id is string => !!id && !nameById.has(id)))];
+    for (let i = 0; i < extraIds.length; i += 50) {
+      const rows = await env.DB.select({ id: user.id, name: user.name }).from(user).where(inArray(user.id, extraIds.slice(i, i + 50)));
+      for (const r of rows) nameById.set(r.id, r.name);
+    }
+
+    // Join through tasks (not an id list) to stay under D1's bound-variable limit.
+    const commentRows = await env.DB
+      .select({ taskId: taskComments.taskId, body: taskComments.body, createdAt: taskComments.createdAt, authorName: user.name })
+      .from(taskComments)
+      .innerJoin(tasks, eq(tasks.id, taskComments.taskId))
+      .leftJoin(user, eq(user.id, taskComments.authorId))
+      .where(eq(tasks.projectId, projectId))
+      .orderBy(asc(taskComments.createdAt));
+    const activityRows = await env.DB
+      .select({
+        taskId: activityLog.taskId, type: activityLog.eventType, oldStatus: activityLog.oldStatus,
+        newStatus: activityLog.newStatus, oldValue: activityLog.oldValue, newValue: activityLog.newValue,
+        createdAt: activityLog.createdAt, actorName: user.name,
+      })
+      .from(activityLog)
+      .innerJoin(tasks, eq(tasks.id, activityLog.taskId))
+      .leftJoin(user, eq(user.id, activityLog.actorId))
+      .where(eq(tasks.projectId, projectId))
+      .orderBy(asc(activityLog.createdAt));
+    const linkRows = await env.DB
+      .select({
+        taskId: githubEventTasks.taskId, kind: githubEvents.kind, ref: githubEvents.ref, title: githubEvents.title,
+        url: githubEvents.url, state: githubEvents.state, author: githubEvents.author, branch: githubEvents.branch,
+      })
+      .from(githubEventTasks)
+      .innerJoin(githubEvents, eq(githubEvents.id, githubEventTasks.eventId))
+      .where(eq(githubEvents.projectId, projectId));
+
+    const by = <T extends { taskId: string }>(rows: T[]) => {
+      const m = new Map<string, T[]>();
+      for (const r of rows) (m.get(r.taskId) ?? m.set(r.taskId, []).get(r.taskId)!).push(r);
+      return m;
+    };
+    const commentsBy = by(commentRows);
+    const activityBy = by(activityRows);
+    const linksBy = by(linkRows);
+
+    const sprintById = new Map(projectSprints.map((sp, i) => [sp.id, { index: i, sprintId: sp.sprintId, name: sp.name }]));
+    const iso = (ms: number | null | undefined) => (ms ? new Date(ms).toISOString() : null);
+    const branchOf = (t: { ticketId: string; type: string }) => `${t.type === "BUG" ? "hotfix" : "feature"}/${t.ticketId}`;
+
+    if (format === "csv") {
+      const header = [
+        "Ticket ID", "Title", "Status", "Type", "Priority", "Sprint ID", "Sprint", "Assignee", "Created by",
+        "Created", "Updated", "Branch", "Comments", "Linked commits/PRs", "Description",
+      ];
+      const lines = [header.map(csvCell).join(",")];
+      for (const t of projectTasks) {
+        const sp = t.sprintId ? sprintById.get(t.sprintId) : undefined;
+        const links = (linksBy.get(t.id) ?? []).map((l) => (l.kind === "PR" ? `PR #${l.ref}` : l.ref.slice(0, 7))).join("; ");
+        lines.push([
+          t.ticketId, t.title, t.status, t.type, t.priority, sp?.sprintId ?? "", sp?.name ?? "Backlog",
+          t.assigneeId ? nameById.get(t.assigneeId) ?? "" : "", t.createdBy ? nameById.get(t.createdBy) ?? "" : "",
+          iso(t.createdAt), iso(t.updatedAt), branchOf(t), (commentsBy.get(t.id) ?? []).length, links, plainText(t.description),
+        ].map(csvCell).join(","));
+      }
+      return new Response("\uFEFF" + lines.join("\r\n") + "\r\n", {
+        headers: {
+          "content-type": "text/csv; charset=utf-8",
+          "content-disposition": `attachment; filename="${project.prefix}-export.csv"`,
+        },
+      });
+    }
+
+    const statusCounts: Record<string, number> = {};
+    for (const t of projectTasks) statusCounts[t.status] = (statusCounts[t.status] ?? 0) + 1;
 
     return c.json({
-      project: { name: project.name, prefix: project.prefix },
-      sprints: projectSprints.map((s) => ({ name: s.name })),
-      tasks: projectTasks.map((t) => ({
-        title: t.title,
-        description: t.description || undefined,
-        status: t.status,
-        type: t.type,
-        priority: t.priority,
-        sprint: t.sprintId != null ? sprintIndexMap.get(t.sprintId) ?? null : null,
-        assigneeId: t.assigneeId || undefined,
+      exportVersion: 2,
+      exportedAt: new Date().toISOString(),
+      exportedBy: u.name,
+      project: {
+        name: project.name,
+        prefix: project.prefix,
+        id: project.id,
+        createdAt: iso(project.createdAt),
+        githubRepo: project.githubRepo ?? null,
+        defaultAssignee: project.defaultAssigneeId ? nameById.get(project.defaultAssigneeId) ?? null : null,
+        lastTicketNumber: project.currentTicketSequence,
+      },
+      summary: { tickets: projectTasks.length, sprints: projectSprints.length, byStatus: statusCounts },
+      members: members.map((m) => ({ userId: m.userId, name: m.name, role: m.role })),
+      sprints: projectSprints.map((sp) => ({
+        name: sp.name,
+        sprintId: sp.sprintId,
+        id: sp.id,
+        createdAt: iso(sp.createdAt),
+        ticketCount: projectTasks.filter((t) => t.sprintId === sp.id).length,
       })),
+      tasks: projectTasks.map((t) => {
+        const sp = t.sprintId ? sprintById.get(t.sprintId) : undefined;
+        return {
+          ticketId: t.ticketId,
+          id: t.id,
+          title: t.title,
+          description: t.description || undefined,
+          status: t.status,
+          type: t.type,
+          priority: t.priority,
+          sprint: sp ? sp.index : null,
+          sprintId: sp?.sprintId ?? null,
+          sprintName: sp?.name ?? null,
+          assigneeId: t.assigneeId || undefined,
+          assignee: t.assigneeId ? nameById.get(t.assigneeId) ?? null : null,
+          createdBy: t.createdBy ? nameById.get(t.createdBy) ?? null : null,
+          createdAt: iso(t.createdAt),
+          updatedAt: iso(t.updatedAt),
+          position: t.position,
+          branch: branchOf(t),
+          comments: (commentsBy.get(t.id) ?? []).map((cm) => ({ author: cm.authorName, createdAt: iso(cm.createdAt), body: cm.body })),
+          activity: (activityBy.get(t.id) ?? []).map((a) => ({
+            type: a.type, actor: a.actorName, createdAt: iso(a.createdAt),
+            oldStatus: a.oldStatus, newStatus: a.newStatus, oldValue: a.oldValue, newValue: a.newValue,
+          })),
+          github: (linksBy.get(t.id) ?? []).map((l) => ({
+            kind: l.kind, ref: l.ref, title: l.title, url: l.url, state: l.state, author: l.author, branch: l.branch,
+          })),
+        };
+      }),
     });
   })
 );

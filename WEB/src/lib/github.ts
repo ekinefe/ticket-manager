@@ -249,6 +249,8 @@ export interface GraphCommit {
   author: string | null;
   date: number;
   url: string;
+  /** Branch whose own (first-parent) history contains this commit; null if none of the fetched branches does. */
+  branch: string | null;
 }
 export interface GraphPull {
   number: number;
@@ -314,7 +316,18 @@ export async function fetchCommitGraph(env: Env, repo: string): Promise<CommitGr
         author: c.commit?.author?.name ?? c.author?.login ?? null,
         date: Date.parse(c.commit?.author?.date || c.commit?.committer?.date) || 0,
         url: c.html_url,
+        branch: null,
       });
+    }
+  }
+  // Label each commit with the branch it was made on: walk every branch's
+  // first-parent chain from its tip (default branch first). A commit merged in
+  // from `dev` is not on `main`'s first-parent chain, so it stays labelled `dev`.
+  for (const b of branches) {
+    let cur = bySha.get(b.sha);
+    while (cur && cur.branch === null) {
+      cur.branch = b.name;
+      cur = cur.parents[0] ? bySha.get(cur.parents[0]) : undefined;
     }
   }
   const commits = [...bySha.values()].sort((a, b) => b.date - a.date);

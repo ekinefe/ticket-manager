@@ -175,6 +175,8 @@ describe("github commit graph", () => {
     const g = JSON.parse(text);
     assert.deepEqual(g.commits.map((c: any) => c.sha), ["m2", "f1", "m1"], "newest first");
     assert.deepEqual(g.commits[0].parents, ["m1"]);
+    // Every commit is labelled with the branch it was made on.
+    assert.deepEqual(Object.fromEntries(g.commits.map((c: any) => [c.sha, c.branch])), { m2: "main", f1: "feature/TST-980", m1: "main" });
     assert.deepEqual(g.commits[1].tickets, ["TST-980"]);
     assert.equal(g.branches[0].name, "main");
     assert.ok(!text.includes("dev@x.io"));

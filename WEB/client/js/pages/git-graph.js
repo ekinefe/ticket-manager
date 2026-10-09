@@ -127,14 +127,10 @@ export async function renderGitGraph(root, projectId) {
   const { rows, maxLanes } = layoutGraph(items);
   maxLanesForMarker = maxLanes; // PR markers sit one lane to the right of the tree
   const width = PAD * 2 + maxLanes * LANE_W;
-  const tips = new Map();
-  for (const b of data.branches) {
-    if (!tips.has(b.sha)) tips.set(b.sha, []);
-    tips.get(b.sha).push(b);
-  }
+  const defaults = new Set(data.branches.filter((b) => b.isDefault).map((b) => b.name));
   const fmtDay = (ms) => new Date(ms).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
   const fmtTime = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
-  const cols = `${width}px 190px 84px 170px minmax(280px, 1fr) 112px 56px`;
+  const cols = `${width}px 170px 84px 170px minmax(280px, 1fr) 112px 56px`;
 
   const rowHtml = (r) => {
     const c = r.commit;
@@ -152,7 +148,7 @@ export async function renderGitGraph(root, projectId) {
         <div class="git-time">${fmtTime(c.time)}</div>
       </div>`;
     }
-    const chips = (tips.get(c.sha) || []).map((b) => `<span class="git-branch${b.isDefault ? " default" : ""}">${esc(b.name)}</span>`).join("");
+    const chips = c.branch ? `<span class="git-branch${defaults.has(c.branch) ? " default" : ""}" title="${esc(c.branch)}">${esc(c.branch)}</span>` : "";
     return `
       <div class="git-row" style="grid-template-columns:${cols}">
         <div class="git-lanes">${rowSvg(r, width)}</div>
