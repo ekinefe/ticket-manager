@@ -152,6 +152,10 @@ describe("github commit graph", () => {
       if (url.endsWith("/app/installations/9/access_tokens")) return json({ token: "t" }, 201);
       if (url.endsWith("/repos/me/app")) return json({ default_branch: "main" });
       if (url.includes("/branches")) return json([{ name: "main", commit: { sha: "m2" } }, { name: "feature/TST-980", commit: { sha: "f1" } }]);
+      if (url.includes("/pulls?")) return json([
+        { number: 7, title: "TST-980 login", html_url: "https://github.com/me/app/pull/7", state: "closed", draft: false, user: { login: "dev" }, head: { ref: "feature/TST-980" }, created_at: new Date(Date.UTC(2026, 9, 2)).toISOString(), merged_at: new Date(Date.UTC(2026, 9, 5)).toISOString(), closed_at: new Date(Date.UTC(2026, 9, 5)).toISOString() },
+        { number: 8, title: "WIP", html_url: "https://github.com/me/app/pull/8", state: "open", draft: true, user: { login: "dev" }, head: { ref: "x" }, created_at: new Date(Date.UTC(2026, 9, 6)).toISOString(), merged_at: null, closed_at: null },
+      ]);
       if (url.includes("sha=main")) return json([commit("m2", ["m1"], "Merge TST-980", 5), commit("m1", [], "init", 1)]);
       if (url.includes("sha=feature")) return json([commit("f1", ["m1"], "work on TST-980", 3)]);
       return json({}, 404);
@@ -174,6 +178,9 @@ describe("github commit graph", () => {
     assert.deepEqual(g.commits[1].tickets, ["TST-980"]);
     assert.equal(g.branches[0].name, "main");
     assert.ok(!text.includes("dev@x.io"));
+    assert.deepEqual(g.pulls.map((p: any) => [p.number, p.state]), [[7, "merged"], [8, "draft"]]);
+    assert.ok(g.pulls[0].endedAt > g.pulls[0].createdAt);
+    assert.deepEqual(g.pulls[0].tickets, ["TST-980"]);
   });
 
   it("is cached briefly and denied to non-members", async () => {

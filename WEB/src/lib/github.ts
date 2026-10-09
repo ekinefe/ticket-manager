@@ -250,9 +250,20 @@ export interface GraphCommit {
   date: number;
   url: string;
 }
+export interface GraphPull {
+  number: number;
+  title: string;
+  url: string;
+  author: string | null;
+  state: "open" | "draft" | "closed" | "merged";
+  head: string;
+  createdAt: number;
+  endedAt: number | null; // merged_at, or closed_at for a PR closed without merging
+}
 export interface CommitGraph {
   branches: { name: string; sha: string; isDefault: boolean }[];
   commits: GraphCommit[];
+  pulls: GraphPull[];
 }
 
 const MAX_BRANCHES = 8;
@@ -307,7 +318,22 @@ export async function fetchCommitGraph(env: Env, repo: string): Promise<CommitGr
     }
   }
   const commits = [...bySha.values()].sort((a, b) => b.date - a.date);
-  const data = { branches, commits };
+
+  // Recent PRs (open and finished). Optional: a failure here must not hide the commits.
+  const pr = await gh(`/repos/${repo}/pulls?state=all&sort=updated&direction=desc&per_page=30`, token);
+  const pulls: GraphPull[] = pr.ok
+    ? ((await pr.json()) as any[]).map((p) => ({
+        number: p.number,
+        title: String(p.title || "").slice(0, 200),
+        url: p.html_url,
+        author: p.user?.login ?? null,
+        state: p.merged_at ? "merged" : p.state === "closed" ? "closed" : p.draft ? "draft" : "open",
+        head: p.head?.ref ?? "",
+        createdAt: Date.parse(p.created_at) || 0,
+        endedAt: Date.parse(p.merged_at || p.closed_at) || null,
+      }))
+    : [];
+  const data = { branches, commits, pulls };
   graphCache.set(repo, { at: Date.now(), data });
   return data;
 }
