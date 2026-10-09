@@ -1776,3 +1776,17 @@ input[type="checkbox"], input[type="radio"] {
   .table-card { overflow-x: auto; }
   table.data { min-width: 540px; }
 }
+
+/* ---------- Ticket sharing ---------- */
+.share-panel { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-raised); display: flex; flex-direction: column; gap: 10px; }
+.share-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.share-row input[type="text"] { flex: 1; min-width: 200px; }
+.share-note { font-size: 12px; color: var(--text-dim); margin: 0; }
+.share-page { max-width: 820px; margin: 0 auto; padding: 24px 16px 60px; display: flex; flex-direction: column; gap: 14px; }
+.share-banner { font-size: 12px; color: var(--text-dim); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; background: var(--surface-raised); }
+.share-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.share-page h1 { margin: 0; }
+.share-page h2 { margin: 18px 0 0; font-size: 15px; }
+.share-desc { overflow-wrap: anywhere; }
+.share-desc img, .share-desc video, .share-page .comment-text img, .share-page .comment-text video { max-width: 100%; height: auto; }
+.share-page .comment-list { max-height: none; }

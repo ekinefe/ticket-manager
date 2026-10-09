@@ -5,6 +5,7 @@ import { renderProjects } from "./pages/projects.js";
 import { renderBoard, renderMembersTab, renderSprintsTab } from "./pages/board.js";
 import { renderAcceptInvite } from "./pages/accept-invite.js";
 import { renderAdmin } from "./pages/admin.js";
+import { renderShare } from "./pages/share.js";
 import { renderMyTickets, renderAllTickets } from "./pages/my-tickets.js";
 import { renderResetPassword } from "./pages/reset-password.js";
 import { renderForcePassword } from "./pages/force-password.js";
@@ -346,6 +347,13 @@ async function route() {
   if (path === "/reset-password") {
     topbar.classList.add("hidden");
     await renderResetPassword(appEl);
+    return;
+  }
+
+  let sm;
+  if ((sm = path.match(/^\/share\/([^/]+)$/))) {
+    topbar.classList.add("hidden");
+    await renderShare(appEl, decodeURIComponent(sm[1]));
     return;
   }
 

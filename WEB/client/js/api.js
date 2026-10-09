@@ -21,6 +21,7 @@ export const api = {
   get: (path) => request(path),
   post: (path, body) => request(path, { method: "POST", body }),
   patch: (path, body) => request(path, { method: "PATCH", body }),
+  put: (path, body) => request(path, { method: "PUT", body }),
   del: (path) => request(path, { method: "DELETE" }),
 
   async upload(path, formData) {
