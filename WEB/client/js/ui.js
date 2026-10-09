@@ -1,3 +1,5 @@
+import { api } from "./api.js";
+
 export const STATUSES = ["TODO", "IN_PROGRESS", "UNDER_REVIEW", "MERGED", "DEPLOYED", "TEST", "DONE"];
 
 export const STATUS_COLORS = {
@@ -240,4 +242,28 @@ export function openModal({ title = "", body = "", onMount, wide = false } = {})
   const modalEl = overlay.querySelector(".modal");
   if (onMount) onMount(modalEl, close);
   return { el: modalEl, close };
+}
+
+/**
+ * Confirm, then permanently delete the given tickets ({ id, ticketId }).
+ * Tickets the user may not delete are skipped server-side and listed in a toast.
+ * Resolves to the deleted ids, or null if the user cancelled / the call failed.
+ */
+export async function bulkDeleteTickets(list) {
+  if (list.length === 0) return null;
+  const preview = list.slice(0, 8).map((t) => t.ticketId).join(", ") + (list.length > 8 ? `, +${list.length - 8} more` : "");
+  if (!confirm(`Permanently delete ${list.length} ticket${list.length === 1 ? "" : "s"}?\n\n${preview}\n\nThis cannot be undone.`)) return null;
+  try {
+    const { deleted, skipped } = await api.post("/tasks/bulk-delete", { taskIds: list.map((t) => t.id) });
+    if (skipped.length === 0) {
+      toast(`Deleted ${deleted.length} ticket${deleted.length === 1 ? "" : "s"}`, "ok");
+    } else {
+      const names = skipped.map((s) => s.ticketId || s.taskId).slice(0, 6).join(", ");
+      toast(`Deleted ${deleted.length}, skipped ${skipped.length} (no DELETE permission): ${names}`, deleted.length ? "ok" : "err");
+    }
+    return deleted;
+  } catch (err) {
+    toast(err.message || "Bulk delete failed", "err");
+    return null;
+  }
 }

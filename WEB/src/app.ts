@@ -1729,6 +1729,42 @@ app.patch("/api/tasks/bulk", (c) =>
   })
 );
 
+// Bulk delete: permanent. Like the bulk update it is not project-scoped in
+// the URL, so DELETE_TICKET is checked per ticket's project; tickets the
+// caller may not delete are skipped and reported back (never a hard failure).
+app.post("/api/tasks/bulk-delete", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    const body = await readBody<{ taskIds?: string[] }>(c);
+    const taskIds = Array.isArray(body.taskIds) ? [...new Set(body.taskIds)] : [];
+    if (taskIds.length === 0) throw new ApiError(400, "taskIds is required");
+    if (taskIds.length > 200) throw new ApiError(400, "Too many tickets selected (max 200)");
+
+    const deleted: string[] = [];
+    const skipped: { taskId: string; ticketId: string | null; reason: string }[] = [];
+    for (const taskId of taskIds) {
+      const [task] = await env.DB
+        .select({ id: tasks.id, projectId: tasks.projectId, ticketId: tasks.ticketId })
+        .from(tasks)
+        .where(eq(tasks.id, taskId));
+      if (!task) {
+        skipped.push({ taskId, ticketId: null, reason: "Ticket not found" });
+        continue;
+      }
+      try {
+        await requireProjectPermission(env.DB, u, task.projectId, "DELETE_TICKET");
+      } catch (e) {
+        skipped.push({ taskId, ticketId: task.ticketId, reason: e instanceof ApiError ? e.message : "Not allowed" });
+        continue;
+      }
+      await env.DB.delete(tasks).where(eq(tasks.id, taskId));
+      publish(task.projectId, { type: "deleted", taskId, actorId: u.id });
+      deleted.push(taskId);
+    }
+    return c.json({ deleted, skipped });
+  })
+);
+
 // Full change history of a single ticket, oldest first.
 app.get("/api/projects/:id/tasks/:taskId/events", (c) =>
   guard(c, async () => {

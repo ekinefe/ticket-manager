@@ -4,7 +4,7 @@ import {
   STATUSES, getStatusColor, STATUS_LABELS, canTransition,
   esc, avatarHtml, statusPill, openModal, toast, fmtDate,
   sanitizeDesc, descToEditorHtml, isEmptyDesc,
-  TASK_TYPES, TYPE_LABELS, PRIORITIES, PRIORITY_LABELS, priorityPill, branchName,
+  TASK_TYPES, TYPE_LABELS, PRIORITIES, PRIORITY_LABELS, priorityPill, branchName, bulkDeleteTickets,
 } from "../ui.js";
 
 let project = null;
@@ -607,8 +607,16 @@ function renderBulkBar() {
       <option value="__unassign__">Unassigned</option>
       ${project.members.map((m) => `<option value="${esc(m.userId)}">${esc(m.name)}${m.userId === state.user.id ? " (me)" : ""}</option>`).join("")}
     </select>
+    <button class="btn sm danger" id="bulk-delete">Delete…</button>
     <button class="btn sm ghost" id="bulk-clear">Clear selection</button>`;
 
+  bar.querySelector("#bulk-delete").addEventListener("click", async () => {
+    const list = tasks.filter((t) => selectedIds.has(t.id));
+    const deleted = await bulkDeleteTickets(list);
+    if (!deleted) return;
+    for (const id of deleted) { removeLocal(id); selectedIds.delete(id); }
+    refreshColumns();
+  });
   bar.querySelector("#bulk-status").addEventListener("change", (e) => bulkApply({ status: e.target.value }, e.target));
   bar.querySelector("#bulk-type").addEventListener("change", (e) => bulkApply({ type: e.target.value }, e.target));
   bar.querySelector("#bulk-priority").addEventListener("change", (e) => bulkApply({ priority: e.target.value }, e.target));

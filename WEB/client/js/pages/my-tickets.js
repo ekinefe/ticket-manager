@@ -1,7 +1,7 @@
 import { api } from "../api.js";
 import { navigate } from "../main.js";
 import {
-  esc, priorityPill, branchName, toast, statusPill,
+  esc, priorityPill, branchName, toast, statusPill, bulkDeleteTickets,
   STATUSES, getStatusColor, STATUS_LABELS,
   TASK_TYPES, TYPE_LABELS, PRIORITIES, PRIORITY_LABELS,
 } from "../ui.js";
@@ -127,7 +127,18 @@ function renderBulkBar(root, rerender) {
       <option value="">Change priority…</option>
       ${PRIORITIES.map((p) => `<option value="${p}">${PRIORITY_LABELS[p]}</option>`).join("")}
     </select>
+    <button class="btn sm danger" id="bulk-delete">Delete…</button>
     <button class="btn sm ghost" id="bulk-clear">Clear selection</button>`;
+
+  bar.querySelector("#bulk-delete").addEventListener("click", async () => {
+    const list = [...root.querySelectorAll(".mt-card, .list-row")]
+      .filter((el) => selectedIds.has(el.dataset.id))
+      .map((el) => ({ id: el.dataset.id, ticketId: el.querySelector(".ticket-id")?.textContent || el.dataset.id }));
+    const deleted = await bulkDeleteTickets(list);
+    if (!deleted) return;
+    selectedIds = new Set();
+    await rerender();
+  });
 
   const apply = async (update, selectEl) => {
     const taskIds = [...selectedIds];

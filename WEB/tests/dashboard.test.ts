@@ -90,3 +90,39 @@ describe("unassigned and all tickets", () => {
     assert.equal((await req("/api/all-tickets", { cookie: admin })).status, 403);
   });
 });
+
+describe("bulk delete", () => {
+  before(async () => {
+    const db = getDb(env.DB);
+    const at = Date.now();
+    for (const i of [1, 2]) {
+      await db.insert(tasks).values({
+        id: `t_del_${i}`, projectId: PROJECT_ID, ticketId: `TST-96${i}`, title: `Delete ${i}`,
+        status: "TODO", assigneeId: null, position: 20 + i, createdAt: at, updatedAt: at,
+      });
+    }
+  });
+
+  it("skips tickets the member lacks DELETE_TICKET for, and reports them", async () => {
+    const ayse = await userCookie("u_ayse");
+    const res = await req("/api/tasks/bulk-delete", { method: "POST", cookie: ayse, body: { taskIds: ["t_del_1", "nope"] } });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.deepEqual(data.deleted, []);
+    assert.equal(data.skipped.length, 2);
+    assert.equal(data.skipped[0].ticketId, "TST-961");
+  });
+
+  it("lets the super admin permanently delete several tickets", async () => {
+    const res = await req("/api/tasks/bulk-delete", { method: "POST", cookie: superCookie, body: { taskIds: ["t_del_1", "t_del_2"] } });
+    const data = await res.json();
+    assert.deepEqual(data.deleted.sort(), ["t_del_1", "t_del_2"]);
+    const all = await (await req("/api/all-tickets", { cookie: superCookie })).json();
+    assert.ok(!all.some((t: any) => t.id.startsWith("t_del_")));
+  });
+
+  it("requires taskIds and a session", async () => {
+    assert.equal((await req("/api/tasks/bulk-delete", { method: "POST", cookie: superCookie, body: {} })).status, 400);
+    assert.equal((await req("/api/tasks/bulk-delete", { method: "POST", body: { taskIds: ["x"] } })).status, 401);
+  });
+});
