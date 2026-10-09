@@ -673,6 +673,14 @@ async function openProjectAccessModal(p, reload) {
           A ticket created without picking an assignee will be assigned to this person instead.
         </div>
       </div>
+      <div class="field" style="margin-bottom:16px">
+        <label for="pm-github-repo">GitHub repository (optional)</label>
+        <input type="text" id="pm-github-repo" value="${esc(p.githubRepo || "")}" placeholder="owner/name" autocomplete="off" />
+        <div style="color:var(--text-dim);font-size:12px;margin-top:6px">
+          Private repo for this project. Commits and PRs that mention a ticket id (e.g. <code>${esc(p.prefix)}-12</code>) show up on that ticket.
+          Needs the GitHub App set up under Settings and installed on this repo.
+        </div>
+      </div>
       <div id="pm-users">
         ${users.map((u) => {
           const memberRole = memberMap.get(u.id);
@@ -727,6 +735,10 @@ async function openProjectAccessModal(p, reload) {
           const newDefaultAssignee = modalEl.querySelector("#pm-default-assignee").value;
           if (newDefaultAssignee !== (p.defaultAssigneeId || "")) {
             await api.patch(`/projects/${p.id}`, { defaultAssigneeId: newDefaultAssignee || null });
+          }
+          const newRepo = modalEl.querySelector("#pm-github-repo").value.trim();
+          if (newRepo !== (p.githubRepo || "")) {
+            await api.patch(`/projects/${p.id}/github`, { repo: newRepo || null });
           }
           for (const row of modalEl.querySelectorAll(".up-row")) {
             if (row.dataset.global) continue;
@@ -887,6 +899,31 @@ async function renderSettingsTab(body) {
         </div>
       </div>
 
+      <div class="settings-section">
+        <h3 class="settings-heading">GitHub</h3>
+        <div style="color:var(--text-dim);font-size:12.5px;margin-bottom:10px">
+          Create a GitHub App (GitHub &rarr; Settings &rarr; Developer settings &rarr; GitHub Apps), install it on your private repos, then paste its details here.
+          Webhook URL to give GitHub: <code id="gh-webhook-url">${esc(location.origin)}/api/github/webhook</code>
+        </div>
+        <div class="field">
+          <label for="s-gh-app-id">App ID</label>
+          <input type="text" id="s-gh-app-id" value="${esc(settings.github_app_id || "")}" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="s-gh-key">Private key (PKCS#8 PEM)</label>
+          <textarea id="s-gh-key" rows="4" spellcheck="false" autocomplete="off" placeholder="-----BEGIN PRIVATE KEY-----">${esc(settings.github_private_key || "")}</textarea>
+          <div style="color:var(--text-dim);font-size:12px;margin-top:4px">GitHub gives a PKCS#1 key. Convert it once: <code>openssl pkcs8 -topk8 -nocrypt -in app.pem -out app-pkcs8.pem</code></div>
+        </div>
+        <div class="field">
+          <label for="s-gh-secret">Webhook secret</label>
+          <input type="password" id="s-gh-secret" value="${esc(settings.github_webhook_secret || "")}" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="s-gh-branch" ${settings.github_branch_create === "1" ? "checked" : ""} /> Allow creating a branch from a ticket</label>
+          <div style="color:var(--text-dim);font-size:12px;margin-top:4px">Shows a "Create branch" button on tickets of projects with a linked repo. Off by default.</div>
+        </div>
+      </div>
+
       <div class="modal-actions">
         <span id="settings-msg" style="font-size:13px;color:var(--text-dim)"></span>
         <span class="right">
@@ -908,6 +945,10 @@ async function renderSettingsTab(body) {
         mail_transport: body.querySelector("#s-mail-transport").value,
         resend_api_key: body.querySelector("#s-resend-key").value,
         mail_from: body.querySelector("#s-mail-from").value.trim(),
+        github_app_id: body.querySelector("#s-gh-app-id").value.trim(),
+        github_private_key: body.querySelector("#s-gh-key").value,
+        github_webhook_secret: body.querySelector("#s-gh-secret").value,
+        github_branch_create: body.querySelector("#s-gh-branch").checked ? "1" : "0",
       });
       msg.textContent = "Settings saved and applied.";
       msg.style.color = "var(--ok)";

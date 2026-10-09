@@ -1790,3 +1790,14 @@ input[type="checkbox"], input[type="radio"] {
 .share-desc { overflow-wrap: anywhere; }
 .share-desc img, .share-desc video, .share-page .comment-text img, .share-page .comment-text video { max-width: 100%; height: auto; }
 .share-page .comment-list { max-height: none; }
+
+/* ---------- GitHub development panel ---------- */
+.dev-panel { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-raised); }
+.dev-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dev-head h3 { margin: 0; font-size: 14px; }
+.dev-head .btn { margin-left: auto; }
+.dev-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.dev-item { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.dev-kind { font-family: ui-monospace, monospace; font-size: 12px; color: var(--text-dim); }
+.dev-state { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); }
+.dev-open { color: #1E8C5A; } .dev-merged { color: #783CA0; } .dev-closed { color: #CD5F23; } .dev-draft { color: var(--text-dim); }

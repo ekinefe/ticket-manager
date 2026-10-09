@@ -878,6 +878,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
               </span>
             </div>
             ${isEdit && myRole === "ADMIN" ? `<div class="share-panel hidden" id="tf-share-panel"></div>` : ""}
+            ${isEdit ? `<div class="dev-panel hidden" id="tf-dev"></div>` : ""}
             ${isEdit ? `
             <div class="comments-block">
               <div class="activity-head">Comments</div>
@@ -1277,6 +1278,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
       });
 
       if (isEdit && myRole === "ADMIN") setupSharePanel(modalEl, task);
+      if (isEdit) loadDevPanel(modalEl, task);
       const delBtn = modalEl.querySelector("#tf-delete");
       if (delBtn) {
         delBtn.addEventListener("click", async () => {
@@ -1360,6 +1362,51 @@ function loadActivity(listEl, taskId) {
     .catch(() => {
       listEl.innerHTML = `<li class="act-empty">Activity could not be loaded.</li>`;
     });
+}
+
+/* ---------- Development (GitHub commits / PRs, optional branch creation) ---------- */
+
+const PR_STATE_LABEL = { open: "Open", draft: "Draft", closed: "Closed", merged: "Merged" };
+
+async function loadDevPanel(modalEl, task) {
+  const panel = modalEl.querySelector("#tf-dev");
+  if (!panel) return;
+  let info;
+  try {
+    info = await api.get(`/projects/${project.id}/tasks/${task.id}/github`);
+  } catch {
+    return;
+  }
+  if (!info.repo) return;
+  const render = (inf) => {
+    panel.classList.remove("hidden");
+    const rows = inf.events.map((e) => `
+      <li class="dev-item">
+        <span class="dev-kind">${e.kind === "PR" ? "PR #" + esc(e.ref) : esc(e.ref.slice(0, 7))}</span>
+        ${e.kind === "PR" && e.state ? `<span class="dev-state dev-${esc(e.state)}">${esc(PR_STATE_LABEL[e.state] || e.state)}</span>` : ""}
+        ${e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer">${esc(e.title)}</a>` : esc(e.title)}
+        <span class="act-when">${esc(e.author || "")} &middot; ${fmtDate(e.updatedAt)}</span>
+      </li>`).join("");
+    panel.innerHTML = `
+      <div class="dev-head">
+        <h3>Development</h3>
+        <span class="share-note">${esc(inf.repo)}</span>
+        ${inf.branchEnabled ? `<button type="button" class="btn sm ghost" id="dev-branch">Create branch ${esc(inf.branchName)}</button>` : ""}
+      </div>
+      <ul class="dev-list">${rows || `<li class="act-empty">No commits or PRs yet. Mention <b>${esc(task.ticketId)}</b> in a commit message, PR title or branch name.</li>`}</ul>`;
+    panel.querySelector("#dev-branch")?.addEventListener("click", async (ev) => {
+      ev.target.disabled = true;
+      try {
+        const r = await api.post(`/projects/${project.id}/tasks/${task.id}/github/branch`, {});
+        toast(r.created ? `Branch ${r.branch} created` : `Branch ${r.branch} already exists`, "ok");
+      } catch (err) {
+        toast(err.message || "Could not create branch", "err");
+      } finally {
+        ev.target.disabled = false;
+      }
+    });
+  };
+  render(info);
 }
 
 /* ---------- Sharing (project admins only; single ticket, revocable) ---------- */
