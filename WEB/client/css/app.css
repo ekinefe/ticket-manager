@@ -1801,3 +1801,13 @@ input[type="checkbox"], input[type="radio"] {
 .dev-kind { font-family: ui-monospace, monospace; font-size: 12px; color: var(--text-dim); }
 .dev-state { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); }
 .dev-open { color: #1E8C5A; } .dev-merged { color: #783CA0; } .dev-closed { color: #CD5F23; } .dev-draft { color: var(--text-dim); }
+
+/* ---------- Commit graph ---------- */
+.git-graph { display: flex; flex-direction: column; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-raised); padding: 6px 10px; }
+.git-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.git-lanes { flex: none; line-height: 0; }
+.git-info { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; font-size: 13px; }
+.git-msg { overflow: hidden; text-overflow: ellipsis; max-width: 520px; color: var(--text); }
+.git-meta { color: var(--text-dim); font-size: 12px; }
+.git-branch { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); font-family: ui-monospace, monospace; }
+.git-branch.default { border-color: var(--accent, #00f3ff); }

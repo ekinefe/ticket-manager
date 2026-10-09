@@ -129,3 +129,57 @@ describe("github integration", () => {
     assert.equal(res.status, 403);
   });
 });
+
+describe("github commit graph", () => {
+  const realFetch = globalThis.fetch;
+  const calls: string[] = [];
+
+  before(async () => {
+    const { generateKeyPairSync } = await import("node:crypto");
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    env.GITHUB_APP_ID = "123";
+    env.GITHUB_APP_PRIVATE_KEY = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+    const commit = (sha: string, parents: string[], msg: string, day: number) => ({
+      sha, parents: parents.map((p) => ({ sha: p })), html_url: `https://github.com/me/app/commit/${sha}`,
+      commit: { message: msg, author: { name: "Dev", email: "dev@x.io", date: new Date(Date.UTC(2026, 9, day)).toISOString() } },
+    });
+    globalThis.fetch = (async (input: any) => {
+      const url = String(input?.url ?? input);
+      if (!url.startsWith("https://api.github.com")) return realFetch(input);
+      calls.push(url);
+      if (url.endsWith("/repos/me/app/installation")) return json({ id: 9 });
+      if (url.endsWith("/app/installations/9/access_tokens")) return json({ token: "t" }, 201);
+      if (url.endsWith("/repos/me/app")) return json({ default_branch: "main" });
+      if (url.includes("/branches")) return json([{ name: "main", commit: { sha: "m2" } }, { name: "feature/TST-980", commit: { sha: "f1" } }]);
+      if (url.includes("sha=main")) return json([commit("m2", ["m1"], "Merge TST-980", 5), commit("m1", [], "init", 1)]);
+      if (url.includes("sha=feature")) return json([commit("f1", ["m1"], "work on TST-980", 3)]);
+      return json({}, 404);
+    }) as typeof fetch;
+  });
+
+  after(() => {
+    globalThis.fetch = realFetch;
+    delete env.GITHUB_APP_ID;
+    delete env.GITHUB_APP_PRIVATE_KEY;
+  });
+
+  it("returns commits with parents, branch tips and ticket ids — no e-mails", async () => {
+    const res = await req(`/api/projects/${PROJECT_ID}/github/graph`, { cookie: ayse });
+    assert.equal(res.status, 200);
+    const text = await res.text();
+    const g = JSON.parse(text);
+    assert.deepEqual(g.commits.map((c: any) => c.sha), ["m2", "f1", "m1"], "newest first");
+    assert.deepEqual(g.commits[0].parents, ["m1"]);
+    assert.deepEqual(g.commits[1].tickets, ["TST-980"]);
+    assert.equal(g.branches[0].name, "main");
+    assert.ok(!text.includes("dev@x.io"));
+  });
+
+  it("is cached briefly and denied to non-members", async () => {
+    const before = calls.length;
+    await req(`/api/projects/${PROJECT_ID}/github/graph`, { cookie: ayse });
+    assert.equal(calls.length, before, "second call served from cache");
+    assert.equal((await req(`/api/projects/${PROJECT_ID}/github/graph`, { cookie: zeynep })).status, 403);
+  });
+});

@@ -284,6 +284,7 @@ function headHtml(activeTab) {
         <button class="tab ${activeTab === "board" ? "active" : ""}" data-tab="board">Board (${tasks.length})</button>
         <button class="tab ${activeTab === "members" ? "active" : ""}" data-tab="members">Members (${project.members.length})</button>
         <button class="tab ${activeTab === "sprints" ? "active" : ""}" data-tab="sprints">Sprints (${project.sprints.length})</button>
+        ${project.githubRepo ? `<button class="tab" data-tab="graph">Git graph</button>` : ""}
       </nav>
     </div>`;
 }
@@ -293,7 +294,7 @@ function bindTabs() {
     btn.addEventListener("click", () => {
       const tab = btn.dataset.tab;
       const base = `/projects/${project.id}`;
-      navigate(tab === "members" ? `${base}/members` : tab === "sprints" ? `${base}/sprints` : base);
+      navigate(tab === "members" ? `${base}/members` : tab === "sprints" ? `${base}/sprints` : tab === "graph" ? `${base}/graph` : base);
     });
   });
 }
@@ -1391,6 +1392,7 @@ async function loadDevPanel(modalEl, task) {
       <div class="dev-head">
         <h3>Development</h3>
         <span class="share-note">${esc(inf.repo)}</span>
+        <a href="/projects/${encodeURIComponent(project.id)}/graph" data-nav class="share-note">View commit graph</a>
         ${inf.branchEnabled ? `<button type="button" class="btn sm ghost" id="dev-branch">Create branch ${esc(inf.branchName)}</button>` : ""}
       </div>
       <ul class="dev-list">${rows || `<li class="act-empty">No commits or PRs yet. Mention <b>${esc(task.ticketId)}</b> in a commit message, PR title or branch name.</li>`}</ul>`;

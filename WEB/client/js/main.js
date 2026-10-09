@@ -5,6 +5,7 @@ import { renderProjects } from "./pages/projects.js";
 import { renderBoard, renderMembersTab, renderSprintsTab } from "./pages/board.js";
 import { renderAcceptInvite } from "./pages/accept-invite.js";
 import { renderAdmin } from "./pages/admin.js";
+import { renderGitGraph } from "./pages/git-graph.js";
 import { renderShare } from "./pages/share.js";
 import { renderMyTickets, renderAllTickets } from "./pages/my-tickets.js";
 import { renderResetPassword } from "./pages/reset-password.js";
@@ -417,6 +418,8 @@ async function route() {
     await renderBoard(page, decodeURIComponent(m[1]), sprintParam, taskParam);
   } else if ((m = path.match(/^\/projects\/([^/]+)\/members$/))) {
     await renderMembersTab(page, decodeURIComponent(m[1]));
+  } else if ((m = path.match(/^\/projects\/([^/]+)\/graph$/))) {
+    await renderGitGraph(page, decodeURIComponent(m[1]));
   } else if ((m = path.match(/^\/projects\/([^/]+)\/sprints$/))) {
     await renderSprintsTab(page, decodeURIComponent(m[1]));
   } else if (path === "/admin" || path === "/admin/users") {
