@@ -893,7 +893,7 @@ app.get("/api/dashboard/stats", (c) =>
     const qType = isSuper ? (c.req.query("type") || "").trim() : "";
     const qDays = isSuper ? Number(c.req.query("days") || 14) : 14;
 
-    // Time range (applies to all stats for super admin)
+    // Time range (applies ONLY to the time-based charts: daily/weekly/recent activity)
     const daysBack = Math.min(Math.max(qDays || 14, 7), 90);
     const timeCutoffMs = Date.now() - daysBack * 24 * 60 * 60 * 1000;
 
@@ -923,7 +923,6 @@ app.get("/api/dashboard/stats", (c) =>
     if (isSuper && qStatus) extraConditions.push(sql`${tasks.status} = ${qStatus}`);
     if (isSuper && qPriority) extraConditions.push(sql`${tasks.priority} = ${qPriority}`);
     if (isSuper && qType) extraConditions.push(sql`${tasks.type} = ${qType}`);
-    if (isSuper) extraConditions.push(gte(tasks.createdAt, timeCutoffMs));
 
     const taskWhere = extraConditions.length > 0
       ? and(projectFilter, ...extraConditions)
@@ -1009,22 +1008,22 @@ app.get("/api/dashboard/stats", (c) =>
         projectId: sprints.projectId,
         projectName: projects.name,
         projectPrefix: projects.prefix,
-        total: sql<number>`(select count(*) from ${tasks} where ${tasks.sprintId} = ${sprints.id} and ${taskWhere})`,
-        done: sql<number>`(select count(*) from ${tasks} where ${tasks.sprintId} = ${sprints.id} and ${tasks.status} = 'DONE' and ${taskWhere})`,
+        total: sql<number>`(select count(*) from ${tasks} where ${tasks.sprintId} = ${sql.raw('"sprints"."id"')} and ${taskWhere})`,
+        done: sql<number>`(select count(*) from ${tasks} where ${tasks.sprintId} = ${sql.raw('"sprints"."id"')} and ${tasks.status} = 'DONE' and ${taskWhere})`,
       })
       .from(sprints)
       .innerJoin(projects, eq(projects.id, sprints.projectId))
       .where(sprintWhere)
       .orderBy(asc(sprints.createdAt));
 
-    // --- Daily stats (uses taskWhere which already includes time filter) ---
+    // --- Daily stats (time-filtered) ---
     const dailyCreatedRows = await env.DB
       .select({
         day: sql<string>`date(${tasks.createdAt} / 1000, 'unixepoch', 'localtime')`,
         n: sql<number>`count(*)`,
       })
       .from(tasks)
-      .where(taskWhere)
+      .where(and(taskWhere, gte(tasks.createdAt, timeCutoffMs)))
       .groupBy(sql`date(${tasks.createdAt} / 1000, 'unixepoch', 'localtime')`);
 
     // For activity-based completed stats: project + time + assignee/type/priority filters
@@ -1192,8 +1191,8 @@ app.get("/api/dashboard/stats", (c) =>
           id: projects.id,
           name: projects.name,
           prefix: projects.prefix,
-          total: sql<number>`(select count(*) from ${tasks} where ${tasks.projectId} = ${projects.id} and ${taskWhere})`,
-          done: sql<number>`(select count(*) from ${tasks} where ${tasks.projectId} = ${projects.id} and ${tasks.status} = 'DONE' and ${taskWhere})`,
+          total: sql<number>`(select count(*) from ${tasks} where ${tasks.projectId} = ${sql.raw('"projects"."id"')} and ${taskWhere})`,
+          done: sql<number>`(select count(*) from ${tasks} where ${tasks.projectId} = ${sql.raw('"projects"."id"')} and ${tasks.status} = 'DONE' and ${taskWhere})`,
         })
         .from(projects)
         .where(effectiveProjectIds.length > 0 ? inArray(projects.id, effectiveProjectIds) : sql`1 = 1`)
