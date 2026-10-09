@@ -1901,6 +1901,7 @@ app.get("/api/projects/:id/github/graph", (c) =>
       repo: project.githubRepo,
       branches: graph.branches,
       commits: graph.commits.map((cm) => ({ ...cm, tickets: extractTicketIds(project.prefix, cm.message) })),
+      pulls: graph.pulls.map((pl) => ({ ...pl, tickets: extractTicketIds(project.prefix, pl.title, pl.head) })),
     });
   })
 );

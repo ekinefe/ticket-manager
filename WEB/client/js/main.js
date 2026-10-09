@@ -188,11 +188,13 @@ function sidebarHtml(activeId, activePath) {
     const projPath = `/projects/${encodeURIComponent(p.id)}`;
     const projActive = activePath === projPath ||
       activePath === `${projPath}/members` ||
-      activePath === `${projPath}/sprints`;
+      activePath === `${projPath}/sprints` ||
+      activePath === `${projPath}/graph`;
     const subOpen = projActive || !sidebarState.collapsedProjects.has(p.id);
     const dashActive = activePath === projPath;
     const memActive = activePath === `${projPath}/members`;
     const sprActive = activePath === `${projPath}/sprints`;
+    const graphActive = activePath === `${projPath}/graph`;
     return `
       <div class="side-proj${projActive ? " active" : ""}">
         <div class="side-proj-row">
@@ -207,6 +209,7 @@ function sidebarHtml(activeId, activePath) {
           <a class="side-sub${dashActive ? " active" : ""}" href="${projPath}" data-nav>Board</a>
           <a class="side-sub${memActive ? " active" : ""}" href="${projPath}/members" data-nav>Members</a>
           <a class="side-sub${sprActive ? " active" : ""}" href="${projPath}/sprints" data-nav>Sprints</a>
+          ${p.githubRepo ? `<a class="side-sub${graphActive ? " active" : ""}" href="${projPath}/graph" data-nav>Git graph</a>` : ""}
         </div>
       </div>`;
   }).join("");

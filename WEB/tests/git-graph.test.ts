@@ -30,3 +30,12 @@ describe("git graph layout", () => {
     assert.deepEqual(rows.map((r: any) => r.col), [0, 1, 0]);
   });
 });
+
+describe("git graph layout with PR events", () => {
+  it("lets lanes pass straight through PR rows without moving commits", () => {
+    const { rows } = layoutGraph([c("b", "a"), { kind: "pr", action: "opened" }, c("a")]);
+    assert.equal(rows[1].col, -1);
+    assert.deepEqual(rows[1].segs.map((s: any) => [s.x1, s.x2]), [[0, 0]]);
+    assert.deepEqual([rows[0].col, rows[2].col], [0, 0]);
+  });
+});
