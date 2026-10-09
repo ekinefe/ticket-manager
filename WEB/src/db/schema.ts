@@ -81,6 +81,8 @@ export const tasks = sqliteTable(
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     sprintId: text("sprint_id").references(() => sprints.id, { onDelete: "set null" }),
     position: real("position").notNull().default(0),
+    shareMode: text("share_mode", { enum: ["OFF", "ACCOUNT", "LINK"] }).notNull().default("OFF"),
+    shareToken: text("share_token"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },

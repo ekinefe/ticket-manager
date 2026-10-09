@@ -1365,7 +1365,7 @@ app.get("/api/projects/:id/tasks", (c) =>
       query = query.limit(limit).offset(offset);
     }
     const rows = await query.orderBy(asc(tasks.status), asc(tasks.position));
-    return c.json(rows);
+    return c.json(rows.map(withoutShareToken));
   })
 );
 
@@ -1458,7 +1458,7 @@ app.post("/api/projects/:id/tasks", (c) =>
       });
     }
 
-    return c.json(task, 201);
+    return c.json(withoutShareToken(task), 201);
   })
 );
 
@@ -1695,7 +1695,7 @@ app.patch("/api/projects/:id/tasks/:taskId", (c) =>
     const u = await getSessionUser(c.req.raw, env);
     const body = await readBody<TaskUpdateBody>(c);
     const updated = await applyTaskUpdate(u, taskId, body, projectId);
-    return c.json(updated);
+    return c.json(withoutShareToken(updated));
   })
 );
 
@@ -1762,6 +1762,168 @@ app.post("/api/tasks/bulk-delete", (c) =>
       deleted.push(taskId);
     }
     return c.json({ deleted, skipped });
+  })
+);
+
+// The share token is the secret behind a public link: only the project-admin
+// share endpoints may return it, never the generic ticket payloads.
+function withoutShareToken<T extends { shareToken?: string | null }>(row: T): Omit<T, "shareToken"> {
+  const { shareToken: _omit, ...rest } = row;
+  return rest;
+}
+
+// ---------- Ticket sharing ----------
+// Per ticket: OFF | ACCOUNT (any signed-in user) | LINK (anyone with the URL).
+// Shared viewers are strictly read-only and never see e-mail addresses.
+// Only project admins / super admin may change it; turning it OFF drops the
+// token, so the old link dies immediately.
+
+function newShareToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+app.get("/api/projects/:id/tasks/:taskId/share", (c) =>
+  guard(c, async () => {
+    const projectId = c.req.param("id");
+    const u = await getSessionUser(c.req.raw, env);
+    await requireProjectRole(env.DB, u, projectId, "ADMIN");
+    const [task] = await env.DB
+      .select({ shareMode: tasks.shareMode, shareToken: tasks.shareToken })
+      .from(tasks)
+      .where(and(eq(tasks.id, c.req.param("taskId")), eq(tasks.projectId, projectId)));
+    if (!task) throw new ApiError(404, "Task not found");
+    return c.json({ mode: task.shareMode, token: task.shareToken });
+  })
+);
+
+app.put("/api/projects/:id/tasks/:taskId/share", (c) =>
+  guard(c, async () => {
+    const projectId = c.req.param("id");
+    const taskId = c.req.param("taskId");
+    const u = await getSessionUser(c.req.raw, env);
+    await requireProjectRole(env.DB, u, projectId, "ADMIN");
+    const body = await readBody<{ mode?: string; regenerate?: boolean }>(c);
+    if (body.mode !== "OFF" && body.mode !== "ACCOUNT" && body.mode !== "LINK") {
+      throw new ApiError(400, "mode must be OFF, ACCOUNT or LINK");
+    }
+    const [task] = await env.DB
+      .select({ shareToken: tasks.shareToken })
+      .from(tasks)
+      .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)));
+    if (!task) throw new ApiError(404, "Task not found");
+
+    const token = body.mode === "OFF" ? null : body.regenerate || !task.shareToken ? newShareToken() : task.shareToken;
+    await env.DB.update(tasks).set({ shareMode: body.mode, shareToken: token }).where(eq(tasks.id, taskId));
+    return c.json({ mode: body.mode, token });
+  })
+);
+
+app.get("/api/share/:token", (c) =>
+  guard(c, async () => {
+    const token = c.req.param("token");
+    const [task] = await env.DB
+      .select({
+        id: tasks.id,
+        ticketId: tasks.ticketId,
+        title: tasks.title,
+        description: tasks.description,
+        status: tasks.status,
+        type: tasks.type,
+        priority: tasks.priority,
+        shareMode: tasks.shareMode,
+        assigneeId: tasks.assigneeId,
+        createdBy: tasks.createdBy,
+        projectId: tasks.projectId,
+        projectName: projects.name,
+        projectPrefix: projects.prefix,
+        createdAt: tasks.createdAt,
+        updatedAt: tasks.updatedAt,
+      })
+      .from(tasks)
+      .innerJoin(projects, eq(projects.id, tasks.projectId))
+      .where(and(eq(tasks.shareToken, token), sql`${tasks.shareMode} != 'OFF'`));
+    if (!task) throw new ApiError(404, "This link is invalid or sharing has been turned off");
+
+    let viewer: SessionUser | null = null;
+    try {
+      viewer = await getSessionUser(c.req.raw, env);
+    } catch {
+      viewer = null;
+    }
+    if (task.shareMode === "ACCOUNT" && !viewer) throw new ApiError(401, "Sign in to view this ticket");
+
+    const nameOf = async (id: string | null) => {
+      if (!id) return null;
+      const [row] = await env.DB.select({ name: user.name }).from(user).where(eq(user.id, id));
+      return row?.name ?? null;
+    };
+
+    const comments = await env.DB
+      .select({ id: taskComments.id, body: taskComments.body, createdAt: taskComments.createdAt, authorName: user.name })
+      .from(taskComments)
+      .leftJoin(user, eq(user.id, taskComments.authorId))
+      .where(eq(taskComments.taskId, task.id))
+      .orderBy(asc(taskComments.createdAt), asc(sql`task_comments.rowid`))
+      .limit(500);
+
+    const events = await env.DB
+      .select({
+        id: activityLog.id,
+        type: activityLog.eventType,
+        oldStatus: activityLog.oldStatus,
+        newStatus: activityLog.newStatus,
+        oldValue: activityLog.oldValue,
+        newValue: activityLog.newValue,
+        createdAt: activityLog.createdAt,
+        actorName: user.name,
+      })
+      .from(activityLog)
+      .leftJoin(user, eq(user.id, activityLog.actorId))
+      .where(eq(activityLog.taskId, task.id))
+      .orderBy(asc(activityLog.createdAt), asc(sql`activity_log.rowid`))
+      .limit(500);
+    const activity = [];
+    for (const e of events) {
+      activity.push(
+        e.type === "ASSIGNEE_CHANGED"
+          ? { ...e, oldValue: await nameOf(e.oldValue), newValue: await nameOf(e.newValue) }
+          : e
+      );
+    }
+
+    // Lets a member jump to the real board; never used to grant any access.
+    let isMember = false;
+    if (viewer) {
+      try {
+        await getProjectAccess(env.DB, viewer, task.projectId);
+        isMember = true;
+      } catch {
+        isMember = false;
+      }
+    }
+
+    return c.json({
+      ticket: {
+        ticketId: task.ticketId,
+        title: task.title,
+        description: task.description,
+        status: task.status,
+        type: task.type,
+        priority: task.priority,
+        projectName: task.projectName,
+        projectPrefix: task.projectPrefix,
+        assigneeName: await nameOf(task.assigneeId),
+        createdByName: await nameOf(task.createdBy),
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+      },
+      comments,
+      activity,
+      viewer: { signedIn: !!viewer, isMember },
+      projectId: isMember ? task.projectId : undefined,
+      taskId: isMember ? task.id : undefined,
+    });
   })
 );
 
