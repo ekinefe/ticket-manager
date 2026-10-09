@@ -245,6 +245,15 @@ app.use(
   })
 );
 
+// On Workers every request gets a fresh env that never saw the DB-stored
+// settings, so GitHub routes pull just the GitHub credentials in themselves.
+// (Deliberately not the whole settings table: e.g. a stale mail_from in the DB
+// must not override the Worker's configured mail setup.)
+app.use("/api/*", async (c, next) => {
+  if (c.req.path.includes("/github")) await loadGithubSettings(env);
+  await next();
+});
+
 // Strict per-user limiter for invitation creation (abuse containment).
 const inviteLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -2805,6 +2814,15 @@ app.post("/api/projects/import", (c) =>
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
   return app;
+}
+
+export async function loadGithubSettings(env: Env): Promise<void> {
+  const rows = await env.DB.select().from(appSettings);
+  const map = new Map(rows.map((r) => [r.key, r.value]));
+  if (map.get("github_app_id")) env.GITHUB_APP_ID = map.get("github_app_id")!;
+  if (map.get("github_private_key")) env.GITHUB_APP_PRIVATE_KEY = map.get("github_private_key")!;
+  if (map.get("github_webhook_secret")) env.GITHUB_WEBHOOK_SECRET = map.get("github_webhook_secret")!;
+  env.GITHUB_BRANCH_CREATE = map.get("github_branch_create") === "1" ? "1" : "";
 }
 
 // Read all settings from the DB and override the matching env fields.
