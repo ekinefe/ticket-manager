@@ -183,3 +183,18 @@ describe("github commit graph", () => {
     assert.equal((await req(`/api/projects/${PROJECT_ID}/github/graph`, { cookie: zeynep })).status, 403);
   });
 });
+
+describe("github settings from the database", () => {
+  it("applies DB-stored credentials to GitHub routes even when env has none (Workers case)", async () => {
+    const { appSettings } = await import("../src/db/schema.ts");
+    await getDb(env.DB).insert(appSettings).values({ key: "github_webhook_secret", value: "db_secret", updatedAt: Date.now() });
+    const saved = env.GITHUB_WEBHOOK_SECRET;
+    delete env.GITHUB_WEBHOOK_SECRET;
+    try {
+      const res = await hook("ping", { zen: "x" }, "db_secret");
+      assert.equal(res.status, 200);
+    } finally {
+      env.GITHUB_WEBHOOK_SECRET = saved;
+    }
+  });
+});
