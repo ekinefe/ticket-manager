@@ -23,7 +23,7 @@ import {
 } from "./lib/rbac";
 import { allocateTicketId } from "./lib/ticket-id";
 import { logActivity } from "./lib/activity";
-import { REPO_RE, createBranch, githubConfigured, handleGithubEvent, ticketBranchName, verifyWebhookSignature } from "./lib/github";
+import { REPO_RE, createBranch, fetchCommitGraph, extractTicketIds, githubConfigured, handleGithubEvent, ticketBranchName, verifyWebhookSignature } from "./lib/github";
 import { canTransition, INSTANT_NOTIFY_STATUSES, STATUSES, type Status } from "./lib/status";
 import { notifyStatusChanged } from "./lib/notify";
 import { validateInvitation, markInvitationAccepted, hashInviteToken, generateInviteToken } from "./lib/invite";
@@ -1871,6 +1871,28 @@ app.post("/api/projects/:id/tasks/:taskId/github/branch", (c) =>
     const branch = ticketBranchName(task);
     const result = await createBranch(env, project.githubRepo, branch);
     return c.json({ branch, ...result });
+  })
+);
+
+// Commit tree of the project's repo (read live from GitHub through the App).
+app.get("/api/projects/:id/github/graph", (c) =>
+  guard(c, async () => {
+    const projectId = c.req.param("id");
+    const u = await getSessionUser(c.req.raw, env);
+    const access = await getProjectAccess(env.DB, u, projectId);
+    if (!access.can("VIEW_ALL_TICKETS")) throw new ApiError(403, "Missing permission: VIEW_ALL_TICKETS");
+    if (!githubConfigured(env)) throw new ApiError(400, "GitHub App is not configured");
+    const [project] = await env.DB
+      .select({ githubRepo: projects.githubRepo, prefix: projects.prefix })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+    if (!project?.githubRepo) throw new ApiError(400, "This project has no GitHub repository linked");
+    const graph = await fetchCommitGraph(env, project.githubRepo);
+    return c.json({
+      repo: project.githubRepo,
+      branches: graph.branches,
+      commits: graph.commits.map((cm) => ({ ...cm, tickets: extractTicketIds(project.prefix, cm.message) })),
+    });
   })
 );
 

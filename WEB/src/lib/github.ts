@@ -239,3 +239,75 @@ export async function createBranch(env: Env, repo: string, branch: string): Prom
   if (!res.ok) throw new ApiError(502, `GitHub error (${res.status}) creating the branch`);
   return { url, created: true };
 }
+
+// ---------- Commit graph (fetched live from GitHub, cached briefly) ----------
+
+export interface GraphCommit {
+  sha: string;
+  parents: string[];
+  message: string;
+  author: string | null;
+  date: number;
+  url: string;
+}
+export interface CommitGraph {
+  branches: { name: string; sha: string; isDefault: boolean }[];
+  commits: GraphCommit[];
+}
+
+const MAX_BRANCHES = 8;
+const COMMITS_PER_BRANCH = 40;
+const GRAPH_TTL_MS = 60_000;
+const graphCache = new Map<string, { at: number; data: CommitGraph }>();
+
+export function clearGraphCache(): void {
+  graphCache.clear();
+}
+
+/**
+ * Recent history across the repo's branches (default branch first, max 8
+ * branches x 40 commits, to stay well inside Workers' subrequest limit).
+ * Author e-mails are never read.
+ */
+export async function fetchCommitGraph(env: Env, repo: string): Promise<CommitGraph> {
+  const hit = graphCache.get(repo);
+  if (hit && Date.now() - hit.at < GRAPH_TTL_MS) return hit.data;
+
+  const token = await installationToken(env, repo);
+  const info = await gh(`/repos/${repo}`, token);
+  if (!info.ok) throw new ApiError(502, `GitHub error (${info.status}) reading the repository`);
+  const defaultBranch = ((await info.json()) as { default_branch: string }).default_branch;
+
+  const br = await gh(`/repos/${repo}/branches?per_page=30`, token);
+  if (!br.ok) throw new ApiError(502, `GitHub error (${br.status}) listing branches`);
+  const all = ((await br.json()) as { name: string; commit: { sha: string } }[]).map((b) => ({
+    name: b.name, sha: b.commit.sha, isDefault: b.name === defaultBranch,
+  }));
+  all.sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+  const branches = all.slice(0, MAX_BRANCHES);
+
+  const bySha = new Map<string, GraphCommit>();
+  const lists = await Promise.all(
+    branches.map(async (b) => {
+      const r = await gh(`/repos/${repo}/commits?sha=${encodeURIComponent(b.name)}&per_page=${COMMITS_PER_BRANCH}`, token);
+      return r.ok ? ((await r.json()) as any[]) : [];
+    })
+  );
+  for (const list of lists) {
+    for (const c of list) {
+      if (bySha.has(c.sha)) continue;
+      bySha.set(c.sha, {
+        sha: c.sha,
+        parents: (c.parents || []).map((p: { sha: string }) => p.sha),
+        message: String(c.commit?.message || "").split("\n")[0].slice(0, 200),
+        author: c.commit?.author?.name ?? c.author?.login ?? null,
+        date: Date.parse(c.commit?.author?.date || c.commit?.committer?.date) || 0,
+        url: c.html_url,
+      });
+    }
+  }
+  const commits = [...bySha.values()].sort((a, b) => b.date - a.date);
+  const data = { branches, commits };
+  graphCache.set(repo, { at: Date.now(), data });
+  return data;
+}
