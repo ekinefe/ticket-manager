@@ -61,6 +61,7 @@ export const projects = sqliteTable("projects", {
   // New tickets created without an explicit assignee fall back to this user
   // (if set) instead of staying unassigned. Null = keep today's behavior.
   defaultAssigneeId: text("default_assignee_id").references(() => user.id, { onDelete: "set null" }),
+  githubRepo: text("github_repo"),
   createdAt: integer("created_at").notNull(),
 });
 
@@ -271,3 +272,36 @@ export const appSettings = sqliteTable("app_settings", {
   value: text("value").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });
+
+export const githubEvents = sqliteTable(
+  "github_events",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["COMMIT", "PR"] }).notNull(),
+    ref: text("ref").notNull(),
+    title: text("title").notNull(),
+    url: text("url"),
+    author: text("author"),
+    state: text("state"),
+    branch: text("branch"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [index("idx_github_events_project").on(t.projectId, t.updatedAt)]
+);
+
+export const githubEventTasks = sqliteTable(
+  "github_event_tasks",
+  {
+    eventId: text("event_id")
+      .notNull()
+      .references(() => githubEvents.id, { onDelete: "cascade" }),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.eventId, t.taskId] })]
+);

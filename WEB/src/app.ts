@@ -23,6 +23,7 @@ import {
 } from "./lib/rbac";
 import { allocateTicketId } from "./lib/ticket-id";
 import { logActivity } from "./lib/activity";
+import { REPO_RE, createBranch, githubConfigured, handleGithubEvent, ticketBranchName, verifyWebhookSignature } from "./lib/github";
 import { canTransition, INSTANT_NOTIFY_STATUSES, STATUSES, type Status } from "./lib/status";
 import { notifyStatusChanged } from "./lib/notify";
 import { validateInvitation, markInvitationAccepted, hashInviteToken, generateInviteToken } from "./lib/invite";
@@ -47,8 +48,8 @@ import { clientIp, rateLimit } from "./lib/ratelimit";
 import { renderTemplate, htmlToText } from "./lib/mail/templates";
 import { getTransport } from "./lib/mail";
 import { runJob } from "./cron/scheduler";
-import { and, asc, eq, ne, or, sql, gte, inArray, isNull, count } from "drizzle-orm";
-import { projects, projectMembers, projectMemberPermissions, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications } from "./db/schema";
+import { and, asc, eq, ne, or, sql, gte, inArray, isNull, count, desc } from "drizzle-orm";
+import { githubEvents, githubEventTasks, projects, projectMembers, projectMemberPermissions, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications } from "./db/schema";
 import {
   createNotification,
   createProjectNotification,
@@ -859,7 +860,10 @@ app.delete("/api/admin/projects/:id/members/:userId", (c) =>
 // Settings are stored in the DB and applied to the runtime env on save so
 // changes take effect without a server restart.
 
-const SETTINGS_KEYS = ["app_url", "better_auth_secret", "mail_transport", "mail_from", "resend_api_key"] as const;
+const SETTINGS_KEYS = [
+  "app_url", "better_auth_secret", "mail_transport", "mail_from", "resend_api_key",
+  "github_app_id", "github_private_key", "github_webhook_secret", "github_branch_create",
+] as const;
 type SettingsKey = (typeof SETTINGS_KEYS)[number];
 
 app.get("/api/admin/settings", (c) =>
@@ -1765,6 +1769,133 @@ app.post("/api/tasks/bulk-delete", (c) =>
   })
 );
 
+// ---------- GitHub integration ----------
+// One private repo per project, connected through a GitHub App. GitHub pushes
+// commits / PR events to the webhook (HMAC-verified); everything else is read
+// from our own tables. Credentials live in Admin > Settings (or Worker secrets).
+
+app.post("/api/github/webhook", (c) =>
+  guard(c, async () => {
+    const secret = env.GITHUB_WEBHOOK_SECRET;
+    if (!secret) throw new ApiError(503, "GitHub webhook secret is not configured");
+    const raw = await c.req.text();
+    if (!(await verifyWebhookSignature(secret, raw, c.req.header("x-hub-signature-256")))) {
+      throw new ApiError(401, "Invalid signature");
+    }
+    let payload: unknown;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      throw new ApiError(400, "Invalid JSON body");
+    }
+    const result = await handleGithubEvent(env, c.req.header("x-github-event") || "", payload);
+    return c.json({ ok: true, ...result });
+  })
+);
+
+app.patch("/api/projects/:id/github", (c) =>
+  guard(c, async () => {
+    const projectId = c.req.param("id");
+    const u = await getSessionUser(c.req.raw, env);
+    await requireProjectRole(env.DB, u, projectId, "ADMIN");
+    const body = await readBody<{ repo?: string | null }>(c);
+    const raw = (body.repo ?? "").trim().replace(/^https?:\/\/github\.com\//i, "").replace(/\.git$/i, "").replace(/\/+$/, "");
+    if (raw && !REPO_RE.test(raw)) throw new ApiError(400, 'Repository must look like "owner/name"');
+    const repo = raw ? raw.toLowerCase() : null;
+    if (repo) {
+      const [taken] = await env.DB
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(eq(projects.githubRepo, repo), sql`${projects.id} != ${projectId}`));
+      if (taken) throw new ApiError(409, "That repository is already linked to another project");
+    }
+    await env.DB.update(projects).set({ githubRepo: repo }).where(eq(projects.id, projectId));
+    return c.json({ repo });
+  })
+);
+
+app.get("/api/projects/:id/tasks/:taskId/github", (c) =>
+  guard(c, async () => {
+    const projectId = c.req.param("id");
+    const taskId = c.req.param("taskId");
+    const u = await getSessionUser(c.req.raw, env);
+    const access = await getProjectAccess(env.DB, u, projectId);
+    const [task] = await env.DB
+      .select({ id: tasks.id, assigneeId: tasks.assigneeId, createdBy: tasks.createdBy, ticketId: tasks.ticketId, type: tasks.type })
+      .from(tasks)
+      .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)));
+    if (!task) throw new ApiError(404, "Task not found");
+    assertTaskVisible(access, u, task);
+    const [project] = await env.DB.select({ githubRepo: projects.githubRepo }).from(projects).where(eq(projects.id, projectId));
+
+    const events = await env.DB
+      .select({
+        kind: githubEvents.kind, ref: githubEvents.ref, title: githubEvents.title, url: githubEvents.url,
+        author: githubEvents.author, state: githubEvents.state, branch: githubEvents.branch, updatedAt: githubEvents.updatedAt,
+      })
+      .from(githubEventTasks)
+      .innerJoin(githubEvents, eq(githubEvents.id, githubEventTasks.eventId))
+      .where(eq(githubEventTasks.taskId, taskId))
+      .orderBy(desc(githubEvents.updatedAt))
+      .limit(50);
+
+    const canBranch = access.role === "ADMIN" || task.assigneeId === u.id || task.createdBy === u.id;
+    return c.json({
+      repo: project?.githubRepo ?? null,
+      events,
+      branchEnabled: !!env.GITHUB_BRANCH_CREATE && githubConfigured(env) && !!project?.githubRepo && canBranch,
+      branchName: ticketBranchName(task),
+    });
+  })
+);
+
+app.post("/api/projects/:id/tasks/:taskId/github/branch", (c) =>
+  guard(c, async () => {
+    const projectId = c.req.param("id");
+    const taskId = c.req.param("taskId");
+    const u = await getSessionUser(c.req.raw, env);
+    const access = await getProjectAccess(env.DB, u, projectId);
+    if (!env.GITHUB_BRANCH_CREATE) throw new ApiError(403, "Branch creation is turned off by the administrator");
+    if (!githubConfigured(env)) throw new ApiError(400, "GitHub App is not configured");
+    const [task] = await env.DB
+      .select({ id: tasks.id, assigneeId: tasks.assigneeId, createdBy: tasks.createdBy, ticketId: tasks.ticketId, type: tasks.type })
+      .from(tasks)
+      .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)));
+    if (!task) throw new ApiError(404, "Task not found");
+    assertTaskVisible(access, u, task);
+    if (!(access.role === "ADMIN" || task.assigneeId === u.id || task.createdBy === u.id)) {
+      throw new ApiError(403, "Only the assignee, the creator or a project admin can create the branch");
+    }
+    const [project] = await env.DB.select({ githubRepo: projects.githubRepo }).from(projects).where(eq(projects.id, projectId));
+    if (!project?.githubRepo) throw new ApiError(400, "This project has no GitHub repository linked");
+    const branch = ticketBranchName(task);
+    const result = await createBranch(env, project.githubRepo, branch);
+    return c.json({ branch, ...result });
+  })
+);
+
+// Recent repo activity for the dashboard, limited to projects the viewer belongs to.
+app.get("/api/github/activity", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    const accessible = await listAccessibleProjects(env.DB, u);
+    const ids = accessible.filter((p) => p.githubRepo).map((p) => p.id);
+    if (ids.length === 0) return c.json([]);
+    const rows = await env.DB
+      .select({
+        kind: githubEvents.kind, ref: githubEvents.ref, title: githubEvents.title, url: githubEvents.url,
+        author: githubEvents.author, state: githubEvents.state, branch: githubEvents.branch, updatedAt: githubEvents.updatedAt,
+        projectName: projects.name, projectPrefix: projects.prefix,
+      })
+      .from(githubEvents)
+      .innerJoin(projects, eq(projects.id, githubEvents.projectId))
+      .where(inArray(githubEvents.projectId, ids))
+      .orderBy(desc(githubEvents.updatedAt))
+      .limit(15);
+    return c.json(rows);
+  })
+);
+
 // The share token is the secret behind a public link: only the project-admin
 // share endpoints may return it, never the generic ticket payloads.
 function withoutShareToken<T extends { shareToken?: string | null }>(row: T): Omit<T, "shareToken"> {
@@ -2665,5 +2796,10 @@ export async function loadSettings(env: Env): Promise<void> {
   if (map.get("mail_transport")) env.MAIL_TRANSPORT = map.get("mail_transport") as Env["MAIL_TRANSPORT"];
   if (map.get("mail_from")) env.MAIL_FROM = map.get("mail_from")!;
   if (map.get("resend_api_key")) env.RESEND_API_KEY = map.get("resend_api_key")!;
+  if (map.get("github_app_id")) env.GITHUB_APP_ID = map.get("github_app_id")!;
+  if (map.get("github_private_key")) env.GITHUB_APP_PRIVATE_KEY = map.get("github_private_key")!;
+  if (map.get("github_webhook_secret")) env.GITHUB_WEBHOOK_SECRET = map.get("github_webhook_secret")!;
+  // The toggle must be able to switch OFF, so it always follows the DB value.
+  env.GITHUB_BRANCH_CREATE = map.get("github_branch_create") === "1" ? "1" : "";
 }
 
