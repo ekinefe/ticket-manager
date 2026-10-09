@@ -824,6 +824,45 @@ describe("export / import", () => {
     assert.ok(Array.isArray(data.tasks));
   });
 
+  it("export is detailed: ticket ids, sprint, people, comments, activity — no e-mails", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: superCookie, body: { title: "Export me, \"quoted\"", description: "<p>=cmd</p>", assigneeId: "u_ayse" },
+    });
+    const task = await create.json();
+    await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}/comments`, { method: "POST", cookie: superCookie, body: { body: "hello export" } });
+    const text = await (await req(`/api/projects/${PROJECT_ID}/export`, { cookie: superCookie })).text();
+    const data = JSON.parse(text);
+    const t = data.tasks.find((x: any) => x.id === task.id);
+    assert.equal(data.exportVersion, 2);
+    assert.equal(t.ticketId, task.ticketId);
+    assert.equal(t.assignee, "ayse");
+    assert.equal(t.branch, `feature/${task.ticketId}`);
+    assert.ok(t.sprintId === null || /-S\d+$/.test(t.sprintId));
+    assert.equal(t.comments[0].body, "hello export");
+    assert.ok(t.activity.some((a: any) => a.type === "CREATED"));
+    assert.ok(data.members.length >= 2 && data.summary.tickets >= 1);
+    assert.ok(!text.includes("@test.local"), "exports never contain e-mail addresses");
+    assert.equal(typeof t.sprint === "number" || t.sprint === null, true, "import-compatible sprint index kept");
+  });
+
+  it("exports CSV with escaping and formula-injection protection", async () => {
+    const res = await req(`/api/projects/${PROJECT_ID}/export?format=csv`, { cookie: superCookie });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type") || "", /text\/csv/);
+    const csv = await res.text();
+    assert.ok(csv.includes("Ticket ID,Title,Status"));
+    assert.ok(csv.includes('"Export me, ""quoted"""'));
+    assert.ok(csv.includes("'=cmd"), "cell starting with = is neutralised");
+    assert.equal((await req(`/api/projects/${PROJECT_ID}/export?format=xml`, { cookie: superCookie })).status, 400);
+  });
+
+  it("export still round-trips through import", async () => {
+    const exported = await (await req(`/api/projects/${PROJECT_ID}/export`, { cookie: superCookie })).json();
+    exported.project.prefix = "RTP";
+    const res = await req("/api/projects/import", { method: "POST", cookie: superCookie, body: exported });
+    assert.equal(res.status, 201);
+  });
+
   it("rejects export from non-member", async () => {
     const res = await req(`/api/projects/${PROJECT_ID}/export`, { cookie: outsider });
     assert.equal(res.status, 403);
