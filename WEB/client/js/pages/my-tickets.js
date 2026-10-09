@@ -9,52 +9,85 @@ import {
 let selectedIds = new Set();
 let viewMode = localStorage.getItem("tm-ticket-view") || "board";
 
-export async function renderMyTickets(root) {
+let allAssignee = "";
+
+export function renderMyTickets(root) { return renderTickets(root, "mine"); }
+export function renderAllTickets(root) { return renderTickets(root, "all"); }
+
+async function renderTickets(root, mode) {
+  const isAll = mode === "all";
   root.innerHTML = `<div class="page"><div class="spinner"></div></div>`;
 
-  let tickets;
+  let tickets, unassigned = [], users = [];
   try {
-    tickets = await api.get("/my-tickets");
+    if (isAll) {
+      [tickets, users] = await Promise.all([
+        api.get(`/all-tickets${allAssignee ? `?assigneeId=${encodeURIComponent(allAssignee)}` : ""}`),
+        api.get("/admin/users"),
+      ]);
+    } else {
+      [tickets, unassigned] = await Promise.all([api.get("/my-tickets"), api.get("/my-tickets/unassigned")]);
+    }
   } catch (err) {
     root.innerHTML = `<div class="page"><div class="form-error">${esc(err.message)}</div></div>`;
     return;
   }
 
-  const known = new Set(tickets.map((t) => t.id));
+  const rerender = () => renderTickets(root, mode);
+  const known = new Set([...tickets, ...unassigned].map((t) => t.id));
   for (const id of [...selectedIds]) if (!known.has(id)) selectedIds.delete(id);
 
-  const groups = new Map();
-  for (const t of tickets) {
-    if (!groups.has(t.projectId)) {
-      groups.set(t.projectId, { name: t.projectName, prefix: t.projectPrefix, tasks: [] });
+  const groupBy = (list) => {
+    const groups = new Map();
+    for (const t of list) {
+      if (!groups.has(t.projectId)) {
+        groups.set(t.projectId, { name: t.projectName, prefix: t.projectPrefix, tasks: [] });
+      }
+      groups.get(t.projectId).tasks.push(t);
     }
-    groups.get(t.projectId).tasks.push(t);
-  }
+    return groups;
+  };
+  const groups = groupBy(tickets);
+  const unassignedGroups = groupBy(unassigned);
 
   root.innerHTML = `
     <div class="page">
       <div class="page-head">
-        <h1>My Tickets</h1>
-        <span class="mt-total">${tickets.length} assigned to you</span>
+        <h1>${isAll ? "All Tickets" : "My Tickets"}</h1>
+        <span class="mt-total">${tickets.length} ${isAll ? "ticket" + (tickets.length === 1 ? "" : "s") : "assigned to you"}</span>
+        ${isAll ? `<select id="all-assignee" aria-label="Filter by assignee">
+          <option value="">All assignees</option>
+          <option value="none"${allAssignee === "none" ? " selected" : ""}>Unassigned</option>
+          ${users.map((x) => `<option value="${esc(x.id)}"${allAssignee === x.id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}
+        </select>` : ""}
         <div class="btn-group view-toggle" role="group" aria-label="View" style="margin-left:auto">
           <button class="btn sm ${viewMode === "board" ? "" : "ghost"}" id="view-board-btn">Board</button>
           <button class="btn sm ${viewMode === "list" ? "" : "ghost"}" id="view-list-btn">List</button>
         </div>
       </div>
       ${groups.size === 0
-        ? `<div class="empty-note">No tickets are assigned to you. Assigned tickets from every project will show up here.</div>`
+        ? `<div class="empty-note">${isAll ? "No tickets match this filter." : "No tickets are assigned to you. Assigned tickets from every project will show up here."}</div>`
         : [...groups.entries()].map(([projectId, g]) => projectSection(projectId, g)).join("")}
+      ${isAll ? "" : `
+        <div class="page-head" style="margin-top:28px">
+          <h1>Unassigned</h1>
+          <span class="mt-total">${unassigned.length} without an assignee</span>
+        </div>
+        ${unassignedGroups.size === 0
+          ? `<div class="empty-note">No unassigned tickets in projects you can view.</div>`
+          : [...unassignedGroups.entries()].map(([projectId, g]) => projectSection(projectId, g)).join("")}`}
       <div class="bulk-bar hidden" id="bulk-bar"></div>
     </div>`;
 
-  root.querySelector("#view-board-btn").addEventListener("click", () => { if (viewMode !== "board") { viewMode = "board"; localStorage.setItem("tm-ticket-view", "board"); renderMyTickets(root); } });
-  root.querySelector("#view-list-btn").addEventListener("click", () => { if (viewMode !== "list") { viewMode = "list"; localStorage.setItem("tm-ticket-view", "list"); renderMyTickets(root); } });
+  root.querySelector("#view-board-btn").addEventListener("click", () => { if (viewMode !== "board") { viewMode = "board"; localStorage.setItem("tm-ticket-view", "board"); rerender(); } });
+  root.querySelector("#view-list-btn").addEventListener("click", () => { if (viewMode !== "list") { viewMode = "list"; localStorage.setItem("tm-ticket-view", "list"); rerender(); } });
+  root.querySelector("#all-assignee")?.addEventListener("change", (e) => { allAssignee = e.target.value; rerender(); });
 
-  bindRows(root);
-  renderBulkBar(root);
+  bindRows(root, rerender);
+  renderBulkBar(root, rerender);
 }
 
-function bindRows(root) {
+function bindRows(root, rerender) {
   for (const card of root.querySelectorAll(".mt-card, .list-row")) {
     card.addEventListener("click", (e) => {
       if (e.target.closest(".card-select")) return;
@@ -66,12 +99,12 @@ function bindRows(root) {
       if (cb.checked) selectedIds.add(card.dataset.id);
       else selectedIds.delete(card.dataset.id);
       card.classList.toggle("selected", cb.checked);
-      renderBulkBar(root);
+      renderBulkBar(root, rerender);
     });
   }
 }
 
-function renderBulkBar(root) {
+function renderBulkBar(root, rerender) {
   const bar = root.querySelector("#bulk-bar");
   if (!bar) return;
   if (selectedIds.size === 0) {
@@ -107,7 +140,7 @@ function renderBulkBar(root) {
         toast(`Updated ${updated.length}, skipped ${skipped.length} (no permission or invalid change)`, updated.length ? "ok" : "err");
       }
       selectedIds = new Set();
-      await renderMyTickets(root);
+      await rerender();
     } catch (err) {
       toast(err.message || "Bulk update failed", "err");
       selectEl.disabled = false;
@@ -120,7 +153,7 @@ function renderBulkBar(root) {
   bar.querySelector("#bulk-priority").addEventListener("change", (e) => apply({ priority: e.target.value }, e.target));
   bar.querySelector("#bulk-clear").addEventListener("click", () => {
     selectedIds = new Set();
-    renderMyTickets(root);
+    rerender();
   });
 }
 

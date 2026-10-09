@@ -8,6 +8,8 @@ import {
   requirePanelAccess,
   listAccessibleProjects,
   listAssignedTickets,
+  listUnassignedTickets,
+  listAllTickets,
   getProjectAccess,
   requireProjectPermission,
   getMemberPermissions,
@@ -324,6 +326,22 @@ app.get("/api/my-tickets", (c) =>
   guard(c, async () => {
     const u = await getSessionUser(c.req.raw, env);
     return c.json(await listAssignedTickets(env.DB, u));
+  })
+);
+
+app.get("/api/my-tickets/unassigned", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    return c.json(await listUnassignedTickets(env.DB, u));
+  })
+);
+
+app.get("/api/all-tickets", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    requireSuperAdmin(u);
+    const assigneeId = (c.req.query("assigneeId") || "").trim() || undefined;
+    return c.json(await listAllTickets(env.DB, assigneeId));
   })
 );
 

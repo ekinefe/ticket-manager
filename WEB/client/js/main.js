@@ -5,7 +5,7 @@ import { renderProjects } from "./pages/projects.js";
 import { renderBoard, renderMembersTab, renderSprintsTab } from "./pages/board.js";
 import { renderAcceptInvite } from "./pages/accept-invite.js";
 import { renderAdmin } from "./pages/admin.js";
-import { renderMyTickets } from "./pages/my-tickets.js";
+import { renderMyTickets, renderAllTickets } from "./pages/my-tickets.js";
 import { renderResetPassword } from "./pages/reset-password.js";
 import { renderForcePassword } from "./pages/force-password.js";
 import { renderSetup } from "./pages/setup.js";
@@ -231,6 +231,9 @@ function sidebarHtml(activeId, activePath) {
         <a class="side-item${activePath === "/my-tickets" ? " active" : ""}" href="/my-tickets" data-nav>
           ${ICON_TICKET} My Tickets
         </a>
+        ${isSuper ? `<a class="side-item${activePath === "/all-tickets" ? " active" : ""}" href="/all-tickets" data-nav>
+          ${ICON_TICKET} All Tickets
+        </a>` : ""}
       </nav>
 
       <div class="side-tools">
@@ -398,6 +401,8 @@ async function route() {
     await renderProjects(page);
   } else if (path === "/my-tickets") {
     await renderMyTickets(page);
+  } else if (path === "/all-tickets" && state.user.role === "SUPER_ADMIN") {
+    await renderAllTickets(page);
   } else if ((m = path.match(/^\/projects\/([^/]+)$/))) {
     const sprintParam = new URLSearchParams(location.search).get("sprint") || "";
     const taskParam = new URLSearchParams(location.search).get("task") || "";

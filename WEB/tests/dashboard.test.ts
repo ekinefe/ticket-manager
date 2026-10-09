@@ -54,3 +54,39 @@ describe("dashboard stats", () => {
     assert.equal(created, 2);
   });
 });
+
+describe("unassigned and all tickets", () => {
+  before(async () => {
+    const db = getDb(env.DB);
+    const at = Date.now();
+    await db.insert(tasks).values({
+      id: "t_unassigned", projectId: PROJECT_ID, ticketId: "TST-950", title: "Nobody owns me",
+      status: "TODO", assigneeId: null, position: 9, createdAt: at, updatedAt: at,
+    });
+  });
+
+  it("super admin sees unassigned tickets and the all-tickets list", async () => {
+    const un = await (await req("/api/my-tickets/unassigned", { cookie: superCookie })).json();
+    assert.deepEqual(un.map((t: any) => t.ticketId), ["TST-950"]);
+    const all = await (await req("/api/all-tickets", { cookie: superCookie })).json();
+    assert.equal(all.length, 6);
+    const none = await (await req("/api/all-tickets?assigneeId=none", { cookie: superCookie })).json();
+    assert.equal(none.length, 1);
+    const mine = await (await req("/api/all-tickets?assigneeId=u_super", { cookie: superCookie })).json();
+    assert.equal(mine.length, 5);
+  });
+
+  it("members see unassigned only with VIEW_ALL_TICKETS; non-members see none", async () => {
+    const ayse = await userCookie("u_ayse");
+    const un = await (await req("/api/my-tickets/unassigned", { cookie: ayse })).json();
+    assert.equal(un.length, 1);
+    const zeynep = await userCookie("u_zeynep");
+    const none = await (await req("/api/my-tickets/unassigned", { cookie: zeynep })).json();
+    assert.equal(none.length, 0);
+  });
+
+  it("restricts all-tickets to the super admin", async () => {
+    const admin = await userCookie("u_admin");
+    assert.equal((await req("/api/all-tickets", { cookie: admin })).status, 403);
+  });
+});
