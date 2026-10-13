@@ -74,6 +74,12 @@ export async function renderBoard(root, projectId, initialSprint = "", initialTa
       if (s.id !== initialSprint) collapsedLanes.add(s.id);
     }
     if (initialSprint !== "backlog") collapsedLanes.add("backlog");
+  } else {
+    // Sprints whose tickets are all DONE start collapsed.
+    for (const s of project.sprints) {
+      const inSprint = tasks.filter((t) => t.sprintId === s.id);
+      if (inSprint.length && inSprint.every((t) => t.status === "DONE")) collapsedLanes.add(s.id);
+    }
   }
 
   drawShell(root);
