@@ -233,6 +233,17 @@ app.post("/api/auth/change-password", (c) =>
   })
 );
 
+// Saves the signed-in user's UI language (en | tr).
+app.patch("/api/me/language", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    const body = await readBody<{ language?: string }>(c);
+    if (body.language !== "en" && body.language !== "tr") throw new ApiError(400, "Unsupported language");
+    await env.DB.update(user).set({ language: body.language, updatedAt: new Date() }).where(eq(user.id, u.id));
+    return c.json({ ok: true, language: body.language });
+  })
+);
+
 app.all("/api/auth/*", (c) => createAuth(env).handler(c.req.raw));
 
 // ---------- General API rate limit (generous; per client IP) ----------
