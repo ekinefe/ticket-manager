@@ -1,6 +1,6 @@
 import { api } from "./api.js";
 import { t, locale, initLang, langSwitcherHtml, bindLangSwitcher } from "./i18n.js";
-import { esc, roleChip, avatarHtml, STATUS_LABELS } from "./ui.js";
+import { esc, roleChip, avatarHtml, STATUS_LABELS, openModal, toast } from "./ui.js";
 import { renderLogin } from "./pages/login.js";
 import { renderProjects } from "./pages/projects.js";
 import { renderBoard, renderMembersTab, renderSprintsTab } from "./pages/board.js";
@@ -71,15 +71,114 @@ function topbarHtml() {
         </div>
       </div>
     </div>
-    <div class="userbox">
-      <div class="meta">
-        <div class="name">${esc(u.name)}</div>
-        ${roleChip(u.role)}
+    <button class="btn sm quick-create" id="quick-create" type="button" title="${t("hdr.newTicket")}">+<span class="qc-text"> ${t("hdr.new")}</span></button>
+    <div class="usermenu" id="usermenu">
+      <button class="usermenu-btn" id="usermenu-btn" type="button" aria-haspopup="menu" aria-expanded="false" title="${esc(u.name)}">
+        ${avatarHtml(u.name, u.id)}<span class="um-name">${esc(String(u.name).split(" ")[0])}</span><span class="um-caret" aria-hidden="true">&#9662;</span>
+      </button>
+      <div class="usermenu-pop hidden" id="usermenu-pop" role="menu">
+        <div class="um-head">
+          ${avatarHtml(u.name, u.id)}
+          <div class="um-who"><div class="um-fullname">${esc(u.name)}</div><div class="um-email">${esc(u.email || "")}</div></div>
+          ${roleChip(u.role)}
+        </div>
+        <label class="um-row"><span>${t("common.language")}</span>${langSwitcherHtml()}</label>
+        <button class="um-item" id="signout-btn" type="button" role="menuitem">${t("common.signOut")}</button>
       </div>
-      ${avatarHtml(u.name, u.id)}
-      ${langSwitcherHtml()}
-      <button class="btn subtle sm" id="signout-btn" title="${t("common.signOut")}">${t("common.signOut")}</button>
     </div>`;
+}
+
+function bindUserMenu(topbar) {
+  const btn = topbar.querySelector("#usermenu-btn");
+  const pop = topbar.querySelector("#usermenu-pop");
+  if (!btn || !pop) return;
+  const setOpen = (open) => {
+    pop.classList.toggle("hidden", !open);
+    btn.setAttribute("aria-expanded", String(open));
+  };
+  btn.addEventListener("click", (e) => { e.stopPropagation(); setOpen(pop.classList.contains("hidden")); });
+  pop.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", () => setOpen(false));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
+}
+
+// "+ New" in the header: create a ticket in any project without opening its board first.
+async function openQuickCreate(path) {
+  const projects = await loadProjects().catch(() => []);
+  if (!projects.length) { toast(t("hdr.noProjects"), "err"); return; }
+  const m = path.match(/^\/projects\/([^/]+)/);
+  const current = m ? decodeURIComponent(m[1]) : "";
+  openModal({
+    title: t("hdr.newTicket"),
+    body: `
+      <div class="field">
+        <label for="qc-project">${t("hdr.project")}</label>
+        <select id="qc-project">${projects.map((p) => `<option value="${esc(p.id)}"${p.id === current ? " selected" : ""}>${esc(p.prefix)} - ${esc(p.name)}</option>`).join("")}</select>
+      </div>
+      <div class="field">
+        <label for="qc-title">${t("hdr.title")}</label>
+        <input type="text" id="qc-title" autocomplete="off" autofocus />
+      </div>
+      <div class="field">
+        <label for="qc-type">${t("hdr.type")}</label>
+        <select id="qc-type"><option value="TASK">${t("type.TASK")}</option><option value="BUG">${t("type.BUG")}</option></select>
+      </div>
+      <div class="form-error hidden" id="qc-error"></div>
+      <div class="modal-actions"><span></span><span class="right">
+        <button class="btn ghost" id="qc-cancel" type="button">${t("common.cancel")}</button>
+        <button class="btn" id="qc-create" type="button">${t("hdr.create")}</button>
+      </span></div>`,
+    onMount(modalEl, close) {
+      const title = modalEl.querySelector("#qc-title");
+      const errBox = modalEl.querySelector("#qc-error");
+      const create = async () => {
+        const name = title.value.trim();
+        if (!name) { title.focus(); return; }
+        const projectId = modalEl.querySelector("#qc-project").value;
+        try {
+          const task = await api.post(`/projects/${encodeURIComponent(projectId)}/tasks`, { title: name, type: modalEl.querySelector("#qc-type").value });
+          close();
+          toast(t("hdr.created", { id: task.ticketId }), "ok");
+          navigate(`/projects/${encodeURIComponent(projectId)}?task=${encodeURIComponent(task.ticketId)}`);
+        } catch (err) {
+          errBox.textContent = err.message;
+          errBox.classList.remove("hidden");
+        }
+      };
+      modalEl.querySelector("#qc-cancel").addEventListener("click", close);
+      modalEl.querySelector("#qc-create").addEventListener("click", create);
+      title.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); create(); } });
+      setTimeout(() => title.focus(), 0);
+    },
+  });
+}
+
+// Where am I? e.g. Projects > Ticket Manager > Sprints
+function crumbsHtml(path) {
+  const parts = [];
+  const proj = (id) => (state.projectsCache || []).find((p) => p.id === id);
+  let m;
+  if (path === "/welcome") parts.push([t("nav.home")]);
+  else if (path === "/dashboard") parts.push([t("nav.dashboard")]);
+  else if (path === "/reports") parts.push([t("nav.reports")]);
+  else if (path === "/my-tickets") parts.push([t("nav.myTickets")]);
+  else if (path === "/all-tickets") parts.push([t("nav.allTickets")]);
+  else if (path === "/projects") parts.push([t("nav.projects")]);
+  else if ((m = path.match(/^\/projects\/([^/]+)(?:\/(members|sprints|graph))?$/))) {
+    const id = decodeURIComponent(m[1]);
+    const base = `/projects/${encodeURIComponent(id)}`;
+    parts.push([t("nav.projects"), "/projects"]);
+    parts.push([proj(id)?.name || id, m[2] ? base : null]);
+    if (m[2]) parts.push([t({ members: "nav.members", sprints: "nav.sprints", graph: "nav.gitGraph" }[m[2]])]);
+    else parts.push([t("nav.board")]);
+  } else if (path.startsWith("/admin")) {
+    parts.push([t("nav.admin"), "/admin/users"]);
+    parts.push([t(path === "/admin/projects" ? "adm.tabProjects" : path === "/admin/settings" ? "adm.tabSettings" : "adm.tabUsers")]);
+  } else return "";
+  return parts.map(([label, href], i) => {
+    const last = i === parts.length - 1;
+    return `${i ? `<span class="crumb-sep" aria-hidden="true">&rsaquo;</span>` : ""}${href && !last ? `<a href="${href}" data-nav>${esc(label)}</a>` : `<span${last ? ' aria-current="page"' : ""}>${esc(label)}</span>`}`;
+  }).join("");
 }
 
 function bindGlobalSearch(topbar) {
@@ -402,6 +501,8 @@ async function route() {
   bindGlobalSearch(topbar);
   topbar.querySelector("#signout-btn").addEventListener("click", signOut);
   bindLangSwitcher(topbar, { signedIn: true });
+  bindUserMenu(topbar);
+  topbar.querySelector("#quick-create").addEventListener("click", () => openQuickCreate(path));
 
   bindNotifications(topbar);
 
@@ -413,7 +514,7 @@ async function route() {
     <div class="shell">
       ${sidebarHtml(activeId, path)}
       <div class="nav-scrim" id="nav-scrim"></div>
-      <main class="shell-main" id="page"></main>
+      <main class="shell-main"><nav class="crumbs" id="crumbs" aria-label="Breadcrumb">${crumbsHtml(path)}</nav><div id="page"></div></main>
     </div>`;
   const page = document.getElementById("page");
   bindSidebar(appEl);

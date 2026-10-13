@@ -109,4 +109,12 @@ export default {
   "notifmsg.commented": "{who} {id} biletine yorum yaptı: {title}",
   "notifmsg.joined": "{who} projeye {role} olarak katıldı",
   "notifmsg.mentioned": "{who} senden bahsetti",
+  "hdr.new": "Yeni",
+  "hdr.newTicket": "Yeni bilet",
+  "hdr.project": "Proje",
+  "hdr.title": "Başlık",
+  "hdr.type": "Tür",
+  "hdr.create": "Oluştur",
+  "hdr.noProjects": "Önce bir projeye katıl veya proje oluştur.",
+  "hdr.created": "{id} oluşturuldu",
 };
