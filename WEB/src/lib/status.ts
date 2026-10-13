@@ -28,6 +28,14 @@ export const INSTANT_NOTIFY_STATUSES: ReadonlySet<Status> = new Set<Status>([
   "TEST",
 ]);
 
+// Admin setting "mail_notify_statuses": comma-separated statuses that trigger an
+// instant e-mail. Unset falls back to INSTANT_NOTIFY_STATUSES; an empty string
+// means "never".
+export function parseNotifyStatuses(raw: string | null | undefined): ReadonlySet<Status> {
+  if (raw === null || raw === undefined) return INSTANT_NOTIFY_STATUSES;
+  return new Set(raw.split(",").map((s) => s.trim()).filter(isStatus));
+}
+
 function isStatus(v: unknown): v is Status {
   return typeof v === "string" && (STATUSES as readonly string[]).includes(v);
 }

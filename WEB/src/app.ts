@@ -24,8 +24,8 @@ import {
 import { allocateTicketId } from "./lib/ticket-id";
 import { logActivity } from "./lib/activity";
 import { REPO_RE, createBranch, fetchCommitGraph, extractTicketIds, githubConfigured, handleGithubEvent, ticketBranchName, verifyWebhookSignature } from "./lib/github";
-import { canTransition, INSTANT_NOTIFY_STATUSES, STATUSES, type Status } from "./lib/status";
-import { notifyStatusChanged } from "./lib/notify";
+import { canTransition, STATUSES, type Status } from "./lib/status";
+import { isStatusMailEnabled, notifyStatusChanged } from "./lib/notify";
 import { validateInvitation, markInvitationAccepted, hashInviteToken, generateInviteToken } from "./lib/invite";
 import { searchAll } from "./lib/search";
 import { sanitizeDescHtml } from "./lib/sanitize";
@@ -872,6 +872,7 @@ app.delete("/api/admin/projects/:id/members/:userId", (c) =>
 const SETTINGS_KEYS = [
   "app_url", "better_auth_secret", "mail_transport", "mail_from", "resend_api_key",
   "github_app_id", "github_private_key", "github_webhook_secret", "github_branch_create",
+  "mail_notify_statuses",
 ] as const;
 type SettingsKey = (typeof SETTINGS_KEYS)[number];
 
@@ -1578,7 +1579,7 @@ async function applyTaskUpdate(
       });
       publish(projectId, { type: "status", ticketId: updated.ticketId, taskId, actorId: u.id });
 
-      if (INSTANT_NOTIFY_STATUSES.has(newStatus)) {
+      if (await isStatusMailEnabled(env, newStatus)) {
         const [actor] = await env.DB.select({ name: user.name }).from(user).where(eq(user.id, u.id));
         await notifyStatusChanged(env, {
           projectId,

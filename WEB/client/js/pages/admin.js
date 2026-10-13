@@ -1,6 +1,6 @@
 import { api } from "../api.js";
 import { loadProjects, state } from "../main.js";
-import { esc, avatarHtml, roleChip, fmtDate, openModal, toast } from "../ui.js";
+import { esc, avatarHtml, roleChip, fmtDate, openModal, toast, STATUSES, STATUS_LABELS } from "../ui.js";
 const ROLES = ["USER", "ADMIN", "SUPER_ADMIN"];
 
 export async function renderAdmin(root, section = "users") {
@@ -858,6 +858,13 @@ async function renderSettingsTab(body) {
     return;
   }
 
+  // Unset = built-in default; "" = none.
+  const notifySet = new Set(
+    settings.mail_notify_statuses === undefined
+      ? ["UNDER_REVIEW", "DEPLOYED", "TEST"]
+      : settings.mail_notify_statuses.split(",").filter(Boolean)
+  );
+
   body.innerHTML = `
     <div class="page-head">
       <span class="spacer" style="flex:1"></span>
@@ -896,6 +903,13 @@ async function renderSettingsTab(body) {
           <label for="s-mail-from">From address</label>
           <input type="email" id="s-mail-from" value="${esc(settings.mail_from || "")}" placeholder="Ticket Manager &lt;no-reply@tickets.local&gt;" />
           <div style="color:var(--text-dim);font-size:12px;margin-top:4px">Sender address for all outgoing e-mails.</div>
+        </div>
+        <div class="field">
+          <label>Send an e-mail when a ticket moves to</label>
+          <div id="s-notify-statuses" style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:4px">
+            ${STATUSES.map((s) => `<label><input type="checkbox" value="${s}" ${notifySet.has(s) ? "checked" : ""} /> ${esc(STATUS_LABELS[s])}</label>`).join("")}
+          </div>
+          <div style="color:var(--text-dim);font-size:12px;margin-top:4px">The ticket creator and assignee are notified. Leave all unchecked to turn status e-mails off.</div>
         </div>
       </div>
 
@@ -945,6 +959,7 @@ async function renderSettingsTab(body) {
         mail_transport: body.querySelector("#s-mail-transport").value,
         resend_api_key: body.querySelector("#s-resend-key").value,
         mail_from: body.querySelector("#s-mail-from").value.trim(),
+        mail_notify_statuses: [...body.querySelectorAll("#s-notify-statuses input:checked")].map((i) => i.value).join(","),
         github_app_id: body.querySelector("#s-gh-app-id").value.trim(),
         github_private_key: body.querySelector("#s-gh-key").value,
         github_webhook_secret: body.querySelector("#s-gh-secret").value,

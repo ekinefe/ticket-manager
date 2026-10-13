@@ -2,9 +2,9 @@ import { and, eq, inArray } from "drizzle-orm";
 import { githubEventTasks, githubEvents, projects, tasks } from "../db/schema";
 import { getDb } from "../db/client";
 import { logActivity } from "./activity";
-import { notifyStatusChanged } from "./notify";
+import { isStatusMailEnabled, notifyStatusChanged } from "./notify";
 import { publish } from "./realtime";
-import { INSTANT_NOTIFY_STATUSES, type Status } from "./status";
+import type { Status } from "./status";
 import { ApiError } from "./http";
 
 // ---------- Pure helpers ----------
@@ -107,7 +107,7 @@ async function autoMove(env: Env, taskId: string, to: Status, from: readonly Sta
   await db.update(tasks).set({ status: to, updatedAt: Date.now() }).where(eq(tasks.id, taskId));
   await logActivity(env.DB, { taskId, actorId: null, eventType: "STATUS_CHANGED", oldStatus: task.status, newStatus: to });
   publish(task.projectId, { type: "status", ticketId: task.ticketId, taskId, actorId: "github" });
-  if (INSTANT_NOTIFY_STATUSES.has(to)) {
+  if (await isStatusMailEnabled(env, to)) {
     await notifyStatusChanged(env, {
       projectId: task.projectId, taskId, ticketId: task.ticketId, taskTitle: task.title,
       oldStatus: task.status as Status, newStatus: to, actorName: `${who} (GitHub)`,

@@ -1,7 +1,7 @@
 import { eq, inArray } from "drizzle-orm";
-import { tasks, user, projects } from "../db/schema";
+import { appSettings, tasks, user, projects } from "../db/schema";
 import { getDb } from "../db/client";
-import { STATUS_LABELS, statusSlug, type Status } from "./status";
+import { STATUS_LABELS, parseNotifyStatuses, statusSlug, type Status } from "./status";
 import { renderTemplate, htmlToText } from "./mail/templates";
 import { getTransport } from "./mail";
 
@@ -13,6 +13,15 @@ export interface StatusChangeNotification {
   oldStatus: Status;
   newStatus: Status;
   actorName: string;
+}
+
+// Whether moving a ticket into `status` should send an e-mail (admin-configurable).
+export async function isStatusMailEnabled(env: Env, status: Status): Promise<boolean> {
+  const [row] = await getDb(env.DB)
+    .select({ value: appSettings.value })
+    .from(appSettings)
+    .where(eq(appSettings.key, "mail_notify_statuses"));
+  return parseNotifyStatuses(row?.value).has(status);
 }
 
 export async function notifyStatusChanged(env: Env, change: StatusChangeNotification): Promise<void> {

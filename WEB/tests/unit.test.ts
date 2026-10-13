@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { normalizeQuery } from "../src/lib/search.ts";
-import { canTransition, statusSlug, STATUSES, INSTANT_NOTIFY_STATUSES } from "../src/lib/status.ts";
+import { canTransition, statusSlug, STATUSES, INSTANT_NOTIFY_STATUSES, parseNotifyStatuses } from "../src/lib/status.ts";
 
 describe("normalizeQuery", () => {
   it("lowercases and strips non-alphanumerics", () => {
@@ -27,5 +27,15 @@ describe("status model", () => {
     assert.equal(statusSlug("IN_PROGRESS"), "in-progress");
     assert.ok(INSTANT_NOTIFY_STATUSES.has("UNDER_REVIEW"));
     assert.ok(!INSTANT_NOTIFY_STATUSES.has("DONE"));
+  });
+});
+
+describe("parseNotifyStatuses", () => {
+  it("falls back to the default when unset", () => {
+    assert.equal(parseNotifyStatuses(undefined), INSTANT_NOTIFY_STATUSES);
+  });
+  it("parses a list, ignoring unknown values, and treats empty as none", () => {
+    assert.deepEqual([...parseNotifyStatuses("DONE, TEST,bogus")], ["DONE", "TEST"]);
+    assert.equal(parseNotifyStatuses("").size, 0);
   });
 });
