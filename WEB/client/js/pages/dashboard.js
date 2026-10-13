@@ -239,6 +239,7 @@ export async function renderDashboard(root) {
           <div class="panel-body chart-wrap chart-wide">
             <canvas id="chart-projects"></canvas>
           </div>
+          <div class="panel-body">${projectOverviewTableHtml(stats.projectStats)}</div>
         </div>
       </div>` : ""}
 
@@ -519,6 +520,29 @@ function ticketRowHtml(t) {
       <span class="prefix-chip sm">${esc(t.projectPrefix)}</span>
     </span>
   </a>`;
+}
+
+function projectOverviewTableHtml(rows) {
+  return `
+  <table class="data po-table">
+    <thead><tr>
+      <th>${tl("dash.po.project")}</th><th class="po-progress-col">${tl("dash.po.progress")}</th>
+      <th>${tl("dash.po.open")}</th><th>${tl("dash.po.done")}</th><th>${tl("dash.po.overdue")}</th>
+      <th>${tl("dash.po.members")}</th><th>${tl("dash.po.last")}</th>
+    </tr></thead>
+    <tbody>${rows.map((p) => {
+      const total = Number(p.total), done = Number(p.done), overdue = Number(p.overdue);
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      return `<tr>
+        <td><a href="/projects/${encodeURIComponent(p.id)}" data-nav><span class="prefix-chip">${esc(p.prefix)}</span> ${esc(p.name)}</a></td>
+        <td class="po-progress-col"><div class="sb-track"><div class="sb-fill" style="width:${pct}%"></div></div><span class="po-pct">${pct}%</span></td>
+        <td>${total - done}</td><td>${done}</td>
+        <td>${overdue > 0 ? `<span class="po-overdue">${overdue}</span>` : "0"}</td>
+        <td>${Number(p.members)}</td>
+        <td style="color:var(--text-dim)">${p.lastActivity ? fmtDate(p.lastActivity) : "-"}</td>
+      </tr>`;
+    }).join("")}</tbody>
+  </table>`;
 }
 
 function sprintBarHtml(s) {
