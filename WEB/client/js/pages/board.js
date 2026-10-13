@@ -552,6 +552,11 @@ function cardHtml(t) {
     </article>`;
 }
 
+// Mirrors the server: project admins, or members granted DELETE_TICKET.
+function canDeleteTickets() {
+  return myRole === "ADMIN" || (project?.myPermissions || []).includes("DELETE_TICKET");
+}
+
 function memberById(id) {
   return project.members.find((m) => m.userId === id) || null;
 }
@@ -923,7 +928,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
               <div id="tf-desc" class="rte" contenteditable="${mayEdit}" aria-label="${tl("bd.fDescription")}">${descToEditorHtml(isEdit ? task.description : "")}</div>
             </div>
             <div class="modal-actions">
-              ${isEdit && mayEdit && myRole === "ADMIN" ? `<button type="button" class="btn danger" id="tf-delete">${tl("bd.delete")}</button>` : ""}
+              ${isEdit && mayEdit && canDeleteTickets() ? `<button type="button" class="btn danger" id="tf-delete">${tl("bd.delete")}</button>` : ""}
               ${isEdit && myRole === "ADMIN" ? `<button type="button" class="btn ghost" id="tf-share-toggle">${tl("bd.share")}</button>` : ""}
               ${!mayEdit ? `<span class="ro-note">${tl("bd.readOnly")}</span>` : ""}
               <span id="tf-savestate" class="save-state"></span>
