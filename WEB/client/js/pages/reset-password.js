@@ -1,5 +1,6 @@
 import { api } from "../api.js";
 import { esc } from "../ui.js";
+import { t } from "../i18n.js";
 
 export async function renderResetPassword(root) {
   const params = new URLSearchParams(location.search);
@@ -14,17 +15,17 @@ function renderRequestForm(root) {
     <div class="auth-wrap">
       <div class="auth-card">
         <div class="brand-big">TM</div>
-        <h1>Forgot password</h1>
-        <p class="sub">Enter your e-mail and we will send you a reset link.</p>
+        <h1>${t("auth.rp.forgot")}</h1>
+        <p class="sub">${t("auth.rp.forgotSub")}</p>
         <div id="rp-error" class="form-error hidden"></div>
         <form id="rp-form">
           <div class="field">
-            <label for="rp-email">E-mail</label>
+            <label for="rp-email">${t("auth.email")}</label>
             <input id="rp-email" type="email" autocomplete="username" required autofocus />
           </div>
-          <button class="btn" type="submit" style="width:100%" id="rp-btn">Send reset link</button>
+          <button class="btn" type="submit" style="width:100%" id="rp-btn">${t("auth.rp.send")}</button>
         </form>
-        <p style="text-align:center;margin:14px 0 0"><a href="/login" data-nav>Back to sign in</a></p>
+        <p style="text-align:center;margin:14px 0 0"><a href="/login" data-nav>${t("auth.backToSignIn")}</a></p>
       </div>
     </div>`;
 
@@ -38,9 +39,9 @@ function renderRequestForm(root) {
       await api.post("/auth/request-password-reset", { email: form.querySelector("#rp-email").value.trim() });
       root.querySelector(".auth-card").innerHTML = `
         <div class="brand-big">TM</div>
-        <h1>Check your inbox</h1>
-        <p class="sub">If an account exists for that address, a single-use reset link valid for one hour has been sent.</p>
-        <a class="btn" href="/login" data-nav style="width:100%">Back to sign in</a>`;
+        <h1>${t("auth.rp.inbox")}</h1>
+        <p class="sub">${t("auth.rp.inboxSub")}</p>
+        <a class="btn" href="/login" data-nav style="width:100%">${t("auth.backToSignIn")}</a>`;
     } catch (err) {
       const errBox = root.querySelector("#rp-error");
       errBox.textContent = err.message;
@@ -55,18 +56,18 @@ function renderNewPasswordForm(root, token) {
     <div class="auth-wrap">
       <div class="auth-card">
         <div class="brand-big">TM</div>
-        <h1>Choose a new password</h1>
+        <h1>${t("auth.rp.choose")}</h1>
         <div id="rp-error" class="form-error hidden"></div>
         <form id="rp-form">
           <div class="field">
-            <label for="rp-password">New password <span style="font-weight:400">(min. 8 characters)</span></label>
+            <label for="rp-password">${t("auth.rp.new")} <span style="font-weight:400">${t("auth.minChars")}</span></label>
             <input id="rp-password" type="password" autocomplete="new-password" required minlength="8" />
           </div>
           <div class="field">
-            <label for="rp-password2">Confirm password</label>
+            <label for="rp-password2">${t("auth.confirmPassword")}</label>
             <input id="rp-password2" type="password" autocomplete="new-password" required minlength="8" />
           </div>
-          <button class="btn" type="submit" style="width:100%" id="rp-btn">Set password</button>
+          <button class="btn" type="submit" style="width:100%" id="rp-btn">${t("auth.setPassword")}</button>
         </form>
       </div>
     </div>`;
@@ -78,7 +79,7 @@ function renderNewPasswordForm(root, token) {
     const btn = root.querySelector("#rp-btn");
     const password = form.querySelector("#rp-password").value;
     if (password !== form.querySelector("#rp-password2").value) {
-      errBox.textContent = "Passwords do not match.";
+      errBox.textContent = t("auth.passwordsMismatch");
       errBox.classList.remove("hidden");
       return;
     }
@@ -87,9 +88,9 @@ function renderNewPasswordForm(root, token) {
       await api.post("/auth/reset-password", { token, password });
       root.querySelector(".auth-card").innerHTML = `
         <div class="brand-big">TM</div>
-        <h1>Password updated</h1>
-        <p class="sub">Your password has been changed and all active sessions were signed out.</p>
-        <a class="btn" href="/login" data-nav style="width:100%">Sign in</a>`;
+        <h1>${t("auth.rp.updated")}</h1>
+        <p class="sub">${t("auth.rp.updatedSub")}</p>
+        <a class="btn" href="/login" data-nav style="width:100%">${t("auth.signIn")}</a>`;
     } catch (err) {
       errBox.textContent = esc(err.message);
       errBox.classList.remove("hidden");
