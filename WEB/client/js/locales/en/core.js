@@ -109,4 +109,12 @@ export default {
   "notifmsg.commented": "{who} commented on {id}: {title}",
   "notifmsg.joined": "{who} joined the project as {role}",
   "notifmsg.mentioned": "{who} mentioned you",
+  "hdr.new": "New",
+  "hdr.newTicket": "New ticket",
+  "hdr.project": "Project",
+  "hdr.title": "Title",
+  "hdr.type": "Type",
+  "hdr.create": "Create",
+  "hdr.noProjects": "Join or create a project first.",
+  "hdr.created": "{id} created",
 };
