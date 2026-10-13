@@ -1,79 +1,12 @@
-export default {
-  "common.language": "Language",
-  "common.signOut": "Sign out",
-  "common.signIn": "Sign in",
-  "common.close": "Close",
-  "common.cancel": "Cancel",
-  "common.save": "Save",
-  "common.unassigned": "Unassigned",
-  "common.none": "None",
+import core from "./en/core.js";
+import board from "./en/board.js";
+import dashboard from "./en/dashboard.js";
+import projects from "./en/projects.js";
+import mytickets from "./en/mytickets.js";
+import admin from "./en/admin.js";
+import gitgraph from "./en/gitgraph.js";
+import share from "./en/share.js";
+import auth from "./en/auth.js";
+import errors from "./en/errors.js";
 
-  "status.TODO": "To Do",
-  "status.IN_PROGRESS": "In Progress",
-  "status.UNDER_REVIEW": "Under Review",
-  "status.MERGED": "Merged",
-  "status.DEPLOYED": "Deployed",
-  "status.TEST": "Test",
-  "status.DONE": "Done",
-  "priority.LOW": "Low",
-  "priority.MEDIUM": "Medium",
-  "priority.HIGH": "High",
-  "priority.URGENT": "Urgent",
-  "type.TASK": "Task",
-  "type.BUG": "Bug",
-
-  "nav.openNavigation": "Open navigation",
-  "nav.menu": "Menu",
-  "nav.home": "Home",
-  "nav.dashboard": "Dashboard",
-  "nav.projects": "Projects",
-  "nav.toggleProjects": "Toggle projects",
-  "nav.noProjects": "No projects yet",
-  "nav.myTickets": "My Tickets",
-  "nav.allTickets": "All Tickets",
-  "nav.darkLight": "Dark / Light",
-  "nav.toggleTheme": "Toggle dark / light theme",
-  "nav.grid": "Grid background",
-  "nav.toggleGrid": "Toggle grid background",
-  "nav.admin": "Admin Panel",
-
-  "top.search": "Search tickets, projects…",
-  "top.searchUsers": "Search tickets, projects, users…",
-  "top.notifications": "Notifications",
-
-  "login.title": "Sign in",
-  "login.sub": "Ticket Manager · internal workspace",
-  "login.email": "E-mail",
-  "login.password": "Password",
-  "login.forgot": "Forgot password?",
-  "login.invalid": "Invalid email or password",
-
-  "landing.tagline": "Plan work, track tickets and ship together — one board for your whole team.",
-  "landing.boards.title": "Boards & sprints",
-  "landing.boards.body": "Drag tickets across statuses and sprint lanes, with live updates for everyone.",
-  "landing.ids.title": "Unique ticket IDs",
-  "landing.ids.body": "Every ticket gets an ID like {id} you can use in branches, commits and pull requests.",
-  "landing.github.title": "GitHub linked",
-  "landing.github.body": "See commits and PRs on each ticket and move tickets automatically when a PR opens or merges.",
-  "landing.invite.title": "Invitation only",
-  "landing.invite.body": "Accounts are created by an administrator. Ask yours for an invite to get started.",
-
-  "home.welcome": "Welcome back, {name}",
-  "home.there": "there",
-  "home.openCount.one": "You have 1 open ticket assigned to you.",
-  "home.openCount.many": "You have {count} open tickets assigned to you.",
-  "home.noOpen": "You have no open tickets assigned to you. Nice.",
-  "home.yourTickets": "Your open tickets",
-  "home.allMyTickets": "All my tickets",
-  "home.nothingToDo": "Nothing to do right now.",
-  "home.yourProjects": "Your projects",
-  "home.allProjects": "All projects",
-  "home.noProjects": "You are not a member of any project yet.",
-  "search.noMatches": "No matches for “{q}”",
-  "search.hint": "Check the spelling, or try a ticket ID like {id} or a sprint like {sprint}",
-  "search.didYouMean": "Did you mean",
-  "search.tickets": "Tickets",
-  "search.sprints": "Sprints",
-  "search.projects": "Projects",
-  "search.users": "Users",
-};
+export default { ...core, ...board, ...dashboard, ...projects, ...mytickets, ...admin, ...gitgraph, ...share, ...auth, ...errors };
