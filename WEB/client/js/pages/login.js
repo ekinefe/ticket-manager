@@ -3,7 +3,7 @@ import { navigate, state } from "../main.js";
 
 export async function renderLogin(root) {
   const params = new URLSearchParams(location.search);
-  const next = params.get("next") || "/projects";
+  const next = params.get("next") || "/welcome";
 
   root.innerHTML = `
     <div class="auth-wrap">
@@ -38,7 +38,7 @@ export async function renderLogin(root) {
       await api.signIn(form.email.value.trim(), form.password.value);
       const session = await api.session();
       state.user = session?.user ?? null;
-      navigate(next.startsWith("/") ? next : "/projects");
+      navigate(next.startsWith("/") ? next : "/welcome");
     } catch (err) {
       errBox.textContent = err.message;
       errBox.classList.remove("hidden");
