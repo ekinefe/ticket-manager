@@ -408,6 +408,11 @@ function laneBodyHtml(laneId) {
     : `<div class="lane-columns">${STATUSES.map((s) => laneColumnHtml(laneId, s)).join("")}</div>`;
 }
 
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function workItems(n) {
   return `${n} work item${n === 1 ? "" : "s"}`;
 }
@@ -537,6 +542,7 @@ function cardHtml(t) {
         </span>
       </div>
       <p class="title">${esc(t.title)}</p>
+      ${t.dueDate ? `<div class="card-due${t.status !== "DONE" && t.dueDate < todayStr() ? " overdue" : ""}">Due ${esc(t.dueDate)}</div>` : ""}
     </article>`;
 }
 
@@ -998,6 +1004,12 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
                 </span>
               </div>
               <div class="detail-row">
+                <span class="k">Due date</span>
+                <span class="v">
+                  <input type="date" id="tf-due" ${dis} value="${isEdit && task.dueDate ? esc(task.dueDate) : ""}" />
+                </span>
+              </div>
+              <div class="detail-row">
                 <span class="k">Sprint</span>
                 <span class="v">
                   <select id="tf-sprint" ${dis}>
@@ -1091,6 +1103,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
           type: pendingDraft.type || "TASK",
           priority: pendingDraft.priority || "MEDIUM",
           assigneeId: pendingDraft.assigneeId || null,
+          dueDate: pendingDraft.dueDate || null,
         };
         const createdTask = await api.post(`/projects/${project.id}/tasks`, payload);
         created = true;
@@ -1118,6 +1131,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
         }
         const sprintVal = form.querySelector("#tf-sprint").value;
         payload.sprintId = sprintVal || null;
+        payload.dueDate = form.querySelector("#tf-due").value || null;
         if (isEdit) payload.status = form.querySelector("#tf-status").value;
 
         if (created) {
@@ -1285,6 +1299,8 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
         if (sprintSel && !sprintSel.disabled) sprintSel.addEventListener("change", () => commit({ sprintId: sprintSel.value || null }));
         if (prioritySel && !prioritySel.disabled) prioritySel.addEventListener("change", () => commit({ priority: prioritySel.value }));
         if (typeSel && !typeSel.disabled) typeSel.addEventListener("change", () => commit({ type: typeSel.value }));
+        const dueInput = modalEl.querySelector("#tf-due");
+        if (dueInput && !dueInput.disabled) dueInput.addEventListener("change", () => commit({ dueDate: dueInput.value || null }));
         if (assigneeSel && !assigneeSel.disabled) assigneeSel.addEventListener("change", () => commit({ assigneeId: assigneeSel.value || null }));
 
         if (titleEl) {
