@@ -120,5 +120,11 @@ export function sanitizeDescHtml(html: string): string {
     }
     out += selfClose ? `<${lower}${attrs}></${lower}>` : `<${lower}${attrs}>`;
   }
-  return out;
+  return trimTrailingBlanks(out);
+}
+
+// The editor keeps a blank "<p><br></p>" line open at the bottom; don't persist it.
+const TRAILING_BLANK_RE = /(?:<(?:p|div)>(?:\s|<br ?\/?>|&nbsp;)*<\/(?:p|div)>|<br ?\/?>|\s)+$/i;
+function trimTrailingBlanks(html: string): string {
+  return html.replace(TRAILING_BLANK_RE, "");
 }

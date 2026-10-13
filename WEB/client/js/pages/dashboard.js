@@ -711,13 +711,28 @@ function renderCharts(stats, isSuper, isAdmin) {
   }
 }
 
+// Days without activity are absent from the API; add them as zeros so the line
+// doesn't skip over quiet days.
+function fillMissingDays(rows) {
+  if (!rows.length) return rows;
+  const byDay = new Map(rows.map((r) => [r.day, r]));
+  const out = [];
+  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const end = new Date();
+  for (let d = new Date(`${rows[0].day}T00:00:00`); d <= end; d.setDate(d.getDate() + 1)) {
+    const day = fmt(d);
+    out.push(byDay.get(day) || { day, created: 0, completed: 0 });
+  }
+  return out;
+}
+
 function renderTimelineChart(stats, timeframe) {
   if (charts.timeline) {
     charts.timeline.destroy();
     charts.timeline = null;
   }
 
-  const data = timeframe === "daily" ? stats.dailyStats : stats.weeklyStats;
+  const data = timeframe === "daily" ? fillMissingDays(stats.dailyStats) : stats.weeklyStats;
   const labels = data.map((d) => timeframe === "daily" ? d.day.slice(5) : d.week);
   const created = data.map((d) => d.created);
   const completed = data.map((d) => d.completed);

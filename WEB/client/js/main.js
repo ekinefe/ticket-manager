@@ -111,7 +111,7 @@ function bindGlobalSearch(topbar) {
       drop.innerHTML = `
         ${data.suggested ? `<div class="sr-group sr-suggested">Did you mean</div>` : ""}
         ${t.length ? `<div class="sr-group">Tickets</div>${t.map((x) => `
-          <a class="sr-item" href="/projects/${encodeURIComponent(x.projectId)}" data-nav>
+          <a class="sr-item" href="/projects/${encodeURIComponent(x.projectId)}?task=${encodeURIComponent(x.ticketId)}" data-nav>
             <span class="ticket-id">${esc(x.ticketId)}</span>
             <span class="sr-title">${esc(x.title)}</span>
             <span class="sr-meta">${esc(x.projectPrefix)}</span>
