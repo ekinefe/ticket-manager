@@ -6,6 +6,7 @@ import {
   sanitizeDesc, descToEditorHtml, isEmptyDesc,
   TASK_TYPES, TYPE_LABELS, PRIORITIES, PRIORITY_LABELS, priorityPill, branchName, bulkDeleteTickets,
 } from "../ui.js";
+import { t as tl, labels } from "../i18n.js";
 
 let project = null;
 let myRole = "MEMBER";
@@ -108,20 +109,20 @@ async function renderMembers(root, projectId) {
     <div class="page" style="max-width:860px">
       ${myRole === "ADMIN" ? `
       <div class="hint-card">
-        <span>You are a project admin. Manage settings, invitations and deletion from the <strong>Admin Panel</strong>.</span>
-        <a class="btn sm ghost" href="/admin/users" data-nav>Open Admin Panel</a>
+        <span>${tl("bd.mAdminHint", { panel: `<strong>${tl("bd.adminPanel")}</strong>` })}</span>
+        <a class="btn sm ghost" href="/admin/users" data-nav>${tl("bd.openAdmin")}</a>
       </div>` : ""}
       <div class="table-card">
         <table class="data">
-          <thead><tr><th>Name</th><th>E-mail</th><th>Project role</th></tr></thead>
+          <thead><tr><th>${tl("bd.name")}</th><th>${tl("bd.email")}</th><th>${tl("bd.projectRole")}</th></tr></thead>
           <tbody>
             ${project.members.map((m) => `
               <tr>
                 <td style="display:flex;align-items:center;gap:10px">${avatarHtml(m.name, m.userId)} ${esc(m.name)}</td>
                 <td>${esc(m.email)}</td>
                 <td>${m.role === "ADMIN"
-                  ? `<span class="role-chip role-admin">ADMIN</span>`
-                  : `<span class="role-chip role-member">MEMBER</span>`}</td>
+                  ? `<span class="role-chip role-admin">${tl("role.ADMIN")}</span>`
+                  : `<span class="role-chip role-member">${tl("role.MEMBER")}</span>`}</td>
               </tr>`).join("")}
           </tbody>
         </table>
@@ -173,17 +174,17 @@ function drawSprints(root) {
     <div class="page" style="max-width:920px">
       ${canManage ? `
       <div class="hint-card">
-        <span>Every project keeps at least one sprint. Add iterations and delete the ones you no longer need — tickets are never removed, they simply become unsprinted.</span>
+        <span>${tl("bd.sprintHint")}</span>
       </div>` : ""}
       <div class="table-card">
         <table class="data">
-          <thead><tr><th>Sprint ID</th><th>Name</th><th>Tickets</th>${canManage ? "<th></th>" : ""}</tr></thead>
+          <thead><tr><th>${tl("bd.sprintId")}</th><th>${tl("bd.name")}</th><th>${tl("bd.tickets")}</th>${canManage ? "<th></th>" : ""}</tr></thead>
           <tbody>
             ${project.sprints.map((s) => sprintRow(s, canManage)).join("")}
           </tbody>
         </table>
       </div>
-      ${canManage ? `<div class="modal-actions" style="margin-top:14px"><button class="btn sm" id="add-sprint-btn">+ New sprint</button></div>` : ""}
+      ${canManage ? `<div class="modal-actions" style="margin-top:14px"><button class="btn sm" id="add-sprint-btn">${tl("bd.newSprint")}</button></div>` : ""}
     </div>`;
 
   bindTabs();
@@ -201,11 +202,11 @@ function drawSprints(root) {
       const sid = btn.getAttribute("data-delete");
       const s = project.sprints.find((x) => x.id === sid);
       if (!s) return;
-      if (!confirm(`Delete sprint ${s.sprintId} (${s.name})? Its ${Number(s.ticketCount ?? 0)} ticket(s) will be kept but removed from this sprint.`)) return;
+      if (!confirm(tl("bd.sprintDeleteConfirm", { id: s.sprintId, name: s.name, count: Number(s.ticketCount ?? 0) }))) return;
       btn.disabled = true;
       try {
         await api.del(`/projects/${project.id}/sprints/${sid}`);
-        toast(`${s.sprintId} deleted`, "ok");
+        toast(tl("bd.sprintDeleted", { id: s.sprintId }), "ok");
         project = await api.get(`/projects/${project.id}`);
         drawSprints(sprintsRoot);
       } catch (err) {
@@ -223,9 +224,9 @@ function sprintRow(s, canManage) {
       <td>${esc(s.name)}</td>
       <td>${Number(s.ticketCount ?? 0)}</td>
       <td style="text-align:right">
-        <a class="btn sm ghost" href="/projects/${encodeURIComponent(project.id)}?sprint=${encodeURIComponent(s.id)}" data-nav>Open board</a>
-        ${canManage ? `<button class="btn ghost sm" data-rename="${esc(s.id)}">Rename</button>
-        <button class="btn danger sm" data-delete="${esc(s.id)}">Delete</button>` : ""}
+        <a class="btn sm ghost" href="/projects/${encodeURIComponent(project.id)}?sprint=${encodeURIComponent(s.id)}" data-nav>${tl("bd.openBoard")}</a>
+        ${canManage ? `<button class="btn ghost sm" data-rename="${esc(s.id)}">${tl("bd.rename")}</button>
+        <button class="btn danger sm" data-delete="${esc(s.id)}">${tl("bd.delete")}</button>` : ""}
       </td>
     </tr>`;
 }
@@ -233,20 +234,20 @@ function sprintRow(s, canManage) {
 function openSprintModal(existing) {
   const isEdit = Boolean(existing);
   openModal({
-    title: isEdit ? "Rename sprint" : "New sprint",
+    title: isEdit ? tl("bd.renameSprint") : tl("bd.newSprint").replace(/^\+\s*/, ""),
     body: `
       <div class="field">
-        <label for="sp-name">Name</label>
-        <input type="text" id="sp-name" placeholder="e.g. Sprint 2" value="${isEdit ? esc(existing.name) : ""}" />
+        <label for="sp-name">${tl("bd.name")}</label>
+        <input type="text" id="sp-name" placeholder="${tl("bd.sprintPh")}" value="${isEdit ? esc(existing.name) : ""}" />
         ${isEdit
-          ? `<div style="color:var(--text-dim);font-size:12px;margin-top:4px">ID <span class="ticket-id">${esc(existing.sprintId)}</span> cannot be changed.</div>`
-          : `<div style="color:var(--text-dim);font-size:12px;margin-top:4px">ID is assigned automatically (<span class="ticket-id">${esc(nextSprintPreview())}</span>).</div>`}
+          ? `<div style="color:var(--text-dim);font-size:12px;margin-top:4px">${tl("bd.sprintIdFixed", { id: `<span class="ticket-id">${esc(existing.sprintId)}</span>` })}</div>`
+          : `<div style="color:var(--text-dim);font-size:12px;margin-top:4px">${tl("bd.sprintIdAuto", { id: `<span class="ticket-id">${esc(nextSprintPreview())}</span>` })}</div>`}
       </div>
       <div class="modal-actions">
         <span></span>
         <span class="right">
-          <button class="btn ghost" id="sp-cancel">Cancel</button>
-          <button class="btn" id="sp-save">${isEdit ? "Save" : "Create"}</button>
+          <button class="btn ghost" id="sp-cancel">${tl("bd.cancel")}</button>
+          <button class="btn" id="sp-save">${isEdit ? tl("bd.save") : tl("bd.create")}</button>
         </span>
       </div>`,
     onMount(modalEl, close) {
@@ -254,15 +255,15 @@ function openSprintModal(existing) {
       const save = modalEl.querySelector("#sp-save");
       save.addEventListener("click", async () => {
         const name = modalEl.querySelector("#sp-name").value.trim();
-        if (!name) { toast("Name is required", "err"); return; }
+        if (!name) { toast(tl("bd.nameRequired"), "err"); return; }
         save.disabled = true;
         try {
           if (isEdit) {
             await api.patch(`/projects/${project.id}/sprints/${existing.id}`, { name });
-            toast("Sprint renamed", "ok");
+            toast(tl("bd.sprintRenamed"), "ok");
           } else {
             await api.post(`/projects/${project.id}/sprints`, { name });
-            toast("Sprint created", "ok");
+            toast(tl("bd.sprintCreated"), "ok");
           }
           close();
           project = await api.get(`/projects/${project.id}`);
@@ -284,13 +285,13 @@ function headHtml(activeTab) {
       <div class="proj-title-row">
         <h1>${esc(project.name)}</h1>
         <span class="prefix-chip">${esc(project.prefix)}</span>
-        ${myRole === "ADMIN" ? `<span class="role-chip role-admin">You are admin</span>` : ""}
+        ${myRole === "ADMIN" ? `<span class="role-chip role-admin">${tl("bd.youAdmin")}</span>` : ""}
       </div>
       <nav class="tabs">
-        <button class="tab ${activeTab === "board" ? "active" : ""}" data-tab="board">Board (${tasks.length})</button>
-        <button class="tab ${activeTab === "members" ? "active" : ""}" data-tab="members">Members (${project.members.length})</button>
-        <button class="tab ${activeTab === "sprints" ? "active" : ""}" data-tab="sprints">Sprints (${project.sprints.length})</button>
-        ${project.githubRepo ? `<button class="tab" data-tab="graph">Git graph</button>` : ""}
+        <button class="tab ${activeTab === "board" ? "active" : ""}" data-tab="board">${tl("bd.tabBoard", { count: tasks.length })}</button>
+        <button class="tab ${activeTab === "members" ? "active" : ""}" data-tab="members">${tl("bd.tabMembers", { count: project.members.length })}</button>
+        <button class="tab ${activeTab === "sprints" ? "active" : ""}" data-tab="sprints">${tl("bd.tabSprints", { count: project.sprints.length })}</button>
+        ${project.githubRepo ? `<button class="tab" data-tab="graph">${tl("bd.tabGraph")}</button>` : ""}
       </nav>
     </div>`;
 }
@@ -309,19 +310,19 @@ function drawShell(root) {
   root.innerHTML = `
     ${headHtml("board")}
     <div class="toolbar">
-      <input type="text" class="search" id="filter-text" placeholder="Search tickets..." value="${esc(filterText)}" />
+      <input type="text" class="search" id="filter-text" placeholder="${tl("bd.searchPh")}" value="${esc(filterText)}" />
       <select id="filter-assignee">
-        <option value="">All assignees</option>
+        <option value="">${tl("bd.allAssignees")}</option>
         ${project.members.map((m) => `<option value="${esc(m.userId)}">${esc(m.name)}</option>`).join("")}
       </select>
-      <div class="btn-group view-toggle" role="group" aria-label="View">
-        <button class="btn sm ${viewMode === "board" ? "" : "ghost"}" id="view-board-btn" title="Board view">Board</button>
-        <button class="btn sm ${viewMode === "list" ? "" : "ghost"}" id="view-list-btn" title="List view">List</button>
+      <div class="btn-group view-toggle" role="group" aria-label="${tl("bd.view")}">
+        <button class="btn sm ${viewMode === "board" ? "" : "ghost"}" id="view-board-btn" title="${tl("bd.boardView")}">${tl("bd.board")}</button>
+        <button class="btn sm ${viewMode === "list" ? "" : "ghost"}" id="view-list-btn" title="${tl("bd.listView")}">${tl("bd.list")}</button>
       </div>
       <div class="btn-group">
-        <button class="btn sm ghost" id="export-btn">Export JSON</button>
-        <button class="btn sm ghost" id="export-csv-btn">Export CSV</button>
-        <button class="btn sm" id="new-task-btn">+ New ticket</button>
+        <button class="btn sm ghost" id="export-btn">${tl("bd.exportJson")}</button>
+        <button class="btn sm ghost" id="export-csv-btn">${tl("bd.exportCsv")}</button>
+        <button class="btn sm" id="new-task-btn">${tl("bd.newTicket")}</button>
       </div>
     </div>
     <div class="board-scroll">
@@ -347,13 +348,13 @@ function drawShell(root) {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      toast(err.message || "Export failed", "error");
+      toast(err.message || tl("bd.exportFailed"), "error");
     }
   });
   document.getElementById("export-csv-btn").addEventListener("click", async () => {
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/export?format=csv`, { credentials: "same-origin" });
-      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "Export failed");
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || tl("bd.exportFailed"));
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");
       a.href = url;
@@ -361,7 +362,7 @@ function drawShell(root) {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      toast(err.message || "Export failed", "error");
+      toast(err.message || tl("bd.exportFailed"), "error");
     }
   });
   openBoardStream(project.id);
@@ -414,7 +415,7 @@ function todayStr() {
 }
 
 function workItems(n) {
-  return `${n} work item${n === 1 ? "" : "s"}`;
+  return n === 1 ? tl("bd.workItem.one") : tl("bd.workItem.many", { count: n });
 }
 
 function laneHtml(sprint) {
@@ -438,7 +439,7 @@ function backlogLaneHtml() {
     <section class="sprint-lane backlog-lane${collapsed ? " collapsed" : ""}" data-lane="backlog">
       <div class="sprint-lane-head" data-toggle="backlog">
         <span class="lane-arrow">${collapsed ? "\u25B6" : "\u25BC"}</span>
-        <span class="lane-name">Everything else</span>
+        <span class="lane-name">${tl("bd.everythingElse")}</span>
         <span class="lane-count">${workItems(count)}</span>
       </div>
       ${collapsed ? "" : laneBodyHtml("backlog")}
@@ -450,7 +451,7 @@ function backlogLaneHtml() {
 function laneListHtml(laneId) {
   return `
     <table class="data list-table" data-lane="${esc(laneId)}">
-      <thead><tr><th></th><th>Ticket</th><th>Title</th><th><button type="button" class="th-sort" data-sort-status title="Sort by status">Status <span class="sort-arrow">${statusSortDesc ? "\u25BC" : "\u25B2"}</span></button></th><th>Type</th><th>Priority</th><th>Assignee</th></tr></thead>
+      <thead><tr><th></th><th>${tl("bd.colTicket")}</th><th>${tl("bd.colTitle")}</th><th><button type="button" class="th-sort" data-sort-status title="${tl("bd.sortStatus")}">${tl("bd.colStatus")} <span class="sort-arrow">${statusSortDesc ? "\u25BC" : "\u25B2"}</span></button></th><th>${tl("bd.colType")}</th><th>${tl("bd.colPriority")}</th><th>${tl("bd.colAssignee")}</th></tr></thead>
       <tbody></tbody>
     </table>`;
 }
@@ -467,7 +468,7 @@ function rowHtml(t) {
   const checked = selectedIds.has(t.id);
   return `
     <tr class="list-row${checked ? " selected" : ""}" data-id="${esc(t.id)}">
-      <td><input type="checkbox" class="card-select" data-select="${esc(t.id)}" ${checked ? "checked" : ""} title="Select ticket" /></td>
+      <td><input type="checkbox" class="card-select" data-select="${esc(t.id)}" ${checked ? "checked" : ""} title="${tl("bd.selectTicket")}" /></td>
       <td class="ticket-id">${esc(t.ticketId)}</td>
       <td class="title-cell">${esc(t.title)}</td>
       <td>${statusPill(t.status)}</td>
@@ -486,7 +487,7 @@ function refreshListTables() {
     const laneId = table.dataset.lane;
     const tbody = table.querySelector("tbody");
     const list = laneTasksForList(laneId);
-    tbody.innerHTML = list.length ? list.map(rowHtml).join("") : `<tr><td colspan="7" class="list-empty">No tickets</td></tr>`;
+    tbody.innerHTML = list.length ? list.map(rowHtml).join("") : `<tr><td colspan="7" class="list-empty">${tl("bd.noTickets")}</td></tr>`;
     tbody.querySelectorAll(".list-row").forEach((row) => {
       row.addEventListener("click", (e) => {
         if (e.target.closest(".card-select")) return;
@@ -517,7 +518,7 @@ function laneColumnHtml(laneId, status) {
         <span class="col-dot" style="background:${getStatusColor(status)}"></span>
         <span class="col-label">${STATUS_LABELS[status]}</span>
         <span class="col-count" data-count>0</span>
-        <button class="col-add" data-add="${status}" data-lane="${esc(laneId)}" title="Add ticket here">+</button>
+        <button class="col-add" data-add="${status}" data-lane="${esc(laneId)}" title="${tl("bd.addHere")}">+</button>
       </header>
       <div class="col-body" data-body="${status}"></div>
     </section>`;
@@ -530,19 +531,19 @@ function cardHtml(t) {
   return `
     <article class="card ${movable ? "" : "locked"}${checked ? " selected" : ""}" draggable="${movable}" data-id="${esc(t.id)}">
       <div class="row">
-        <input type="checkbox" class="card-select" data-select="${esc(t.id)}" ${checked ? "checked" : ""} title="Select ticket" />
+        <input type="checkbox" class="card-select" data-select="${esc(t.id)}" ${checked ? "checked" : ""} title="${tl("bd.selectTicket")}" />
         <span class="ticket-id">${esc(t.ticketId)}</span>
         <span class="card-meta">
           ${priorityPill(t.priority)}
           <span class="assignee">
             ${assignee
               ? `${avatarHtml(assignee.name, assignee.userId)}<span class="nm">${esc(assignee.name.split(" ")[0])}</span>`
-              : `<span class="nm">Unassigned</span>`}
+              : `<span class="nm">${tl("bd.unassigned")}</span>`}
           </span>
         </span>
       </div>
       <p class="title">${esc(t.title)}</p>
-      ${t.dueDate ? `<div class="card-due${t.status !== "DONE" && t.dueDate < todayStr() ? " overdue" : ""}">Due ${esc(t.dueDate)}</div>` : ""}
+      ${t.dueDate ? `<div class="card-due${t.status !== "DONE" && t.dueDate < todayStr() ? " overdue" : ""}">${tl("bd.due", { date: esc(t.dueDate) })}</div>` : ""}
     </article>`;
 }
 
@@ -592,7 +593,7 @@ function refreshColumns() {
     body.innerHTML = "";
     const list = visibleTasks(status, laneId);
     if (list.length === 0) {
-      body.innerHTML = `<div class="col-empty">No tickets</div>`;
+      body.innerHTML = `<div class="col-empty">${tl("bd.noTickets")}</div>`;
     } else {
       for (const t of list) {
         body.insertAdjacentHTML("beforeend", cardHtml(t));
@@ -638,26 +639,26 @@ function renderBulkBar() {
   }
   bar.classList.remove("hidden");
   bar.innerHTML = `
-    <span class="bulk-count">${selectedIds.size} selected</span>
+    <span class="bulk-count">${tl("bd.selected", { count: selectedIds.size })}</span>
     <select id="bulk-status">
-      <option value="">Move to status…</option>
+      <option value="">${tl("bd.moveStatus")}</option>
       ${STATUSES.map((s) => `<option value="${s}">${STATUS_LABELS[s]}</option>`).join("")}
     </select>
     <select id="bulk-type">
-      <option value="">Change type…</option>
+      <option value="">${tl("bd.changeType")}</option>
       ${TASK_TYPES.map((t) => `<option value="${t}">${TYPE_LABELS[t]}</option>`).join("")}
     </select>
     <select id="bulk-priority">
-      <option value="">Change priority…</option>
+      <option value="">${tl("bd.changePriority")}</option>
       ${PRIORITIES.map((p) => `<option value="${p}">${PRIORITY_LABELS[p]}</option>`).join("")}
     </select>
     <select id="bulk-assignee">
-      <option value="">Assign to…</option>
-      <option value="__unassign__">Unassigned</option>
-      ${project.members.map((m) => `<option value="${esc(m.userId)}">${esc(m.name)}${m.userId === state.user.id ? " (me)" : ""}</option>`).join("")}
+      <option value="">${tl("bd.assignTo")}</option>
+      <option value="__unassign__">${tl("bd.unassigned")}</option>
+      ${project.members.map((m) => `<option value="${esc(m.userId)}">${esc(m.name)}${m.userId === state.user.id ? ` ${tl("bd.me")}` : ""}</option>`).join("")}
     </select>
-    <button class="btn sm danger" id="bulk-delete">Delete…</button>
-    <button class="btn sm ghost" id="bulk-clear">Clear selection</button>`;
+    <button class="btn sm danger" id="bulk-delete">${tl("bd.bulkDelete")}</button>
+    <button class="btn sm ghost" id="bulk-clear">${tl("bd.clearSel")}</button>`;
 
   bar.querySelector("#bulk-delete").addEventListener("click", async () => {
     const list = tasks.filter((t) => selectedIds.has(t.id));
@@ -691,12 +692,12 @@ async function bulkApply(update, selectEl) {
     }
     if (updated.length) refreshColumns();
     if (skipped.length === 0) {
-      toast(`Updated ${updated.length} ticket${updated.length === 1 ? "" : "s"}`, "ok");
+      toast(updated.length === 1 ? tl("bd.updated.one") : tl("bd.updated.many", { count: updated.length }), "ok");
     } else {
-      toast(`Updated ${updated.length}, skipped ${skipped.length} (no permission or invalid change)`, updated.length ? "ok" : "err");
+      toast(tl("bd.updatedSkipped", { updated: updated.length, skipped: skipped.length }), updated.length ? "ok" : "err");
     }
   } catch (err) {
-    toast(err.message || "Bulk update failed", "err");
+    toast(err.message || tl("bd.bulkFailed"), "err");
   } finally {
     selectEl.value = "";
     selectEl.disabled = false;
@@ -777,7 +778,7 @@ function bindDragAndDrop() {
       const { beforeTaskId } = insertionIndex(body, e.clientY, draggedId);
       const sameColumn = dragged.status === status;
       if (!sameColumn && !canTransition(dragged.status, status)) {
-        toast(`Illegal move: ${STATUS_LABELS[dragged.status]} \u2192 ${STATUS_LABELS[status]}`, "err");
+        toast(tl("bd.illegal", { from: STATUS_LABELS[dragged.status], to: STATUS_LABELS[status] }), "err");
         return;
       }
 
@@ -825,13 +826,13 @@ async function moveTask(task, newStatus, beforeTaskId, newSprintId) {
     const updated = await api.patch(`/projects/${project.id}/tasks/${task.id}`, payload);
     Object.assign(task, updated);
     if (oldStatus !== newStatus) {
-      toast(`${task.ticketId} moved to ${STATUS_LABELS[newStatus]}`, "ok");
+      toast(tl("bd.movedTo", { id: task.ticketId, where: STATUS_LABELS[newStatus] }), "ok");
     }
     if (oldSprintId !== task.sprintId) {
       const label = task.sprintId
-        ? project.sprints.find((s) => s.id === task.sprintId)?.sprintId ?? "sprint"
-        : "backlog";
-      toast(`${task.ticketId} moved to ${label}`, "ok");
+        ? project.sprints.find((s) => s.id === task.sprintId)?.sprintId ?? tl("bd.sprintFallback")
+        : tl("bd.backlog");
+      toast(tl("bd.movedTo", { id: task.ticketId, where: label }), "ok");
     }
   } catch (err) {
     toast(err.message, "err");
@@ -864,7 +865,7 @@ let draggingId = null;
 /* ---------------- Task modal ---------------- */
 
 function assigneeOptions(selectedId) {
-  return [`<option value="">Unassigned</option>`]
+  return [`<option value="">${tl("bd.unassigned")}</option>`]
     .concat(project.members.map((m) =>
       `<option value="${esc(m.userId)}" ${m.userId === selectedId ? "selected" : ""}>${esc(m.name)}</option>`))
     .join("");
@@ -879,102 +880,102 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
   openModal({
     wide: true,
     title: !isEdit
-      ? `New ticket`
-      : `<span class="ticket-path">${esc(project.name)} / ${esc(project.sprints.find((x) => x.id === task.sprintId)?.sprintId ?? "Backlog")} /</span> <span class="ticket-id">${esc(task.ticketId)}</span> ${mayEdit ? "Edit ticket" : "Ticket details"}`,
+      ? tl("bd.newTicketTitle")
+      : `<span class="ticket-path">${esc(project.name)} / ${esc(project.sprints.find((x) => x.id === task.sprintId)?.sprintId ?? tl("bd.backlog"))} /</span> <span class="ticket-id">${esc(task.ticketId)}</span> ${mayEdit ? tl("bd.editTicket") : tl("bd.ticketDetails")}`,
     body: `
       <div id="task-error" class="form-error hidden"></div>
       <form id="task-form">
         <div class="task-grid">
           <div class="task-left">
             <div class="field">
-              <label for="tf-title">Title</label>
+              <label for="tf-title">${tl("bd.fTitle")}</label>
               <input id="tf-title" type="text" required ${dis} value="${isEdit ? esc(task.title) : ""}" />
             </div>
             <div class="field">
-              <label for="tf-desc">Description</label>
+              <label for="tf-desc">${tl("bd.fDescription")}</label>
               ${mayEdit ? `
               <div class="rte-toolbar" id="tf-desc-toolbar">
-                <button type="button" data-cmd="bold" title="Bold"><b>B</b></button>
-                <button type="button" data-cmd="italic" title="Italic"><i>I</i></button>
-                <button type="button" data-cmd="underline" title="Underline"><u>U</u></button>
-                <button type="button" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+                <button type="button" data-cmd="bold" title="${tl("bd.bold")}"><b>B</b></button>
+                <button type="button" data-cmd="italic" title="${tl("bd.italic")}"><i>I</i></button>
+                <button type="button" data-cmd="underline" title="${tl("bd.underline")}"><u>U</u></button>
+                <button type="button" data-cmd="strikeThrough" title="${tl("bd.strike")}"><s>S</s></button>
                 <span class="rte-sep"></span>
-                <button type="button" data-block="h2" title="Heading">H2</button>
-                <button type="button" data-block="h3" title="Subheading">H3</button>
-                <button type="button" data-block="p" title="Paragraph">&para;</button>
+                <button type="button" data-block="h2" title="${tl("bd.heading")}">H2</button>
+                <button type="button" data-block="h3" title="${tl("bd.subheading")}">H3</button>
+                <button type="button" data-block="p" title="${tl("bd.paragraph")}">&para;</button>
                 <span class="rte-sep"></span>
-                <button type="button" data-cmd="insertUnorderedList" title="Bullet list">&bull; &#8801;</button>
-                <button type="button" data-cmd="insertOrderedList" title="Numbered list">1. &#8801;</button>
+                <button type="button" data-cmd="insertUnorderedList" title="${tl("bd.bullets")}">&bull; &#8801;</button>
+                <button type="button" data-cmd="insertOrderedList" title="${tl("bd.numbers")}">1. &#8801;</button>
                 <span class="rte-sep"></span>
-                <button type="button" id="tf-link" title="Insert link">&#128279;</button>
-                <button type="button" id="tf-code" title="Code block">&lt;/&gt;</button>
-                <button type="button" id="tf-image" title="Insert image">&#128444;</button>
-                <button type="button" id="tf-video" title="Insert video">&#127916;</button>
+                <button type="button" id="tf-link" title="${tl("bd.insLink")}">&#128279;</button>
+                <button type="button" id="tf-code" title="${tl("bd.codeBlock")}">&lt;/&gt;</button>
+                <button type="button" id="tf-image" title="${tl("bd.insImage")}">&#128444;</button>
+                <button type="button" id="tf-video" title="${tl("bd.insVideo")}">&#127916;</button>
                 <span class="rte-sep"></span>
-                <button type="button" data-cmd="removeFormat" title="Clear formatting">&#10539;</button>
+                <button type="button" data-cmd="removeFormat" title="${tl("bd.clearFmt")}">&#10539;</button>
               </div>` : ""}
               <input type="file" id="tf-media-input" hidden />
-              <div id="tf-desc" class="rte" contenteditable="${mayEdit}" aria-label="Description">${descToEditorHtml(isEdit ? task.description : "")}</div>
+              <div id="tf-desc" class="rte" contenteditable="${mayEdit}" aria-label="${tl("bd.fDescription")}">${descToEditorHtml(isEdit ? task.description : "")}</div>
             </div>
             <div class="modal-actions">
-              ${isEdit && mayEdit && myRole === "ADMIN" ? `<button type="button" class="btn danger" id="tf-delete">Delete</button>` : ""}
-              ${isEdit && myRole === "ADMIN" ? `<button type="button" class="btn ghost" id="tf-share-toggle">Share…</button>` : ""}
-              ${!mayEdit ? `<span class="ro-note">Read-only &mdash; only the assignee, the ticket creator or a project admin can modify this ticket.</span>` : ""}
+              ${isEdit && mayEdit && myRole === "ADMIN" ? `<button type="button" class="btn danger" id="tf-delete">${tl("bd.delete")}</button>` : ""}
+              ${isEdit && myRole === "ADMIN" ? `<button type="button" class="btn ghost" id="tf-share-toggle">${tl("bd.share")}</button>` : ""}
+              ${!mayEdit ? `<span class="ro-note">${tl("bd.readOnly")}</span>` : ""}
               <span id="tf-savestate" class="save-state"></span>
               <span class="right">
-                ${mayEdit ? `<button type="submit" class="btn" id="tf-save">${isEdit ? "Save" : "Create ticket"}</button>` : ""}
-                <button type="button" class="btn ghost" data-close>${isEdit ? "Close" : "Cancel"}</button>
+                ${mayEdit ? `<button type="submit" class="btn" id="tf-save">${isEdit ? tl("bd.save") : tl("bd.createTicket")}</button>` : ""}
+                <button type="button" class="btn ghost" data-close>${isEdit ? tl("bd.close") : tl("bd.cancel")}</button>
               </span>
             </div>
             ${isEdit && myRole === "ADMIN" ? `<div class="share-panel hidden" id="tf-share-panel"></div>` : ""}
             ${isEdit ? `<div class="dev-panel hidden" id="tf-dev"></div>` : ""}
             ${isEdit ? `
             <div class="comments-block">
-              <div class="activity-head">Comments</div>
+              <div class="activity-head">${tl("bd.comments")}</div>
               <div class="comment-box">
                 <div class="comment-rte-wrap">
                   <div class="rte-toolbar" id="tf-comment-toolbar">
-                    <button type="button" data-cmd="bold" title="Bold"><b>B</b></button>
-                    <button type="button" data-cmd="italic" title="Italic"><i>I</i></button>
-                    <button type="button" data-cmd="underline" title="Underline"><u>U</u></button>
-                    <button type="button" data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+                    <button type="button" data-cmd="bold" title="${tl("bd.bold")}"><b>B</b></button>
+                    <button type="button" data-cmd="italic" title="${tl("bd.italic")}"><i>I</i></button>
+                    <button type="button" data-cmd="underline" title="${tl("bd.underline")}"><u>U</u></button>
+                    <button type="button" data-cmd="strikeThrough" title="${tl("bd.strike")}"><s>S</s></button>
                     <span class="rte-sep"></span>
-                    <button type="button" data-block="h2" title="Heading">H2</button>
-                    <button type="button" data-block="h3" title="Subheading">H3</button>
-                    <button type="button" data-block="p" title="Paragraph">&para;</button>
+                    <button type="button" data-block="h2" title="${tl("bd.heading")}">H2</button>
+                    <button type="button" data-block="h3" title="${tl("bd.subheading")}">H3</button>
+                    <button type="button" data-block="p" title="${tl("bd.paragraph")}">&para;</button>
                     <span class="rte-sep"></span>
-                    <button type="button" data-cmd="insertUnorderedList" title="Bullet list">&bull; &#8801;</button>
-                    <button type="button" data-cmd="insertOrderedList" title="Numbered list">1. &#8801;</button>
+                    <button type="button" data-cmd="insertUnorderedList" title="${tl("bd.bullets")}">&bull; &#8801;</button>
+                    <button type="button" data-cmd="insertOrderedList" title="${tl("bd.numbers")}">1. &#8801;</button>
                     <span class="rte-sep"></span>
-                    <button type="button" id="tf-comment-link" title="Insert link">&#128279;</button>
-                    <button type="button" id="tf-comment-code" title="Code block">&lt;/&gt;</button>
-                    <button type="button" id="tf-comment-image" title="Insert image">&#128444;</button>
-                    <button type="button" id="tf-comment-video" title="Insert video">&#127916;</button>
+                    <button type="button" id="tf-comment-link" title="${tl("bd.insLink")}">&#128279;</button>
+                    <button type="button" id="tf-comment-code" title="${tl("bd.codeBlock")}">&lt;/&gt;</button>
+                    <button type="button" id="tf-comment-image" title="${tl("bd.insImage")}">&#128444;</button>
+                    <button type="button" id="tf-comment-video" title="${tl("bd.insVideo")}">&#127916;</button>
                     <span class="rte-sep"></span>
-                    <button type="button" data-cmd="removeFormat" title="Clear formatting">&#10539;</button>
+                    <button type="button" data-cmd="removeFormat" title="${tl("bd.clearFmt")}">&#10539;</button>
                   </div>
                   <input type="file" id="tf-comment-media-input" hidden />
-                  <div id="tf-comment-input" class="rte comment-rte" contenteditable="true" data-placeholder="Write a comment&hellip; type @ to mention someone (Ctrl+Enter to send)"></div>
+                  <div id="tf-comment-input" class="rte comment-rte" contenteditable="true" data-placeholder="${tl("bd.commentPh")}"></div>
                 </div>
-                <button type="button" class="btn sm" id="tf-comment-send">Send</button>
+                <button type="button" class="btn sm" id="tf-comment-send">${tl("bd.send")}</button>
                 <div id="tf-mention-menu" class="mention-menu hidden"></div>
               </div>
-              <ol id="tf-comments" class="comment-list"><li class="act-empty">Loading&hellip;</li></ol>
+              <ol id="tf-comments" class="comment-list"><li class="act-empty">${tl("bd.loading")}</li></ol>
             </div>` : ""}
           </div>
           <div class="task-right">
             <div class="detail-card">
               <div class="detail-row">
-                <span class="k">Project</span>
+                <span class="k">${tl("bd.dProject")}</span>
                 <span class="v">${esc(project.name)}&nbsp;<span class="prefix-chip">${esc(project.prefix)}</span></span>
               </div>
               ${isEdit ? `
               <div class="detail-row">
-                <span class="k">Ticket ID</span>
+                <span class="k">${tl("bd.dTicketId")}</span>
                 <span class="v"><span class="ticket-id">${esc(task.ticketId)}</span></span>
               </div>` : ""}
               <div class="detail-row">
-                <span class="k">Type${isEdit && myRole !== "ADMIN" ? " (admin only)" : ""}</span>
+                <span class="k">${tl("bd.dType")}${isEdit && myRole !== "ADMIN" ? ` ${tl("bd.adminOnly")}` : ""}</span>
                 <span class="v">
                   <select id="tf-type" ${!isEdit || myRole === "ADMIN" ? dis : "disabled"}>
                     ${TASK_TYPES.map((v) => `<option value="${v}" ${v === (isEdit ? task.type : "TASK") ? "selected" : ""}>${TYPE_LABELS[v]}</option>`).join("")}
@@ -983,11 +984,11 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
               </div>
               ${isEdit ? `
               <div class="detail-row">
-                <span class="k">Branch</span>
-                <span class="v"><code class="branch-chip" id="tf-branch" title="Click to copy">${esc(branchName(task))}</code></span>
+                <span class="k">${tl("bd.dBranch")}</span>
+                <span class="v"><code class="branch-chip" id="tf-branch" title="${tl("bd.copyBranch")}">${esc(branchName(task))}</code></span>
               </div>` : ""}
               <div class="detail-row">
-                <span class="k">Priority${isEdit && myRole !== "ADMIN" ? " (admin only)" : ""}</span>
+                <span class="k">${tl("bd.dPriority")}${isEdit && myRole !== "ADMIN" ? ` ${tl("bd.adminOnly")}` : ""}</span>
                 <span class="v">
                   <select id="tf-priority" ${!isEdit || myRole === "ADMIN" ? dis : "disabled"}>
                     ${PRIORITIES.map((v) => `<option value="${v}" ${v === (isEdit ? task.priority : "MEDIUM") ? "selected" : ""}>${PRIORITY_LABELS[v]}</option>`).join("")}
@@ -995,7 +996,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
                 </span>
               </div>
               <div class="detail-row">
-                <span class="k">Status</span>
+                <span class="k">${tl("bd.dStatus")}</span>
                 <span class="v">
                   <select id="tf-status" ${dis}>
                     ${(isEdit ? allowedTargetList(task.status) : STATUSES.map((s) => ({ value: s }))).map(({ value, label }) =>
@@ -1004,44 +1005,44 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
                 </span>
               </div>
               <div class="detail-row">
-                <span class="k">Due date</span>
+                <span class="k">${tl("bd.dDue")}</span>
                 <span class="v">
                   <input type="date" id="tf-due" ${dis} value="${isEdit && task.dueDate ? esc(task.dueDate) : ""}" />
                 </span>
               </div>
               <div class="detail-row">
-                <span class="k">Sprint</span>
+                <span class="k">${tl("bd.dSprint")}</span>
                 <span class="v">
                   <select id="tf-sprint" ${dis}>
-                    <option value="">Backlog (no sprint)</option>
+                    <option value="">${tl("bd.noSprint")}</option>
                     ${project.sprints.map((s) => `<option value="${esc(s.id)}" ${(isEdit ? task.sprintId : presetSprintId) === s.id ? "selected" : ""}>${esc(s.sprintId)} &mdash; ${esc(s.name)}</option>`).join("")}
                   </select>
                 </span>
               </div>
               <div class="detail-row">
-                <span class="k">Assignee${isEdit && mayEdit && myRole !== "ADMIN" ? " (admin only)" : ""}</span>
+                <span class="k">${tl("bd.dAssignee")}${isEdit && mayEdit && myRole !== "ADMIN" ? ` ${tl("bd.adminOnly")}` : ""}</span>
                 <span class="v">
                   <select id="tf-assignee" ${mayEdit && (myRole === "ADMIN" || !isEdit) ? "" : "disabled"}>${assigneeOptions(isEdit ? task.assigneeId : "")}</select>
                 </span>
               </div>
               ${isEdit ? `
               <div class="detail-row">
-                <span class="k">Created by</span>
+                <span class="k">${tl("bd.dCreatedBy")}</span>
                 <span class="v">${creator ? `${avatarHtml(creator.name, creator.userId)} ${esc(creator.name)}` : "&mdash;"}</span>
               </div>
               <div class="detail-row">
-                <span class="k">Created</span>
+                <span class="k">${tl("bd.dCreated")}</span>
                 <span class="v">${fmtDate(task.createdAt)}</span>
               </div>
               <div class="detail-row">
-                <span class="k">Updated</span>
+                <span class="k">${tl("bd.dUpdated")}</span>
                 <span class="v">${fmtDate(task.updatedAt)}</span>
               </div>` : ""}
             </div>
             ${isEdit ? `
             <div class="detail-card activity-card">
-              <div class="activity-head">Activity</div>
-              <ol id="tf-activity" class="activity-list"><li class="act-empty">Loading&hellip;</li></ol>
+              <div class="activity-head">${tl("bd.activity")}</div>
+              <ol id="tf-activity" class="activity-list"><li class="act-empty">${tl("bd.loading")}</li></ol>
             </div>` : ""}
           </div>
         </div>
@@ -1064,10 +1065,10 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
         if (!saveStateEl) return;
         saveStateEl.className = `save-state ${s}`;
         saveStateEl.textContent =
-          s === "saving" ? "Saving…" :
-          s === "saved" ? "All changes saved" :
-          s === "error" ? (msg || "Couldn’t save — check your connection") :
-          s === "draft" ? "Start typing a title to create the ticket" : "";
+          s === "saving" ? tl("bd.saving") :
+          s === "saved" ? tl("bd.allSaved") :
+          s === "error" ? (msg || tl("bd.saveFailed")) :
+          s === "draft" ? tl("bd.startTyping") : "";
       }
       const debounce = (fn, ms) => {
         let t;
@@ -1113,7 +1114,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
         if (h) h.innerHTML = `<span class="ticket-id">${esc(createdTask.ticketId)}</span> Edit ticket`;
         setSaveState("saved");
         refreshColumns();
-        toast(`${createdTask.ticketId} created`, "ok");
+        toast(tl("bd.ticketCreated", { id: createdTask.ticketId }), "ok");
       }
       if (!isEdit) setSaveState("draft");
 
@@ -1140,7 +1141,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
           Object.assign(taskRef, updated);
           setSaveState("saved");
           refreshColumns();
-          toast(`${taskRef.ticketId} saved`, "ok");
+          toast(tl("bd.ticketSaved", { id: taskRef.ticketId }), "ok");
         } else {
           if (!payload.title) {
             setSaveState("draft");
@@ -1156,7 +1157,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
           if (h) h.innerHTML = `<span class="ticket-id">${esc(createdTask.ticketId)}</span> Edit ticket`;
           setSaveState("saved");
           refreshColumns();
-          toast(`${createdTask.ticketId} created`, "ok");
+          toast(tl("bd.ticketCreated", { id: createdTask.ticketId }), "ok");
         }
       }
 
@@ -1174,7 +1175,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
         });
         branchChip.addEventListener("click", () => {
           navigator.clipboard?.writeText(branchChip.textContent)
-            .then(() => toast("Branch name copied", "ok"))
+            .then(() => toast(tl("bd.branchCopied"), "ok"))
             .catch(() => {});
         });
       }
@@ -1229,7 +1230,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
           const file = mediaInput.files?.[0];
           mediaInput.value = "";
           if (!file) return;
-          toast(`Uploading ${file.name}...`);
+          toast(tl("bd.uploading", { name: file.name }));
           try {
             const fd = new FormData();
             fd.append("file", file);
@@ -1246,9 +1247,9 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
             document.execCommand("insertHTML", false, html + "<p><br></p>");
             ensureTrailingLine();
             syncActive();
-            toast(`${file.name} added`, "ok");
+            toast(tl("bd.added", { name: file.name }), "ok");
           } catch (err) {
-            toast(err.message || "Upload failed", "err");
+            toast(err.message || tl("bd.uploadFailed"), "err");
           }
         });
 
@@ -1341,14 +1342,14 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
       const delBtn = modalEl.querySelector("#tf-delete");
       if (delBtn) {
         delBtn.addEventListener("click", async () => {
-          if (!confirm(`Delete ${task.ticketId}? This cannot be undone.`)) return;
+          if (!confirm(tl("bd.deleteConfirm", { id: task.ticketId }))) return;
           delBtn.disabled = true;
           try {
             await api.del(`/projects/${project.id}/tasks/${task.id}`);
             removeLocal(task.id);
             close();
             refreshColumns();
-            toast(`${task.ticketId} deleted`, "ok");
+            toast(tl("bd.ticketDeleted", { id: task.ticketId }), "ok");
           } catch (err) {
             errBox.textContent = err.message;
             errBox.classList.remove("hidden");
@@ -1377,28 +1378,28 @@ export function actText(ev) {
   const arrow = `<span class="act-arrow">&rarr;</span>`;
   switch (ev.type) {
     case "CREATED":
-      return ev.newStatus ? `created this ticket as ${statusPill(ev.newStatus, undefined, true)}` : "created this ticket";
+      return ev.newStatus ? tl("bd.a.createdAs", { status: statusPill(ev.newStatus, undefined, true) }) : tl("bd.a.created");
     case "STATUS_CHANGED":
-      return `moved ${statusPill(ev.oldStatus, undefined, true)} ${arrow} ${statusPill(ev.newStatus, undefined, true)}`;
+      return tl("bd.a.moved", { from: statusPill(ev.oldStatus, undefined, true), to: statusPill(ev.newStatus, undefined, true) }).replace("→", arrow);
     case "TITLE_CHANGED":
-      return `renamed <del class="act-old">${esc(truncate(ev.oldValue, 80))}</del> ${arrow} <b>${esc(truncate(ev.newValue, 80))}</b>`;
+      return tl("bd.a.renamed", { from: `<del class="act-old">${esc(truncate(ev.oldValue, 80))}</del>`, to: `<b>${esc(truncate(ev.newValue, 80))}</b>` }).replace("→", arrow);
     case "DESCRIPTION_CHANGED": {
-      let t = "updated the description";
+      let t = tl("bd.a.desc");
       const prev = truncate(ev.newValue, 120);
       if (prev) t += `<div class="act-quote">${esc(prev)}</div>`;
       return t;
     }
     case "ASSIGNEE_CHANGED":
-      return `changed assignee <b>${esc(ev.oldValue || "Unassigned")}</b> ${arrow} <b>${esc(ev.newValue || "Unassigned")}</b>`;
+      return tl("bd.a.assignee", { from: `<b>${esc(ev.oldValue || tl("bd.unassigned"))}</b>`, to: `<b>${esc(ev.newValue || tl("bd.unassigned"))}</b>` }).replace("→", arrow);
     case "SPRINT_CHANGED":
-      return `changed sprint <b>${esc(ev.oldValue || "Backlog")}</b> ${arrow} <b>${esc(ev.newValue || "Backlog")}</b>`;
+      return tl("bd.a.sprint", { from: `<b>${esc(ev.oldValue || tl("bd.backlog"))}</b>`, to: `<b>${esc(ev.newValue || tl("bd.backlog"))}</b>` }).replace("→", arrow);
     default:
       return esc(String(ev.type || "").toLowerCase().replaceAll("_", " "));
   }
 }
 
 function activityItemHtml(ev) {
-  const who = ev.actorName || "Someone";
+  const who = ev.actorName || tl("bd.someone");
   return `
   <li class="activity-item">
     ${avatarHtml(who, ev.actorId)}
@@ -1416,16 +1417,16 @@ function loadActivity(listEl, taskId) {
       const desc = [...events].reverse();
       listEl.innerHTML = desc.length
         ? desc.map(activityItemHtml).join("")
-        : `<li class="act-empty">No activity yet.</li>`;
+        : `<li class="act-empty">${tl("bd.noActivity")}</li>`;
     })
     .catch(() => {
-      listEl.innerHTML = `<li class="act-empty">Activity could not be loaded.</li>`;
+      listEl.innerHTML = `<li class="act-empty">${tl("bd.activityFailed")}</li>`;
     });
 }
 
 /* ---------- Development (GitHub commits / PRs, optional branch creation) ---------- */
 
-const PR_STATE_LABEL = { open: "Open", draft: "Draft", closed: "Closed", merged: "Merged" };
+const PR_STATE_LABEL = labels("bd.pr", ["open", "draft", "closed", "merged"]);
 
 async function loadDevPanel(modalEl, task) {
   const panel = modalEl.querySelector("#tf-dev");
@@ -1448,19 +1449,19 @@ async function loadDevPanel(modalEl, task) {
       </li>`).join("");
     panel.innerHTML = `
       <div class="dev-head">
-        <h3>Development</h3>
+        <h3>${tl("bd.development")}</h3>
         <span class="share-note">${esc(inf.repo)}</span>
-        <a href="/projects/${encodeURIComponent(project.id)}/graph" data-nav class="share-note">View commit graph</a>
+        <a href="/projects/${encodeURIComponent(project.id)}/graph" data-nav class="share-note">${tl("bd.viewGraph")}</a>
         ${inf.branchEnabled ? `<button type="button" class="btn sm ghost" id="dev-branch">Create branch ${esc(inf.branchName)}</button>` : ""}
       </div>
-      <ul class="dev-list">${rows || `<li class="act-empty">No commits or PRs yet. Mention <b>${esc(task.ticketId)}</b> in a commit message, PR title or branch name.</li>`}</ul>`;
+      <ul class="dev-list">${rows || `<li class="act-empty">${tl("bd.noDev", { id: `<b>${esc(task.ticketId)}</b>` })}</li>`}</ul>`;
     panel.querySelector("#dev-branch")?.addEventListener("click", async (ev) => {
       ev.target.disabled = true;
       try {
         const r = await api.post(`/projects/${project.id}/tasks/${task.id}/github/branch`, {});
-        toast(r.created ? `Branch ${r.branch} created` : `Branch ${r.branch} already exists`, "ok");
+        toast(tl(r.created ? "bd.branchCreated" : "bd.branchExists", { name: r.branch }), "ok");
       } catch (err) {
-        toast(err.message || "Could not create branch", "err");
+        toast(err.message || tl("bd.branchFailed"), "err");
       } finally {
         ev.target.disabled = false;
       }
@@ -1481,27 +1482,27 @@ function setupSharePanel(modalEl, task) {
   const render = (st) => {
     const url = st.token ? `${location.origin}/share/${st.token}` : "";
     panel.innerHTML = `
-      <label class="share-row">Who can view this ticket (read-only)
+      <label class="share-row">${tl("bd.sh.who")}
         <select id="share-mode">
-          <option value="OFF"${st.mode === "OFF" ? " selected" : ""}>Not shared</option>
-          <option value="ACCOUNT"${st.mode === "ACCOUNT" ? " selected" : ""}>Anyone signed in to this system</option>
-          <option value="LINK"${st.mode === "LINK" ? " selected" : ""}>Anyone with the link</option>
+          <option value="OFF"${st.mode === "OFF" ? " selected" : ""}>${tl("bd.sh.off")}</option>
+          <option value="ACCOUNT"${st.mode === "ACCOUNT" ? " selected" : ""}>${tl("bd.sh.account")}</option>
+          <option value="LINK"${st.mode === "LINK" ? " selected" : ""}>${tl("bd.sh.link")}</option>
         </select>
       </label>
       ${url ? `
       <div class="share-row">
         <input type="text" id="share-url" readonly value="${esc(url)}" />
-        <button type="button" class="btn sm" id="share-copy">Copy link</button>
-        <button type="button" class="btn sm ghost" id="share-rotate" title="Invalidate the current link and create a new one">New link</button>
+        <button type="button" class="btn sm" id="share-copy">${tl("bd.sh.copy")}</button>
+        <button type="button" class="btn sm ghost" id="share-rotate" title="${tl("bd.sh.rotateTitle")}">${tl("bd.sh.rotate")}</button>
       </div>
-      <p class="share-note">Viewers can see the description, comments, attachments, people's names and activity &mdash; never e-mail addresses. They cannot change anything.</p>` : ""}`;
+      <p class="share-note">${tl("bd.sh.note")}</p>` : ""}`;
     panel.querySelector("#share-mode").addEventListener("change", (e) => save({ mode: e.target.value }));
     panel.querySelector("#share-copy")?.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(url); toast("Link copied", "ok"); }
+      try { await navigator.clipboard.writeText(url); toast(tl("bd.linkCopied"), "ok"); }
       catch { panel.querySelector("#share-url").select(); }
     });
     panel.querySelector("#share-rotate")?.addEventListener("click", () => {
-      if (confirm("The current link will stop working. Create a new one?")) save({ mode: st.mode, regenerate: true });
+      if (confirm(tl("bd.sh.confirmRotate"))) save({ mode: st.mode, regenerate: true });
     });
   };
 
@@ -1510,9 +1511,9 @@ function setupSharePanel(modalEl, task) {
       const st = await api.put(base, body);
       task.shareMode = st.mode;
       render(st);
-      toast(st.mode === "OFF" ? "Sharing turned off — link revoked" : "Sharing updated", "ok");
+      toast(tl(st.mode === "OFF" ? "bd.sh.revoked" : "bd.sh.updated"), "ok");
     } catch (err) {
-      toast(err.message || "Could not update sharing", "err");
+      toast(err.message || tl("bd.sh.failed"), "err");
     }
   };
 
@@ -1543,7 +1544,7 @@ function renderCommentBody(body) {
 }
 
 function commentItemHtml(c) {
-  const who = c.authorName || "Unknown";
+  const who = c.authorName || tl("bd.unknown");
   return `
   <li class="comment-item">
     ${avatarHtml(who, c.authorId)}
@@ -1608,7 +1609,7 @@ function setupComments(modalEl, listEl, taskId) {
     const file = mediaInput.files?.[0];
     mediaInput.value = "";
     if (!file) return;
-    toast(`Uploading ${file.name}...`);
+    toast(tl("bd.uploading", { name: file.name }));
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -1624,9 +1625,9 @@ function setupComments(modalEl, listEl, taskId) {
         : `<video src="${esc(res.url)}" controls playsinline></video>`;
       document.execCommand("insertHTML", false, html + "<p><br></p>");
       syncActive();
-      toast(`${file.name} added`, "ok");
+      toast(tl("bd.added", { name: file.name }), "ok");
     } catch (err) {
-      toast(err.message || "Upload failed", "err");
+      toast(err.message || tl("bd.uploadFailed"), "err");
     }
   });
 
@@ -1666,9 +1667,9 @@ function setupComments(modalEl, listEl, taskId) {
         items = [...rows].sort((a, b) => b.createdAt - a.createdAt);
         listEl.innerHTML = items.length
           ? items.map(commentItemHtml).join("")
-          : `<li class="act-empty">No comments yet.</li>`;
+          : `<li class="act-empty">${tl("bd.noComments")}</li>`;
       })
-      .catch(() => { listEl.innerHTML = `<li class="act-empty">Comments could not be loaded.</li>`; });
+      .catch(() => { listEl.innerHTML = `<li class="act-empty">${tl("bd.commentsFailed")}</li>`; });
   load();
 
   const submit = async () => {
@@ -1683,7 +1684,7 @@ function setupComments(modalEl, listEl, taskId) {
       updatePlaceholder();
       hideMenu();
     } catch (err) {
-      toast(err.message || "Comment failed", "err");
+      toast(err.message || tl("bd.commentFailed"), "err");
     } finally {
       sendBtn.disabled = false;
     }
