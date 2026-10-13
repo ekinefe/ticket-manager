@@ -225,13 +225,17 @@ function listRowHtml(projectId, t) {
 function cardHtml(t) {
   const checked = selectedIds.has(t.id);
   return `
-    <article class="card mt-card${checked ? " selected" : ""}" data-id="${esc(t.id)}" data-project="${esc(t.projectId)}" title="${tl("mt.openInBoard", { project: esc(t.projectName) })}">
-      <div class="row">
+    <article class="card ticket mt-card${checked ? " selected" : ""}" data-id="${esc(t.id)}" data-project="${esc(t.projectId)}" title="${tl("mt.openInBoard", { project: esc(t.projectName) })}">
+      <div class="ticket-shape">
+      <div class="ticket-body">
+        <p class="title">${esc(t.title)}</p>
+        ${t.ticketId ? `<div class="branch-line"><span class="branch-ico">&#9123;</span>${esc(branchName(t))}</div>` : ""}
+      </div>
+      <div class="row ticket-stub">
         <input type="checkbox" class="card-select" data-select="${esc(t.id)}" ${checked ? "checked" : ""} title="${tl("mt.selectTicket")}" />
         <span class="ticket-id">${esc(t.ticketId)}</span>
         <span class="card-meta">${priorityPill(t.priority)}</span>
       </div>
-      <p class="title">${esc(t.title)}</p>
-      ${t.ticketId ? `<div class="branch-line"><span class="branch-ico">&#9123;</span>${esc(branchName(t))}</div>` : ""}
+      </div>
     </article>`;
 }
