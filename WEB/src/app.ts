@@ -1209,7 +1209,7 @@ app.get("/api/dashboard/stats", (c) =>
     // --- Super-admin-only stats (filtered) ---
     let totalProjects = 0;
     let totalUsers = 0;
-    let projectStats: { id: string; name: string; prefix: string; total: number; done: number }[] = [];
+    let projectStats: { id: string; name: string; prefix: string; total: number; done: number; overdue: number; lastActivity: number | null; members: number }[] = [];
     let topAssignees: { name: string; total: number }[] = [];
     let filterOptions: {
       projects: { id: string; name: string; prefix: string }[];
@@ -1240,6 +1240,9 @@ app.get("/api/dashboard/stats", (c) =>
           prefix: projects.prefix,
           total: sql<number>`(select count(*) from ${tasks} where ${tasks.projectId} = ${sql.raw('"projects"."id"')} and ${taskWhere})`,
           done: sql<number>`(select count(*) from ${tasks} where ${tasks.projectId} = ${sql.raw('"projects"."id"')} and ${tasks.status} = 'DONE' and ${taskWhere})`,
+          overdue: sql<number>`(select count(*) from ${tasks} where ${tasks.projectId} = ${sql.raw('"projects"."id"')} and ${tasks.status} != 'DONE' and ${tasks.dueDate} is not null and ${tasks.dueDate} < date('now', 'localtime') and ${taskWhere})`,
+          lastActivity: sql<number | null>`(select max(${tasks.updatedAt}) from ${tasks} where ${tasks.projectId} = ${sql.raw('"projects"."id"')} and ${taskWhere})`,
+          members: sql<number>`(select count(*) from ${projectMembers} where ${projectMembers.projectId} = ${sql.raw('"projects"."id"')})`,
         })
         .from(projects)
         .where(effectiveProjectIds.length > 0 ? inArray(projects.id, effectiveProjectIds) : sql`1 = 1`)
