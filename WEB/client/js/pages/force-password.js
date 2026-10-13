@@ -1,5 +1,6 @@
 import { api } from "../api.js";
 import { state, navigate } from "../main.js";
+import { t } from "../i18n.js";
 
 // Shown instead of the normal app shell whenever state.user.mustChangePassword
 // is true (accounts an admin created or reset by hand) — blocks the rest of
@@ -9,25 +10,25 @@ export async function renderForcePassword(root) {
     <div class="auth-wrap">
       <div class="auth-card">
         <div class="brand-big">TM</div>
-        <h1>Set your password</h1>
-        <p class="sub">An admin created this account for you. Choose your own password to continue.</p>
+        <h1>${t("auth.fp.title")}</h1>
+        <p class="sub">${t("auth.fp.sub")}</p>
         <div id="fp-error" class="form-error hidden"></div>
         <form id="fp-form">
           <div class="field">
-            <label for="fp-current">Temporary password</label>
+            <label for="fp-current">${t("auth.fp.temp")}</label>
             <input id="fp-current" type="password" autocomplete="current-password" required />
           </div>
           <div class="field">
-            <label for="fp-new">New password <span style="font-weight:400">(min. 8 characters)</span></label>
+            <label for="fp-new">${t("auth.fp.new")} <span style="font-weight:400">${t("auth.minChars")}</span></label>
             <input id="fp-new" type="password" autocomplete="new-password" required minlength="8" />
           </div>
           <div class="field">
-            <label for="fp-new2">Confirm password</label>
+            <label for="fp-new2">${t("auth.confirmPassword")}</label>
             <input id="fp-new2" type="password" autocomplete="new-password" required minlength="8" />
           </div>
-          <button class="btn" type="submit" style="width:100%" id="fp-btn">Set password</button>
+          <button class="btn" type="submit" style="width:100%" id="fp-btn">${t("auth.setPassword")}</button>
         </form>
-        <p style="text-align:center;margin:14px 0 0"><a href="#" id="fp-signout">Sign out instead</a></p>
+        <p style="text-align:center;margin:14px 0 0"><a href="#" id="fp-signout">${t("auth.fp.signout")}</a></p>
       </div>
     </div>`;
 
@@ -47,7 +48,7 @@ export async function renderForcePassword(root) {
     const currentPassword = form.querySelector("#fp-current").value;
     const newPassword = form.querySelector("#fp-new").value;
     if (newPassword !== form.querySelector("#fp-new2").value) {
-      errBox.textContent = "Passwords do not match.";
+      errBox.textContent = t("auth.passwordsMismatch");
       errBox.classList.remove("hidden");
       return;
     }
