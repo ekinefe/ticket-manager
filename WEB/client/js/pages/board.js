@@ -533,8 +533,14 @@ function cardHtml(t) {
   const movable = canModifyTask(t);
   const checked = selectedIds.has(t.id);
   return `
-    <article class="card ${movable ? "" : "locked"}${checked ? " selected" : ""}" draggable="${movable}" data-id="${esc(t.id)}">
-      <div class="row">
+    <article class="card ticket ${movable ? "" : "locked"}${checked ? " selected" : ""}" draggable="${movable}" data-id="${esc(t.id)}">
+      <div class="ticket-shape">
+      <div class="ticket-body">
+        <p class="title">${esc(t.title)}</p>
+        ${t.labels?.length ? `<div class="card-labels">${t.labels.map((l) => `<span class="label-chip">${esc(l)}</span>`).join("")}</div>` : ""}
+        ${t.dueDate ? `<div class="card-due${t.status !== "DONE" && t.dueDate < todayStr() ? " overdue" : ""}">${tl("bd.due", { date: esc(t.dueDate) })}</div>` : ""}
+      </div>
+      <div class="row ticket-stub">
         <input type="checkbox" class="card-select" data-select="${esc(t.id)}" ${checked ? "checked" : ""} title="${tl("bd.selectTicket")}" />
         <span class="ticket-id">${esc(t.ticketId)}</span>
         <span class="card-meta">
@@ -546,9 +552,7 @@ function cardHtml(t) {
           </span>
         </span>
       </div>
-      <p class="title">${esc(t.title)}</p>
-      ${t.labels?.length ? `<div class="card-labels">${t.labels.map((l) => `<span class="label-chip">${esc(l)}</span>`).join("")}</div>` : ""}
-      ${t.dueDate ? `<div class="card-due${t.status !== "DONE" && t.dueDate < todayStr() ? " overdue" : ""}">${tl("bd.due", { date: esc(t.dueDate) })}</div>` : ""}
+      </div>
     </article>`;
 }
 
