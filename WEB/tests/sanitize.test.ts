@@ -3,6 +3,12 @@ import assert from "node:assert/strict";
 import { sanitizeDescHtml } from "../src/lib/sanitize.ts";
 
 describe("sanitizeDescHtml (server-side)", () => {
+  it("drops trailing blank lines left open by the editor", () => {
+    assert.equal(sanitizeDescHtml("<p>hi</p><p><br></p>"), "<p>hi</p>");
+    assert.equal(sanitizeDescHtml("<p>hi</p><div><br></div><p></p><br>"), "<p>hi</p>");
+    assert.equal(sanitizeDescHtml("<p><br></p>"), "");
+  });
+
   it("keeps allowed formatting tags", () => {
     assert.equal(sanitizeDescHtml("<p><b>hi</b> <em>there</em></p>"), "<p><b>hi</b> <em>there</em></p>");
   });
