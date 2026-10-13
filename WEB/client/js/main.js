@@ -1,6 +1,6 @@
 import { api } from "./api.js";
-import { t, initLang, langSwitcherHtml, bindLangSwitcher } from "./i18n.js";
-import { esc, roleChip, avatarHtml } from "./ui.js";
+import { t, locale, initLang, langSwitcherHtml, bindLangSwitcher } from "./i18n.js";
+import { esc, roleChip, avatarHtml, STATUS_LABELS } from "./ui.js";
 import { renderLogin } from "./pages/login.js";
 import { renderProjects } from "./pages/projects.js";
 import { renderBoard, renderMembersTab, renderSprintsTab } from "./pages/board.js";
@@ -64,10 +64,10 @@ function topbarHtml() {
       <div class="notif-dropdown hidden" id="notif-dropdown">
         <div class="notif-head">
           <span class="notif-title">${t("top.notifications")}</span>
-          <button class="btn sm ghost" id="notif-mark-all">Mark all read</button>
+          <button class="btn sm ghost" id="notif-mark-all">${t("notif.markAll")}</button>
         </div>
         <div class="notif-list" id="notif-list">
-          <div class="notif-empty">No notifications yet</div>
+          <div class="notif-empty">${t("notif.empty")}</div>
         </div>
       </div>
     </div>
@@ -204,17 +204,17 @@ function sidebarHtml(activeId, activePath) {
       <div class="side-proj${projActive ? " active" : ""}">
         <div class="side-proj-row">
           <button class="side-proj-toggle${subOpen ? " open" : ""}" type="button"
-                  data-proj="${esc(p.id)}" aria-label="Toggle project">${CARET}</button>
+                  data-proj="${esc(p.id)}" aria-label="${t("nav.toggleProject")}">${CARET}</button>
           <a class="side-item proj-link${dashActive ? " active" : ""}" href="${projPath}" data-nav title="${esc(p.name)}">
             <span class="prefix-chip">${esc(p.prefix)}</span>
             <span class="side-name">${esc(p.name)}</span>
           </a>
         </div>
         <div class="side-proj-sub${subOpen ? "" : " collapsed"}" data-proj-sub="${esc(p.id)}">
-          <a class="side-sub${dashActive ? " active" : ""}" href="${projPath}" data-nav>Board</a>
-          <a class="side-sub${memActive ? " active" : ""}" href="${projPath}/members" data-nav>Members</a>
-          <a class="side-sub${sprActive ? " active" : ""}" href="${projPath}/sprints" data-nav>Sprints</a>
-          ${p.githubRepo ? `<a class="side-sub${graphActive ? " active" : ""}" href="${projPath}/graph" data-nav>Git graph</a>` : ""}
+          <a class="side-sub${dashActive ? " active" : ""}" href="${projPath}" data-nav>${t("nav.board")}</a>
+          <a class="side-sub${memActive ? " active" : ""}" href="${projPath}/members" data-nav>${t("nav.members")}</a>
+          <a class="side-sub${sprActive ? " active" : ""}" href="${projPath}/sprints" data-nav>${t("nav.sprints")}</a>
+          ${p.githubRepo ? `<a class="side-sub${graphActive ? " active" : ""}" href="${projPath}/graph" data-nav>${t("nav.gitGraph")}</a>` : ""}
         </div>
       </div>`;
   }).join("");
@@ -450,7 +450,7 @@ async function route() {
   } else if (path === "/admin/settings") {
     await renderAdmin(page, "settings");
   } else {
-    page.innerHTML = `<div class="page"><h1>Page not found</h1><p><a href="/projects" data-nav>Back to projects</a></p></div>`;
+    page.innerHTML = `<div class="page"><h1>${t("nav.notFound")}</h1><p><a href="/projects" data-nav>${t("nav.backToProjects")}</a></p></div>`;
   }
 }
 
@@ -505,7 +505,7 @@ function bindNotifications(topbar) {
     try {
       const { notifications: items } = await api.get("/notifications?limit=20");
       if (!items || items.length === 0) {
-        list.innerHTML = `<div class="notif-empty">No notifications yet</div>`;
+        list.innerHTML = `<div class="notif-empty">${t("notif.empty")}</div>`;
         return;
       }
       list.innerHTML = items.map((n) => {
@@ -515,13 +515,13 @@ function bindNotifications(topbar) {
         return `<div class="notif-item${unread ? " unread" : ""}" data-id="${esc(n.id)}" data-project="${esc(n.projectId || "")}" data-task="${esc(n.taskId || "")}">
           <span class="notif-icon">${icon}</span>
           <div class="notif-body">
-            <div class="notif-msg">${esc(n.message)}</div>
+            <div class="notif-msg">${esc(notifMessage(n))}</div>
             <div class="notif-when">${time}</div>
             <div class="notif-actions">
               ${unread
-                ? `<button class="btn sm ghost notif-btn-read" data-id="${esc(n.id)}">Mark read</button>`
-                : `<button class="btn sm ghost notif-btn-unread" data-id="${esc(n.id)}">Mark unread</button>`}
-              ${n.taskId ? `<button class="btn sm primary notif-btn-show" data-project="${esc(n.projectId || "")}" data-task="${esc(n.taskId)}">Show</button>` : ""}
+                ? `<button class="btn sm ghost notif-btn-read" data-id="${esc(n.id)}">${t("notif.markRead")}</button>`
+                : `<button class="btn sm ghost notif-btn-unread" data-id="${esc(n.id)}">${t("notif.markUnread")}</button>`}
+              ${n.taskId ? `<button class="btn sm primary notif-btn-show" data-project="${esc(n.projectId || "")}" data-task="${esc(n.taskId)}">${t("notif.show")}</button>` : ""}
             </div>
           </div>
         </div>`;
@@ -534,7 +534,7 @@ function bindNotifications(topbar) {
           await api.patch(`/notifications/${nid}/read`).catch(() => {});
           const item = btn.closest(".notif-item");
           if (item) item.classList.remove("unread");
-          btn.outerHTML = `<button class="btn sm ghost notif-btn-unread" data-id="${esc(nid)}">Mark unread</button>`;
+          btn.outerHTML = `<button class="btn sm ghost notif-btn-unread" data-id="${esc(nid)}">${t("notif.markUnread")}</button>`;
           bindNotifToggle(list);
           loadBadge();
         });
@@ -568,7 +568,7 @@ function bindNotifToggle(list) {
       await api.patch(`/notifications/${nid}/unread`).catch(() => {});
       const item = btn.closest(".notif-item");
       if (item) item.classList.add("unread");
-      btn.outerHTML = `<button class="btn sm ghost notif-btn-read" data-id="${esc(nid)}">Mark read</button>`;
+      btn.outerHTML = `<button class="btn sm ghost notif-btn-read" data-id="${esc(nid)}">${t("notif.markRead")}</button>`;
       bindNotifToggle(list);
       loadBadge();
     };
@@ -580,7 +580,7 @@ function bindNotifToggle(list) {
       await api.patch(`/notifications/${nid}/read`).catch(() => {});
       const item = btn.closest(".notif-item");
       if (item) item.classList.remove("unread");
-      btn.outerHTML = `<button class="btn sm ghost notif-btn-unread" data-id="${esc(nid)}">Mark unread</button>`;
+      btn.outerHTML = `<button class="btn sm ghost notif-btn-unread" data-id="${esc(nid)}">${t("notif.markUnread")}</button>`;
       bindNotifToggle(list);
       loadBadge();
     };
@@ -633,10 +633,35 @@ function applyTheme(theme, grid) {
 
 function fmtNotifTime(ts) {
   const diff = Date.now() - ts;
-  if (diff < 60000) return "just now";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return new Date(ts).toLocaleDateString();
+  if (diff < 60000) return t("time.now");
+  if (diff < 3600000) return t("time.min", { n: Math.floor(diff / 60000) });
+  if (diff < 86400000) return t("time.hour", { n: Math.floor(diff / 3600000) });
+  return new Date(ts).toLocaleDateString(locale());
+}
+
+// Notification texts are stored in English; rebuild them in the UI language
+// from the known formats (unknown ones are shown as stored).
+const NOTIF_PATTERNS = [
+  [/^(.+) assigned you (\S+): (.*)$/s, "notifmsg.assigned", ["who", "id", "title"]],
+  [/^(.+) created (\S+): (.*)$/s, "notifmsg.created", ["who", "id", "title"]],
+  [/^(.+) moved (\S+) to sprint (.*)$/s, "notifmsg.sprint", ["who", "id", "sprint"]],
+  [/^(.+) moved (\S+) to (.*)$/s, "notifmsg.moved", ["who", "id", "status"]],
+  [/^(.+) commented on (\S+): (.*)$/s, "notifmsg.commented", ["who", "id", "title"]],
+  [/^(.+) joined the project as (.*)$/s, "notifmsg.joined", ["who", "role"]],
+  [/^(.+) mentioned you$/s, "notifmsg.mentioned", ["who"]],
+];
+
+function notifMessage(n) {
+  const msg = String(n.message ?? "");
+  for (const [re, key, names] of NOTIF_PATTERNS) {
+    const m = re.exec(msg);
+    if (!m) continue;
+    const vars = Object.fromEntries(names.map((name, i) => [name, m[i + 1]]));
+    if (vars.status && STATUS_LABELS[vars.status]) vars.status = STATUS_LABELS[vars.status];
+    if (vars.role) vars.role = t(`role.${vars.role}`);
+    return t(key, vars);
+  }
+  return msg;
 }
 
 function notifIcon(type) {

@@ -22,6 +22,12 @@ export function initLang(user) {
   document.documentElement.lang = lang;
 }
 
+// Server errors arrive in English; translate the known ones, pass the rest through.
+export function tErr(message) {
+  const m = String(message ?? "");
+  return DICTS[lang]?.[`err:${m}`] ?? m;
+}
+
 export function getLang() {
   return lang;
 }

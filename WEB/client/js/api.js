@@ -1,3 +1,5 @@
+import { tErr } from "./i18n.js";
+
 const BASE = "/api";
 
 async function request(path, { method = "GET", body } = {}) {
@@ -10,7 +12,7 @@ async function request(path, { method = "GET", body } = {}) {
   let data = null;
   if (res.status !== 204) data = await res.json().catch(() => null);
   if (!res.ok) {
-    const err = new Error(data?.error || data?.message || res.statusText || "Request failed");
+    const err = new Error(tErr(data?.error || data?.message || res.statusText || "Request failed"));
     err.status = res.status;
     throw err;
   }
@@ -49,7 +51,7 @@ export const api = {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(data.message || data.error || "Invalid email or password");
+      throw new Error(tErr(data.message || data.error || "Invalid email or password"));
     }
     return data;
   },
