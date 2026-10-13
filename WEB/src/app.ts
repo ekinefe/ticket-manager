@@ -404,6 +404,7 @@ app.get("/api/projects/:id", (c) =>
     const projectId = c.req.param("id");
     const u = await getSessionUser(c.req.raw, env);
     await requireProjectRole(env.DB, u, projectId);
+    const access = await getProjectAccess(env.DB, u, projectId);
 
     const [project] = await env.DB.select().from(projects).where(eq(projects.id, projectId));
     if (!project) throw new ApiError(404, "Project not found");
@@ -421,7 +422,9 @@ app.get("/api/projects/:id", (c) =>
 
     const projectSprints = await listProjectSprints(env.DB, projectId);
 
-    return c.json({ ...project, members, sprints: projectSprints });
+    const myPermissions = PROJECT_PERMISSIONS.filter((p) => access.can(p));
+
+    return c.json({ ...project, members, sprints: projectSprints, myPermissions });
   })
 );
 

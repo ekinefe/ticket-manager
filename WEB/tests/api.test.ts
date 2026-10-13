@@ -212,6 +212,13 @@ describe("tickets", () => {
     assert.equal(bad.status, 400);
   });
 
+  it("tells the client which project permissions the caller has", async () => {
+    const admin = await (await req(`/api/projects/${PROJECT_ID}`, { cookie: adminCookie })).json();
+    assert.ok(admin.myPermissions.includes("DELETE_TICKET"));
+    const member = await (await req(`/api/projects/${PROJECT_ID}`, { cookie: member1 })).json();
+    assert.ok(Array.isArray(member.myPermissions));
+  });
+
   it("allows project admins to change priority", async () => {
     const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
       method: "POST", cookie: member1, body: { title: "Prio admin", assigneeId: "u_ayse" },
