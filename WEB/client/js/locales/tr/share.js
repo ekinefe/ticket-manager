@@ -1,2 +1,16 @@
 export default {
+  "share.unavailable": "Bilet kullanılamıyor",
+  "share.invalid": "Bu bağlantı geçersiz ya da paylaşım kapatılmış.",
+  "share.unknown": "Bilinmiyor",
+  "share.someone": "Biri",
+  "share.banner": "Salt okunur paylaşılan bilet",
+  "share.signIn": "Giriş yap",
+  "share.openBoard": "Panoda aç",
+  "share.meta": "{project} · Atanan: {assignee} · Oluşturan: {creator} · {date}",
+  "share.unknownLower": "bilinmiyor",
+  "share.noDesc": "Açıklama yok.",
+  "share.comments": "Yorumlar ({count})",
+  "share.noComments": "Yorum yok.",
+  "share.activity": "Etkinlik",
+  "share.noActivity": "Henüz etkinlik yok.",
 };

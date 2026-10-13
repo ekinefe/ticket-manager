@@ -5,6 +5,7 @@ import {
   STATUSES, getStatusColor, STATUS_LABELS,
   TASK_TYPES, TYPE_LABELS, PRIORITIES, PRIORITY_LABELS,
 } from "../ui.js";
+import { t as tl } from "../i18n.js";
 
 let selectedIds = new Set();
 let viewMode = localStorage.getItem("tm-ticket-view") || "board";
@@ -53,28 +54,28 @@ async function renderTickets(root, mode) {
   root.innerHTML = `
     <div class="page">
       <div class="page-head">
-        <h1>${isAll ? "All Tickets" : "My Tickets"}</h1>
-        <span class="mt-total">${tickets.length} ${isAll ? "ticket" + (tickets.length === 1 ? "" : "s") : "assigned to you"}</span>
-        ${isAll ? `<select id="all-assignee" aria-label="Filter by assignee">
-          <option value="">All assignees</option>
-          <option value="none"${allAssignee === "none" ? " selected" : ""}>Unassigned</option>
+        <h1>${tl(isAll ? "mt.all" : "mt.mine")}</h1>
+        <span class="mt-total">${isAll ? tl(tickets.length === 1 ? "mt.ticketCount.one" : "mt.ticketCount.many", { count: tickets.length }) : `${tickets.length} ${tl("mt.assignedToYou")}`}</span>
+        ${isAll ? `<select id="all-assignee" aria-label="${tl("mt.filterAssignee")}">
+          <option value="">${tl("mt.allAssignees")}</option>
+          <option value="none"${allAssignee === "none" ? " selected" : ""}>${tl("mt.unassigned")}</option>
           ${users.map((x) => `<option value="${esc(x.id)}"${allAssignee === x.id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}
         </select>` : ""}
-        <div class="btn-group view-toggle" role="group" aria-label="View" style="margin-left:auto">
-          <button class="btn sm ${viewMode === "board" ? "" : "ghost"}" id="view-board-btn">Board</button>
-          <button class="btn sm ${viewMode === "list" ? "" : "ghost"}" id="view-list-btn">List</button>
+        <div class="btn-group view-toggle" role="group" aria-label="${tl("mt.view")}" style="margin-left:auto">
+          <button class="btn sm ${viewMode === "board" ? "" : "ghost"}" id="view-board-btn">${tl("mt.board")}</button>
+          <button class="btn sm ${viewMode === "list" ? "" : "ghost"}" id="view-list-btn">${tl("mt.list")}</button>
         </div>
       </div>
       ${groups.size === 0
-        ? `<div class="empty-note">${isAll ? "No tickets match this filter." : "No tickets are assigned to you. Assigned tickets from every project will show up here."}</div>`
+        ? `<div class="empty-note">${tl(isAll ? "mt.noMatch" : "mt.noneAssigned")}</div>`
         : [...groups.entries()].map(([projectId, g]) => projectSection(projectId, g)).join("")}
       ${isAll ? "" : `
         <div class="page-head" style="margin-top:28px">
-          <h1>Unassigned</h1>
-          <span class="mt-total">${unassigned.length} without an assignee</span>
+          <h1>${tl("mt.unassigned")}</h1>
+          <span class="mt-total">${tl("mt.withoutAssignee", { count: unassigned.length })}</span>
         </div>
         ${unassignedGroups.size === 0
-          ? `<div class="empty-note">No unassigned tickets in projects you can view.</div>`
+          ? `<div class="empty-note">${tl("mt.noUnassigned")}</div>`
           : [...unassignedGroups.entries()].map(([projectId, g]) => projectSection(projectId, g)).join("")}`}
       <div class="bulk-bar hidden" id="bulk-bar"></div>
     </div>`;
@@ -114,21 +115,21 @@ function renderBulkBar(root, rerender) {
   }
   bar.classList.remove("hidden");
   bar.innerHTML = `
-    <span class="bulk-count">${selectedIds.size} selected</span>
+    <span class="bulk-count">${tl("mt.selected", { count: selectedIds.size })}</span>
     <select id="bulk-status">
-      <option value="">Move to status…</option>
+      <option value="">${tl("mt.moveStatus")}</option>
       ${STATUSES.map((s) => `<option value="${s}">${STATUS_LABELS[s]}</option>`).join("")}
     </select>
     <select id="bulk-type">
-      <option value="">Change type…</option>
+      <option value="">${tl("mt.changeType")}</option>
       ${TASK_TYPES.map((t) => `<option value="${t}">${TYPE_LABELS[t]}</option>`).join("")}
     </select>
     <select id="bulk-priority">
-      <option value="">Change priority…</option>
+      <option value="">${tl("mt.changePriority")}</option>
       ${PRIORITIES.map((p) => `<option value="${p}">${PRIORITY_LABELS[p]}</option>`).join("")}
     </select>
-    <button class="btn sm danger" id="bulk-delete">Delete…</button>
-    <button class="btn sm ghost" id="bulk-clear">Clear selection</button>`;
+    <button class="btn sm danger" id="bulk-delete">${tl("mt.delete")}</button>
+    <button class="btn sm ghost" id="bulk-clear">${tl("mt.clear")}</button>`;
 
   bar.querySelector("#bulk-delete").addEventListener("click", async () => {
     const list = [...root.querySelectorAll(".mt-card, .list-row")]
@@ -146,14 +147,14 @@ function renderBulkBar(root, rerender) {
     try {
       const { updated, skipped } = await api.patch("/tasks/bulk", { taskIds, update });
       if (skipped.length === 0) {
-        toast(`Updated ${updated.length} ticket${updated.length === 1 ? "" : "s"}`, "ok");
+        toast(updated.length === 1 ? tl("mt.updated.one") : tl("mt.updated.many", { count: updated.length }), "ok");
       } else {
-        toast(`Updated ${updated.length}, skipped ${skipped.length} (no permission or invalid change)`, updated.length ? "ok" : "err");
+        toast(tl("mt.updatedSkipped", { updated: updated.length, skipped: skipped.length }), updated.length ? "ok" : "err");
       }
       selectedIds = new Set();
       await rerender();
     } catch (err) {
-      toast(err.message || "Bulk update failed", "err");
+      toast(err.message || tl("mt.bulkFailed"), "err");
       selectEl.disabled = false;
       selectEl.value = "";
     }
@@ -174,7 +175,7 @@ function projectSection(projectId, g) {
       <div class="mt-head">
         <span class="prefix-chip">${esc(g.prefix)}</span>
         <h2><a href="/projects/${encodeURIComponent(projectId)}" data-nav>${esc(g.name)}</a></h2>
-        <span class="mt-count">${g.tasks.length} ticket${g.tasks.length === 1 ? "" : "s"}</span>
+        <span class="mt-count">${tl(g.tasks.length === 1 ? "mt.ticketCount.one" : "mt.ticketCount.many", { count: g.tasks.length })}</span>
       </div>
       ${viewMode === "list" ? listTableHtml(projectId, g.tasks) : boardHtml(g.tasks)}
     </section>`;
@@ -203,7 +204,7 @@ function boardHtml(tasks) {
 function listTableHtml(projectId, tasks) {
   return `
     <table class="data list-table">
-      <thead><tr><th></th><th>Ticket</th><th>Title</th><th>Status</th><th>Type</th><th>Priority</th></tr></thead>
+      <thead><tr><th></th><th>${tl("mt.colTicket")}</th><th>${tl("mt.colTitle")}</th><th>${tl("mt.colStatus")}</th><th>${tl("mt.colType")}</th><th>${tl("mt.colPriority")}</th></tr></thead>
       <tbody>${tasks.map((t) => listRowHtml(projectId, t)).join("")}</tbody>
     </table>`;
 }
@@ -211,8 +212,8 @@ function listTableHtml(projectId, tasks) {
 function listRowHtml(projectId, t) {
   const checked = selectedIds.has(t.id);
   return `
-    <tr class="list-row${checked ? " selected" : ""}" data-id="${esc(t.id)}" data-project="${esc(projectId)}" title="Open in ${esc(t.projectName)} board">
-      <td><input type="checkbox" class="card-select" data-select="${esc(t.id)}" ${checked ? "checked" : ""} title="Select ticket" /></td>
+    <tr class="list-row${checked ? " selected" : ""}" data-id="${esc(t.id)}" data-project="${esc(projectId)}" title="${tl("mt.openInBoard", { project: esc(t.projectName) })}">
+      <td><input type="checkbox" class="card-select" data-select="${esc(t.id)}" ${checked ? "checked" : ""} title="${tl("mt.selectTicket")}" /></td>
       <td class="ticket-id">${esc(t.ticketId)}</td>
       <td class="title-cell">${esc(t.title)}</td>
       <td>${statusPill(t.status)}</td>
@@ -224,9 +225,9 @@ function listRowHtml(projectId, t) {
 function cardHtml(t) {
   const checked = selectedIds.has(t.id);
   return `
-    <article class="card mt-card${checked ? " selected" : ""}" data-id="${esc(t.id)}" data-project="${esc(t.projectId)}" title="Open in ${esc(t.projectName)} board">
+    <article class="card mt-card${checked ? " selected" : ""}" data-id="${esc(t.id)}" data-project="${esc(t.projectId)}" title="${tl("mt.openInBoard", { project: esc(t.projectName) })}">
       <div class="row">
-        <input type="checkbox" class="card-select" data-select="${esc(t.id)}" ${checked ? "checked" : ""} title="Select ticket" />
+        <input type="checkbox" class="card-select" data-select="${esc(t.id)}" ${checked ? "checked" : ""} title="${tl("mt.selectTicket")}" />
         <span class="ticket-id">${esc(t.ticketId)}</span>
         <span class="card-meta">${priorityPill(t.priority)}</span>
       </div>

@@ -1,2 +1,16 @@
 export default {
+  "share.unavailable": "Ticket unavailable",
+  "share.invalid": "This link is invalid or sharing has been turned off.",
+  "share.unknown": "Unknown",
+  "share.someone": "Someone",
+  "share.banner": "Read-only shared ticket",
+  "share.signIn": "Sign in",
+  "share.openBoard": "Open on the board",
+  "share.meta": "{project} · Assignee: {assignee} · Created by {creator} on {date}",
+  "share.unknownLower": "unknown",
+  "share.noDesc": "No description.",
+  "share.comments": "Comments ({count})",
+  "share.noComments": "No comments.",
+  "share.activity": "Activity",
+  "share.noActivity": "No activity yet.",
 };
