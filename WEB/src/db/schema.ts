@@ -270,6 +270,23 @@ export const notifications = sqliteTable(
   ]
 );
 
+export const accessAudit = sqliteTable(
+  "access_audit",
+  {
+    id: text("id").primaryKey(),
+    actorId: text("actor_id"),
+    actorName: text("actor_name"),
+    action: text("action").notNull(),
+    targetUserId: text("target_user_id"),
+    targetName: text("target_name"),
+    projectId: text("project_id"),
+    projectPrefix: text("project_prefix"),
+    detail: text("detail"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("idx_access_audit_created").on(t.createdAt)]
+);
+
 export const appSettings = sqliteTable("app_settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
