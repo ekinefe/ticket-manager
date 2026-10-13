@@ -6,7 +6,7 @@ comments, attachments, invitation-only accounts, per-project roles, live
 board updates (SSE), e-mail digests and a weekly dependency-security scan.
 
 Full architecture and security documentation: [`DOC/main.tex`](DOC/main.tex)
-(compiled PDF: `DOC/main.pdf`).
+(compiled PDF: `DOC/main.pdf`). How to use the app: [`DOC/user-guide.md`](DOC/user-guide.md).
 
 ## Quickstart (development)
 
@@ -26,7 +26,7 @@ Demo accounts (seeded): `ekin@plannedlost.dev / admin123!` (super admin),
 | --- | --- |
 | `npm run dev` | Dev server with watch + template compilation |
 | `npm start` | Production entry point |
-| `npm test` | Test suite (52 API/unit tests, `node:test`) |
+| `npm test` | Test suite (`node:test`) |
 | `npm run check` | TypeScript typecheck |
 | `npm run backup` | Consistent DB snapshot + uploads copy → `WEB/backups/` |
 | `npm run media:gc` | Remove unreferenced uploaded files (7-day grace) |
