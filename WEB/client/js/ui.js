@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { labels, locale, t } from "./i18n.js";
 
 export const STATUSES = ["TODO", "IN_PROGRESS", "UNDER_REVIEW", "MERGED", "DEPLOYED", "TEST", "DONE"];
 
@@ -22,15 +23,7 @@ const STATUS_COLORS_LIGHT = {
   DONE: "#1e8c5a",
 };
 
-export const STATUS_LABELS = {
-  TODO: "To Do",
-  IN_PROGRESS: "In Progress",
-  UNDER_REVIEW: "Under Review",
-  MERGED: "Merged",
-  DEPLOYED: "Deployed",
-  TEST: "Test",
-  DONE: "Done",
-};
+export const STATUS_LABELS = labels("status", STATUSES);
 
 function isLightTheme() {
   return document.documentElement.getAttribute("data-theme") === "light";
@@ -97,7 +90,7 @@ export function fmtDate(ms) {
   // Number() only the former (an ISO string becomes NaN through it).
   const d = new Date(ms);
   if (isNaN(d.getTime())) return "-";
-  return d.toLocaleString("en-GB", {
+  return d.toLocaleString(locale(), {
     day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
   });
 }
@@ -105,10 +98,10 @@ export function fmtDate(ms) {
 /* ---------- Ticket type / priority / branch ---------- */
 
 export const TASK_TYPES = ["TASK", "BUG"];
-export const TYPE_LABELS = { TASK: "Task", BUG: "Bug" };
+export const TYPE_LABELS = labels("type", ["TASK", "BUG"]);
 
 export const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"];
-export const PRIORITY_LABELS = { LOW: "Low", MEDIUM: "Medium", HIGH: "High", URGENT: "Urgent" };
+export const PRIORITY_LABELS = labels("priority", ["LOW", "MEDIUM", "HIGH", "URGENT"]);
 export const PRIORITY_COLORS = { LOW: "#555555", MEDIUM: "#00f3ff", HIGH: "#ffb700", URGENT: "#ff3333" };
 
 const PRIORITY_COLORS_LIGHT = { LOW: "#71717a", MEDIUM: "#0090a8", HIGH: "#b8860b", URGENT: "#d32f2f" };

@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { t, initLang, langSwitcherHtml, bindLangSwitcher } from "./i18n.js";
 import { esc, roleChip, avatarHtml } from "./ui.js";
 import { renderLogin } from "./pages/login.js";
 import { renderProjects } from "./pages/projects.js";
@@ -35,7 +36,7 @@ export async function loadProjects(force = false) {
 function topbarHtml() {
   const u = state.user;
   return `
-    <button class="nav-toggle" id="nav-toggle" type="button" aria-label="Open navigation" title="Menu">
+    <button class="nav-toggle" id="nav-toggle" type="button" aria-label="${t("nav.openNavigation")}" title="${t("nav.menu")}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" width="18" height="18" aria-hidden="true">
         <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
       </svg>
@@ -47,13 +48,13 @@ function topbarHtml() {
       <svg class="search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
         <circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.5" y2="16.5"></line>
       </svg>
-      <input type="text" id="global-search" placeholder="Search tickets, projects${u.role !== "USER" ? ", users" : ""}…" autocomplete="off" spellcheck="false" />
+      <input type="text" id="global-search" placeholder="${t(u.role !== "USER" ? "top.searchUsers" : "top.search")}" autocomplete="off" spellcheck="false" />
       <span class="search-kbd" id="search-kbd">Ctrl K</span>
       <div class="search-drop hidden" id="search-drop"></div>
     </div>
     <span class="spacer"></span>
     <div class="notif-wrap" id="notif-wrap">
-      <button class="notif-bell" id="notif-bell" title="Notifications">
+      <button class="notif-bell" id="notif-bell" title="${t("top.notifications")}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
           <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
@@ -62,7 +63,7 @@ function topbarHtml() {
       </button>
       <div class="notif-dropdown hidden" id="notif-dropdown">
         <div class="notif-head">
-          <span class="notif-title">Notifications</span>
+          <span class="notif-title">${t("top.notifications")}</span>
           <button class="btn sm ghost" id="notif-mark-all">Mark all read</button>
         </div>
         <div class="notif-list" id="notif-list">
@@ -76,7 +77,8 @@ function topbarHtml() {
         ${roleChip(u.role)}
       </div>
       ${avatarHtml(u.name, u.id)}
-      <button class="btn subtle sm" id="signout-btn" title="Sign out">Sign out</button>
+      ${langSwitcherHtml()}
+      <button class="btn subtle sm" id="signout-btn" title="${t("common.signOut")}">${t("common.signOut")}</button>
     </div>`;
 }
 
@@ -101,34 +103,34 @@ function bindGlobalSearch(topbar) {
   const close = () => drop.classList.add("hidden");
 
   const render = (data, q) => {
-    const t = data.tickets || [], p = data.projects || [], u = data.users || [], s = data.sprints || [];
-    if (!t.length && !p.length && !u.length && !s.length) {
+    const tk = data.tickets || [], p = data.projects || [], u = data.users || [], s = data.sprints || [];
+    if (!tk.length && !p.length && !u.length && !s.length) {
       drop.innerHTML = `
         <div class="sr-empty">
-          No matches for &ldquo;${esc(q)}&rdquo;
-          <div style="margin-top:4px;font-size:12px">Check the spelling, or try a ticket ID like <span class="ticket-id">PLN-3</span> or a sprint like <span class="ticket-id">PLN-S1</span></div>
+          ${t("search.noMatches", { q: esc(q) })}
+          <div style="margin-top:4px;font-size:12px">${t("search.hint", { id: '<span class="ticket-id">PLN-3</span>', sprint: '<span class="ticket-id">PLN-S1</span>' })}</div>
         </div>`;
     } else {
       drop.innerHTML = `
-        ${data.suggested ? `<div class="sr-group sr-suggested">Did you mean</div>` : ""}
-        ${t.length ? `<div class="sr-group">Tickets</div>${t.map((x) => `
+        ${data.suggested ? `<div class="sr-group sr-suggested">${t("search.didYouMean")}</div>` : ""}
+        ${tk.length ? `<div class="sr-group">${t("search.tickets")}</div>${tk.map((x) => `
           <a class="sr-item" href="/projects/${encodeURIComponent(x.projectId)}?task=${encodeURIComponent(x.ticketId)}" data-nav>
             <span class="ticket-id">${esc(x.ticketId)}</span>
             <span class="sr-title">${esc(x.title)}</span>
             <span class="sr-meta">${esc(x.projectPrefix)}</span>
           </a>`).join("")}` : ""}
-        ${s.length ? `<div class="sr-group">Sprints</div>${s.map((x) => `
+        ${s.length ? `<div class="sr-group">${t("search.sprints")}</div>${s.map((x) => `
           <a class="sr-item" href="/projects/${encodeURIComponent(x.projectId)}/sprints" data-nav>
             <span class="ticket-id">${esc(x.sprintId)}</span>
             <span class="sr-title">${esc(x.name)}</span>
             <span class="sr-meta">${esc(x.projectPrefix)}</span>
           </a>`).join("")}` : ""}
-        ${p.length ? `<div class="sr-group">Projects</div>${p.map((x) => `
+        ${p.length ? `<div class="sr-group">${t("search.projects")}</div>${p.map((x) => `
           <a class="sr-item" href="/projects/${encodeURIComponent(x.id)}" data-nav>
             <span class="prefix-chip">${esc(x.prefix)}</span>
             <span class="sr-title">${esc(x.name)}</span>
           </a>`).join("")}` : ""}
-        ${u.length ? `<div class="sr-group">Users</div>${u.map((x) => `
+        ${u.length ? `<div class="sr-group">${t("search.users")}</div>${u.map((x) => `
           <a class="sr-item" href="/admin/users" data-nav>
             ${avatarHtml(x.name, x.id)}
             <span class="sr-title">${esc(x.name)} <span style="color:var(--text-dim)">&middot; ${esc(x.email)}</span></span>
@@ -221,39 +223,39 @@ function sidebarHtml(activeId, activePath) {
     <aside class="proj-sidebar">
       <nav class="side-list">
         <a class="side-item${activePath === "/welcome" ? " active" : ""}" href="/welcome" data-nav>
-          ${ICON_HOME} Home
+          ${ICON_HOME} ${t("nav.home")}
         </a>
         <a class="side-item${activePath === "/dashboard" ? " active" : ""}" href="/dashboard" data-nav>
-          ${ICON_DASH} Dashboard
+          ${ICON_DASH} ${t("nav.dashboard")}
         </a>
 
         <div class="side-group-head${sidebarState.projectsCollapsed ? "" : " open"}" id="projects-toggle">
-          <button class="side-caret-btn" type="button" data-projects-toggle aria-label="Toggle projects">${CARET}</button>
-          <a class="side-group-label" href="/projects" data-nav>Projects</a>
+          <button class="side-caret-btn" type="button" data-projects-toggle aria-label="${t("nav.toggleProjects")}">${CARET}</button>
+          <a class="side-group-label" href="/projects" data-nav>${t("nav.projects")}</a>
           <span class="side-count">${projects.length}</span>
         </div>
         <div class="side-group${sidebarState.projectsCollapsed ? " collapsed" : ""}" id="projects-group">
           ${projItems}
-          ${projects.length === 0 ? `<span class="side-empty">No projects yet</span>` : ""}
+          ${projects.length === 0 ? `<span class="side-empty">${t("nav.noProjects")}</span>` : ""}
         </div>
 
         <div class="side-sep"></div>
 
         <a class="side-item${activePath === "/my-tickets" ? " active" : ""}" href="/my-tickets" data-nav>
-          ${ICON_TICKET} My Tickets
+          ${ICON_TICKET} ${t("nav.myTickets")}
         </a>
         ${isSuper ? `<a class="side-item${activePath === "/all-tickets" ? " active" : ""}" href="/all-tickets" data-nav>
-          ${ICON_TICKET} All Tickets
+          ${ICON_TICKET} ${t("nav.allTickets")}
         </a>` : ""}
       </nav>
 
       <div class="side-tools">
         <div class="side-sep"></div>
-        <button class="side-item side-tool" id="theme-toggle" type="button" title="Toggle dark / light theme">
-          <span class="side-ico" id="theme-ico"></span><span>Dark / Light</span>
+        <button class="side-item side-tool" id="theme-toggle" type="button" title="${t("nav.toggleTheme")}">
+          <span class="side-ico" id="theme-ico"></span><span>${t("nav.darkLight")}</span>
         </button>
-        <button class="side-item side-tool" id="grid-toggle" type="button" title="Toggle grid background">
-          <span class="side-ico" id="grid-ico"></span><span>Grid background</span>
+        <button class="side-item side-tool" id="grid-toggle" type="button" title="${t("nav.toggleGrid")}">
+          <span class="side-ico" id="grid-ico"></span><span>${t("nav.grid")}</span>
         </button>
       </div>
 
@@ -261,7 +263,7 @@ function sidebarHtml(activeId, activePath) {
       <div class="side-footer">
         <div class="side-sep"></div>
         <a class="side-item${activePath.startsWith("/admin") ? " active" : ""}" href="/admin/users" data-nav>
-          <span class="side-ico">&#9881;</span> Admin Panel
+          <span class="side-ico">&#9881;</span> ${t("nav.admin")}
         </a>
       </div>` : ""}
 
@@ -274,7 +276,7 @@ function sidebarHtml(activeId, activePath) {
             ${roleChip(u.role)}
           </div>
         </div>
-        <button class="btn subtle sm side-signout" id="side-signout" type="button">Sign out</button>
+        <button class="btn subtle sm side-signout" id="side-signout" type="button">${t("common.signOut")}</button>
       </div>
     </aside>`;
 }
@@ -399,6 +401,7 @@ async function route() {
   topbar.innerHTML = topbarHtml();
   bindGlobalSearch(topbar);
   topbar.querySelector("#signout-btn").addEventListener("click", signOut);
+  bindLangSwitcher(topbar, { signedIn: true });
 
   bindNotifications(topbar);
 
@@ -662,5 +665,6 @@ window.addEventListener("popstate", route);
 (async function boot() {
   const session = await api.session().catch(() => null);
   state.user = session?.user ?? null;
+  initLang(state.user);
   await route();
 })();
