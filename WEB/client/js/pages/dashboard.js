@@ -546,7 +546,8 @@ function activityItemHtml(ev) {
     <div class="act-body">
       <div class="act-text">
         <b>${esc(who)}</b> moved
-        <span class="ticket-id">${esc(ev.ticketId)}</span>
+        <a class="ticket-id" href="/projects/${encodeURIComponent(ev.projectId)}?task=${encodeURIComponent(ev.ticketId)}" data-nav>${esc(ev.ticketId)}</a>
+        <span class="act-title">${esc(ev.taskTitle || "")}</span>
         ${statusPill(ev.oldStatus, undefined, true)} ${arrow} ${statusPill(ev.newStatus, undefined, true)}
       </div>
       <div class="act-when">${esc(ev.projectPrefix)} &middot; ${fmtDate(ev.createdAt)}</div>

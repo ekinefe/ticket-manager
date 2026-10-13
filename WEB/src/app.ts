@@ -1145,6 +1145,7 @@ app.get("/api/dashboard/stats", (c) =>
         taskId: activityLog.taskId,
         ticketId: tasks.ticketId,
         taskTitle: tasks.title,
+        projectId: tasks.projectId,
         projectName: projects.name,
         projectPrefix: projects.prefix,
         actorId: activityLog.actorId,
@@ -1158,7 +1159,7 @@ app.get("/api/dashboard/stats", (c) =>
       .innerJoin(projects, eq(projects.id, tasks.projectId))
       .leftJoin(user, eq(user.id, activityLog.actorId))
       .where(and(projectFilter, ...activityTaskConditions))
-      .orderBy(asc(activityLog.createdAt))
+      .orderBy(desc(activityLog.createdAt))
       .limit(10);
 
     // --- Team workload (ADMIN+, filtered) ---
@@ -1278,7 +1279,7 @@ app.get("/api/dashboard/stats", (c) =>
       sprintStats: sprintRows,
       dailyStats,
       weeklyStats,
-      recentActivity: recentActivity.reverse(),
+      recentActivity,
       teamWorkload,
       projectStats,
       topAssignees,
