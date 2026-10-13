@@ -1,0 +1,8 @@
+/* ---------- Access overview (TM-10) ---------- */
+.acc-table th, .acc-table td { vertical-align: middle; }
+.acc-cell { white-space: nowrap; text-align: center; }
+.acc-all { color: var(--text-dim); font-size: 12px; }
+.acc-select { max-width: 110px; font-size: 12.5px; }
+.acc-select.acc-ADMIN { border-color: var(--accent); }
+.acc-select.acc-none { color: var(--text-dim); }
+.acc-perms { margin-left: 6px; font-size: 11px; color: var(--text-dim); cursor: help; }

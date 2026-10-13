@@ -447,6 +447,8 @@ async function route() {
     await renderAdmin(page, "users");
   } else if (path === "/admin/projects") {
     await renderAdmin(page, "projects");
+  } else if (path === "/admin/access" && state.user.role === "SUPER_ADMIN") {
+    await renderAdmin(page, "access");
   } else if (path === "/admin/settings") {
     await renderAdmin(page, "settings");
   } else {

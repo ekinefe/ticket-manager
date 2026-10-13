@@ -49,7 +49,7 @@ import { renderTemplate, htmlToText } from "./lib/mail/templates";
 import { getTransport } from "./lib/mail";
 import { runJob } from "./cron/scheduler";
 import { and, asc, eq, ne, or, sql, gte, inArray, isNull, count, desc } from "drizzle-orm";
-import { githubEvents, githubEventTasks, projects, projectMembers, projectMemberPermissions, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications } from "./db/schema";
+import { githubEvents, githubEventTasks, projects, projectMembers, projectMemberPermissions, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications, accessAudit } from "./db/schema";
 import {
   createNotification,
   createProjectNotification,
@@ -635,6 +635,7 @@ app.patch("/api/admin/users/:id", (c) =>
 
     const body = await readBody<{ role?: string }>(c);
     if (body.role !== "SUPER_ADMIN" && body.role !== "ADMIN" && body.role !== "USER") throw new ApiError(400, "Invalid role");
+    const [before] = await env.DB.select({ role: user.role }).from(user).where(eq(user.id, id));
 
     const [updated] = await env.DB
       .update(user)
@@ -642,6 +643,7 @@ app.patch("/api/admin/users/:id", (c) =>
       .where(eq(user.id, id))
       .returning({ id: user.id, email: user.email, role: user.role });
     if (!updated) throw new ApiError(404, "User not found");
+    if (before?.role !== updated.role) await recordAccess(actor, { action: "ROLE_CHANGED", targetUserId: id, detail: { from: before?.role, to: updated.role } });
     return c.json(updated);
   })
 );
@@ -671,6 +673,7 @@ app.delete("/api/admin/users/:id", (c) =>
     // Lockout protection: a super admin cannot delete their own account.
     if (id === actor.id) throw new ApiError(400, "You cannot delete your own account");
 
+    await recordAccess(actor, { action: "ACCOUNT_DELETED", targetUserId: id });
     // Sessions and memberships cascade; tickets fall back to "Unassigned".
     const deleted = await env.DB
       .delete(user)
@@ -723,6 +726,7 @@ app.post("/api/admin/users/:id/projects", (c) =>
 
     const [target] = await env.DB.select({ id: user.id }).from(user).where(eq(user.id, id));
     if (!target) throw new ApiError(404, "User not found");
+    const previousRole = await currentMemberRole(body.projectId, id);
 
     await env.DB
       .insert(projectMembers)
@@ -732,6 +736,9 @@ app.post("/api/admin/users/:id/projects", (c) =>
         set: { role: memberRole },
       });
     await ensureDefaultMemberPermissions(env.DB, body.projectId, id, memberRole);
+    if (previousRole !== memberRole) {
+      await recordAccess(actor, { action: previousRole ? "MEMBER_ROLE_CHANGED" : "MEMBER_ADDED", targetUserId: id, projectId: body.projectId, detail: { from: previousRole, to: memberRole } });
+    }
     return c.json({ ok: true });
   })
 );
@@ -758,7 +765,9 @@ app.patch("/api/admin/users/:id/projects/:projectId/permissions", (c) =>
     const invalid = body.permissions.filter((p) => !valid.has(p));
     if (invalid.length > 0) throw new ApiError(400, `Unknown permission(s): ${invalid.join(", ")}`);
 
+    const beforePerms = await getMemberPermissions(env.DB, projectId, id);
     await setMemberPermissions(env.DB, projectId, id, body.permissions as ProjectPermission[]);
+    await recordPermissionChange(actor, id, projectId, beforePerms, body.permissions);
     return c.json({ ok: true, permissions: body.permissions });
   })
 );
@@ -769,6 +778,8 @@ app.delete("/api/admin/users/:id/projects/:projectId", (c) =>
     requireSuperAdmin(actor);
     const userId = c.req.param("id");
     const projectId = c.req.param("projectId");
+    const hadRole = await currentMemberRole(projectId, userId);
+    if (hadRole) await recordAccess(actor, { action: "MEMBER_REMOVED", targetUserId: userId, projectId, detail: { from: hadRole } });
     await env.DB.delete(projectMembers).where(and(eq(projectMembers.userId, userId), eq(projectMembers.projectId, projectId)));
     await env.DB.delete(projectMemberPermissions).where(and(eq(projectMemberPermissions.userId, userId), eq(projectMemberPermissions.projectId, projectId)));
     // A removed member can no longer be the project's default assignee.
@@ -834,7 +845,9 @@ app.patch("/api/admin/projects/:id/members/:userId/permissions", (c) =>
     const invalid = body.permissions.filter((p) => !valid.has(p));
     if (invalid.length > 0) throw new ApiError(400, `Unknown permission(s): ${invalid.join(", ")}`);
 
+    const beforePerms = await getMemberPermissions(env.DB, projectId, userId);
     await setMemberPermissions(env.DB, projectId, userId, body.permissions as ProjectPermission[]);
+    await recordPermissionChange(actor, userId, projectId, beforePerms, body.permissions);
     return c.json({ ok: true, permissions: body.permissions });
   })
 );
@@ -852,6 +865,7 @@ app.post("/api/admin/projects/:id/members", (c) =>
     if (!project) throw new ApiError(404, "Project not found");
     const [target] = await env.DB.select({ id: user.id }).from(user).where(eq(user.id, body.userId));
     if (!target) throw new ApiError(404, "User not found");
+    const previousRole = await currentMemberRole(projectId, body.userId);
 
     await env.DB
       .insert(projectMembers)
@@ -861,6 +875,9 @@ app.post("/api/admin/projects/:id/members", (c) =>
         set: { role: memberRole },
       });
     await ensureDefaultMemberPermissions(env.DB, projectId, body.userId, memberRole);
+    if (previousRole !== memberRole) {
+      await recordAccess(actor, { action: previousRole ? "MEMBER_ROLE_CHANGED" : "MEMBER_ADDED", targetUserId: body.userId, projectId, detail: { from: previousRole, to: memberRole } });
+    }
     return c.json({ ok: true });
   })
 );
@@ -871,11 +888,93 @@ app.delete("/api/admin/projects/:id/members/:userId", (c) =>
     requireSuperAdmin(actor);
     const projectId = c.req.param("id");
     const userId = c.req.param("userId");
+    const hadRole = await currentMemberRole(projectId, userId);
+    if (hadRole) await recordAccess(actor, { action: "MEMBER_REMOVED", targetUserId: userId, projectId, detail: { from: hadRole } });
     await env.DB.delete(projectMembers).where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)));
     await env.DB.delete(projectMemberPermissions).where(and(eq(projectMemberPermissions.projectId, projectId), eq(projectMemberPermissions.userId, userId)));
     // A removed member can no longer be the project's default assignee.
     await env.DB.update(projects).set({ defaultAssigneeId: null }).where(and(eq(projects.id, projectId), eq(projects.defaultAssigneeId, userId)));
     return c.json({ ok: true });
+  })
+);
+
+// ---------- Access audit + overview (super admin) ----------
+
+type AccessAction = "ROLE_CHANGED" | "MEMBER_ADDED" | "MEMBER_ROLE_CHANGED" | "MEMBER_REMOVED" | "PERMISSIONS_CHANGED" | "ACCOUNT_DELETED";
+
+// Best-effort: an audit failure must never block the access change itself.
+async function recordAccess(
+  actor: SessionUser,
+  e: { action: AccessAction; targetUserId: string; projectId?: string; detail?: Record<string, unknown> }
+): Promise<void> {
+  try {
+    const [target] = await env.DB.select({ name: user.name }).from(user).where(eq(user.id, e.targetUserId));
+    const [proj] = e.projectId
+      ? await env.DB.select({ prefix: projects.prefix }).from(projects).where(eq(projects.id, e.projectId))
+      : [];
+    await env.DB.insert(accessAudit).values({
+      id: crypto.randomUUID(),
+      actorId: actor.id,
+      actorName: actor.name,
+      action: e.action,
+      targetUserId: e.targetUserId,
+      targetName: target?.name ?? null,
+      projectId: e.projectId ?? null,
+      projectPrefix: proj?.prefix ?? null,
+      detail: e.detail ? JSON.stringify(e.detail) : null,
+      createdAt: Date.now(),
+    });
+  } catch (err) {
+    console.error("access audit failed:", err);
+  }
+}
+
+// Only log when the set actually changed (the admin UI re-sends it on every save).
+async function recordPermissionChange(actor: SessionUser, userId: string, projectId: string, before: string[], after: string[]): Promise<void> {
+  const b = [...before].sort().join(",");
+  const a = [...after].sort().join(",");
+  if (a === b) return;
+  await recordAccess(actor, { action: "PERMISSIONS_CHANGED", targetUserId: userId, projectId, detail: { from: [...before].sort(), to: [...after].sort() } });
+}
+
+async function currentMemberRole(projectId: string, userId: string): Promise<string | null> {
+  const [m] = await env.DB
+    .select({ role: projectMembers.role })
+    .from(projectMembers)
+    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)));
+  return m?.role ?? null;
+}
+
+app.get("/api/admin/audit", (c) =>
+  guard(c, async () => {
+    const actor = await getSessionUser(c.req.raw, env);
+    requireSuperAdmin(actor);
+    const limit = Math.min(Math.max(Number(c.req.query("limit")) || 100, 1), 500);
+    const rows = await env.DB.select().from(accessAudit).orderBy(desc(accessAudit.createdAt)).limit(limit);
+    return c.json(rows.map((r) => ({ ...r, detail: r.detail ? JSON.parse(r.detail) : null })));
+  })
+);
+
+// Users x projects matrix: who has which role / permissions where.
+app.get("/api/admin/access", (c) =>
+  guard(c, async () => {
+    const actor = await getSessionUser(c.req.raw, env);
+    requireSuperAdmin(actor);
+    const [users, projectRows, members, perms] = await Promise.all([
+      env.DB.select({ id: user.id, name: user.name, email: user.email, role: user.role }).from(user).orderBy(asc(user.name)),
+      env.DB.select({ id: projects.id, name: projects.name, prefix: projects.prefix }).from(projects).orderBy(asc(projects.name)),
+      env.DB.select({ userId: projectMembers.userId, projectId: projectMembers.projectId, role: projectMembers.role }).from(projectMembers),
+      env.DB.select().from(projectMemberPermissions),
+    ]);
+    const permMap = new Map<string, string[]>();
+    for (const p of perms) {
+      const k = `${p.projectId}:${p.userId}`;
+      permMap.set(k, [...(permMap.get(k) ?? []), p.permission]);
+    }
+    return c.json({
+      users, projects: projectRows,
+      memberships: members.map((m) => ({ ...m, permissions: m.role === "ADMIN" ? [...PROJECT_PERMISSIONS] : (permMap.get(`${m.projectId}:${m.userId}`) ?? []) })),
+    });
   })
 );
 
