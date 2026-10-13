@@ -50,4 +50,11 @@ export default {
   "dash.open": "Open",
   "dash.done": "Done",
   "dash.created": "Created",
+  "dash.po.project": "Project",
+  "dash.po.progress": "Progress",
+  "dash.po.open": "Open",
+  "dash.po.done": "Done",
+  "dash.po.overdue": "Overdue",
+  "dash.po.members": "Members",
+  "dash.po.last": "Last activity",
 };

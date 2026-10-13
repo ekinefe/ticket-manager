@@ -45,6 +45,9 @@ describe("dashboard stats", () => {
     const p = data.projectStats.find((x: any) => x.id === PROJECT_ID);
     assert.equal(p.total, 5);
     assert.equal(p.done, 2);
+    assert.equal(typeof p.overdue, "number");
+    assert.ok(p.members >= 1);
+    assert.ok(p.lastActivity > 0);
   });
 
   it("limits only the time chart to the Range", async () => {

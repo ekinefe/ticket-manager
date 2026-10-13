@@ -50,4 +50,11 @@ export default {
   "dash.open": "Açık",
   "dash.done": "Tamamlanan",
   "dash.created": "Oluşturulan",
+  "dash.po.project": "Proje",
+  "dash.po.progress": "İlerleme",
+  "dash.po.open": "Açık",
+  "dash.po.done": "Tamamlanan",
+  "dash.po.overdue": "Gecikmiş",
+  "dash.po.members": "Üyeler",
+  "dash.po.last": "Son etkinlik",
 };
