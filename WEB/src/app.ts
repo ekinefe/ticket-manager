@@ -25,6 +25,7 @@ import { allocateTicketId } from "./lib/ticket-id";
 import { logActivity } from "./lib/activity";
 import { REPO_RE, createBranch, fetchCommitGraph, extractTicketIds, githubConfigured, handleGithubEvent, ticketBranchName, verifyWebhookSignature } from "./lib/github";
 import { canTransition, STATUSES, type Status } from "./lib/status";
+import { buildReport, type Granularity } from "./lib/reports";
 import { isStatusMailEnabled, notifyStatusChanged } from "./lib/notify";
 import { validateInvitation, markInvitationAccepted, hashInviteToken, generateInviteToken } from "./lib/invite";
 import { searchAll } from "./lib/search";
@@ -919,6 +920,53 @@ app.patch("/api/admin/settings", (c) =>
     // Apply changes to the running env immediately.
     await loadSettings(env);
     return c.json({ ok: true });
+  })
+);
+
+// ---------- Reports: performance, completed work, forecast ----------
+// Covers projects where the caller can see every ticket (super admin, project
+// admins, members with VIEW_ALL_TICKETS). Optional ?projectId= narrows it.
+
+app.get("/api/reports", (c) =>
+  guard(c, async () => {
+    const u = await getSessionUser(c.req.raw, env);
+    const g = (c.req.query("granularity") || "weekly") as Granularity;
+    if (!["daily", "weekly", "monthly"].includes(g)) throw new ApiError(400, "granularity must be daily, weekly or monthly");
+    const wantedProject = (c.req.query("projectId") || "").trim();
+
+    const accessible = await listAccessibleProjects(env.DB, u);
+    const visible: { id: string; name: string; prefix: string }[] = [];
+    for (const p of accessible) {
+      const access = await getProjectAccess(env.DB, u, p.id);
+      if (access.can("VIEW_ALL_TICKETS")) visible.push({ id: p.id, name: p.name, prefix: p.prefix });
+    }
+    const ids = wantedProject ? visible.filter((p) => p.id === wantedProject).map((p) => p.id) : visible.map((p) => p.id);
+
+    let report = buildReport({ tasks: [], doneAt: new Map(), userNames: new Map(), granularity: g });
+    if (ids.length > 0) {
+      const rows = await env.DB
+        .select({
+          id: tasks.id, ticketId: tasks.ticketId, title: tasks.title, status: tasks.status,
+          assigneeId: tasks.assigneeId, projectPrefix: projects.prefix,
+          createdAt: tasks.createdAt, updatedAt: tasks.updatedAt, dueDate: tasks.dueDate,
+        })
+        .from(tasks)
+        .innerJoin(projects, eq(projects.id, tasks.projectId))
+        .where(inArray(tasks.projectId, ids));
+      const events = rows.length === 0 ? [] : await env.DB
+        .select({ taskId: activityLog.taskId, at: sql<number>`max(${activityLog.createdAt})` })
+        .from(activityLog)
+        .innerJoin(tasks, eq(tasks.id, activityLog.taskId))
+        .where(and(inArray(tasks.projectId, ids), eq(activityLog.eventType, "STATUS_CHANGED"), eq(activityLog.newStatus, "DONE")))
+        .groupBy(activityLog.taskId);
+      const people = await env.DB.select({ id: user.id, name: user.name }).from(user);
+      report = buildReport({
+        tasks: rows, granularity: g,
+        doneAt: new Map(events.map((e) => [e.taskId, Number(e.at)])),
+        userNames: new Map(people.map((p) => [p.id, p.name])),
+      });
+    }
+    return c.json({ ...report, projects: visible, projectId: wantedProject || null });
   })
 );
 

@@ -219,6 +219,16 @@ describe("tickets", () => {
     assert.ok(Array.isArray(member.myPermissions));
   });
 
+  it("serves a report to project admins and rejects a bad granularity", async () => {
+    const ok = await req(`/api/reports?granularity=weekly`, { cookie: adminCookie });
+    assert.equal(ok.status, 200);
+    const data = await ok.json();
+    assert.ok(data.kpis.total >= 1);
+    assert.ok(Array.isArray(data.series) && data.forecast.realistic);
+    const bad = await req(`/api/reports?granularity=hourly`, { cookie: adminCookie });
+    assert.equal(bad.status, 400);
+  });
+
   it("allows project admins to change priority", async () => {
     const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
       method: "POST", cookie: member1, body: { title: "Prio admin", assigneeId: "u_ayse" },
