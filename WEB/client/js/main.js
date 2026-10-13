@@ -15,6 +15,7 @@ import { renderSetup } from "./pages/setup.js";
 import { renderDashboard } from "./pages/dashboard.js";
 import { closeBoardStream } from "./pages/board.js";
 import { renderLanding, renderHome } from "./pages/welcome.js";
+import { renderReports } from "./pages/reports.js";
 
 export const state = {
   user: null, // { id, name, email, role }
@@ -185,6 +186,8 @@ function sidebarHtml(activeId, activePath) {
     `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;flex-shrink:0"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`;
   const ICON_HOME =
     `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;flex-shrink:0"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>`;
+  const ICON_REPORT =
+    `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;flex-shrink:0"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>`;
   const ICON_TICKET =
     `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;flex-shrink:0"><path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z"/><path d="M13 6v12" stroke-dasharray="2 2"/></svg>`;
   const CARET = `<span class="side-caret">&#9656;</span>`;
@@ -227,6 +230,10 @@ function sidebarHtml(activeId, activePath) {
         </a>
         <a class="side-item${activePath === "/dashboard" ? " active" : ""}" href="/dashboard" data-nav>
           ${ICON_DASH} ${t("nav.dashboard")}
+        </a>
+
+        <a class="side-item${activePath === "/reports" ? " active" : ""}" href="/reports" data-nav>
+          ${ICON_REPORT} ${t("nav.reports")}
         </a>
 
         <div class="side-group-head${sidebarState.projectsCollapsed ? "" : " open"}" id="projects-toggle">
@@ -424,6 +431,8 @@ async function route() {
   if (path === "/" || path === "") { navigate("/welcome"); return; }
   if (path === "/welcome") {
     await renderHome(page);
+  } else if (path === "/reports") {
+    await renderReports(page);
   } else
   if (path === "/dashboard") {
     await renderDashboard(page);

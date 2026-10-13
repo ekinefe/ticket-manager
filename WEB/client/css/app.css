@@ -1842,3 +1842,13 @@ input[type="checkbox"], input[type="radio"] {
 .lang-select { background: transparent; color: inherit; border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font: inherit; font-size: 12px; cursor: pointer; }
 .auth-lang, .landing-lang { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .topbar .lang-select { margin-right: 8px; }
+
+/* ---------- Reports (TM-22) ---------- */
+.rep-scenarios { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; padding: 4px 16px 0; }
+.rep-scn { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; }
+.rep-scn-name { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+.rep-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.rep-scn-date { font-size: 18px; font-weight: 700; margin: 4px 0 2px; }
+.rep-scn-meta { font-size: 12px; color: var(--text-dim); }
+.rep-note { margin: 8px 16px 14px; font-size: 12px; color: var(--text-dim); }
+.rep-bad .stat-value { color: #f85149; }

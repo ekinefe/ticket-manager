@@ -7,6 +7,7 @@ import admin from "./en/admin.js";
 import gitgraph from "./en/gitgraph.js";
 import share from "./en/share.js";
 import auth from "./en/auth.js";
+import reports from "./en/reports.js";
 import errors from "./en/errors.js";
 
-export default { ...core, ...board, ...dashboard, ...projects, ...mytickets, ...admin, ...gitgraph, ...share, ...auth, ...errors };
+export default { ...core, ...board, ...dashboard, ...projects, ...mytickets, ...admin, ...gitgraph, ...share, ...auth, ...reports, ...errors };
