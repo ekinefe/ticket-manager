@@ -6,6 +6,7 @@ import {
   PRIORITIES, PRIORITY_LABELS, getPriorityColor,
   TASK_TYPES, TYPE_LABELS,
 } from "../ui.js";
+import { t as tl } from "../i18n.js";
 
 let charts = {};
 let currentStats = null;
@@ -105,9 +106,9 @@ export async function renderDashboard(root) {
   root.innerHTML = `
     <div class="page dash-page">
       <div class="page-head">
-        <h1>Dashboard</h1>
+        <h1>${tl("dash.title")}</h1>
         <span class="spacer" style="flex:1"></span>
-        <a class="btn sm ghost" href="/projects" data-nav>View Projects</a>
+        <a class="btn sm ghost" href="/projects" data-nav>${tl("dash.viewProjects")}</a>
       </div>
 
       ${isSuper ? filterBarHtml() : ""}
@@ -117,7 +118,7 @@ export async function renderDashboard(root) {
       <div class="dash-grid">
         <div class="dash-panel">
           <div class="panel-head">
-            <h3>Status Distribution</h3>
+            <h3>${tl("dash.statusDist")}</h3>
           </div>
           <div class="panel-body chart-wrap chart-short">
             <canvas id="chart-status"></canvas>
@@ -126,14 +127,14 @@ export async function renderDashboard(root) {
 
         <div class="dash-panel">
           <div class="panel-head">
-            <h3>My Tickets</h3>
+            <h3>${tl("dash.myTickets")}</h3>
             <span class="panel-count">${stats.myTickets.length}</span>
           </div>
           <div class="panel-body">
             ${stats.myTickets.length === 0
-              ? `<div class="empty-note">No tickets assigned to you.</div>`
+              ? `<div class="empty-note">${tl("dash.noAssigned")}</div>`
               : `<div class="dash-ticket-list">${stats.myTickets.slice(0, 8).map(ticketRowHtml).join("")}</div>
-                 ${stats.myTickets.length > 8 ? `<div class="panel-footer"><a href="/my-tickets" data-nav>View all ${stats.myTickets.length} tickets</a></div>` : ""}`
+                 ${stats.myTickets.length > 8 ? `<div class="panel-footer"><a href="/my-tickets" data-nav>${tl("dash.viewAll", { count: stats.myTickets.length })}</a></div>` : ""}`
             }
           </div>
         </div>
@@ -142,7 +143,7 @@ export async function renderDashboard(root) {
       <div class="dash-grid">
         <div class="dash-panel">
           <div class="panel-head">
-            <h3>Priority Breakdown</h3>
+            <h3>${tl("dash.priorityBreakdown")}</h3>
           </div>
           <div class="panel-body chart-wrap chart-short">
             <canvas id="chart-priority"></canvas>
@@ -151,7 +152,7 @@ export async function renderDashboard(root) {
 
         <div class="dash-panel">
           <div class="panel-head">
-            <h3>Task Types</h3>
+            <h3>${tl("dash.taskTypes")}</h3>
           </div>
           <div class="panel-body chart-wrap chart-short">
             <canvas id="chart-type"></canvas>
@@ -163,10 +164,10 @@ export async function renderDashboard(root) {
       <div class="dash-grid">
         <div class="dash-panel dash-full">
           <div class="panel-head">
-            <h3>Created vs Completed</h3>
+            <h3>${tl("dash.createdVsCompleted")}</h3>
             <div class="chart-toggle" id="timeframe-toggle">
-              <button class="btn sm ghost active" data-tf="daily">Daily</button>
-              <button class="btn sm ghost" data-tf="weekly">Weekly</button>
+              <button class="btn sm ghost active" data-tf="daily">${tl("dash.daily")}</button>
+              <button class="btn sm ghost" data-tf="weekly">${tl("dash.weekly")}</button>
             </div>
           </div>
           <div class="panel-body chart-wrap chart-wide">
@@ -180,7 +181,7 @@ export async function renderDashboard(root) {
         ${isAdmin && stats.teamWorkload.length > 0 ? `
         <div class="dash-panel">
           <div class="panel-head">
-            <h3>Team Workload</h3>
+            <h3>${tl("dash.teamWorkload")}</h3>
           </div>
           <div class="panel-body chart-wrap chart-tall">
             <canvas id="chart-workload"></canvas>
@@ -190,7 +191,7 @@ export async function renderDashboard(root) {
         ${isSuper && stats.topAssignees.length > 0 ? `
         <div class="dash-panel">
           <div class="panel-head">
-            <h3>Top Assignees</h3>
+            <h3>${tl("dash.topAssignees")}</h3>
           </div>
           <div class="panel-body chart-wrap chart-tall">
             <canvas id="chart-top-assignees"></canvas>
@@ -202,7 +203,7 @@ export async function renderDashboard(root) {
       <div class="dash-grid">
         <div class="dash-panel dash-full">
           <div class="panel-head">
-            <h3>Sprint Progress</h3>
+            <h3>${tl("dash.sprintProgress")}</h3>
           </div>
           <div class="panel-body">
             <div class="sprint-bars">${stats.sprintStats.map(sprintBarHtml).join("")}</div>
@@ -214,7 +215,7 @@ export async function renderDashboard(root) {
       <div class="dash-grid">
         <div class="dash-panel dash-full">
           <div class="panel-head">
-            <h3>Recent Activity</h3>
+            <h3>${tl("dash.recentActivity")}</h3>
           </div>
           <div class="panel-body">
             <div class="activity-feed">${stats.recentActivity.map(activityItemHtml).join("")}</div>
@@ -224,7 +225,7 @@ export async function renderDashboard(root) {
 
       <div class="dash-grid hidden" id="gh-activity-grid">
         <div class="dash-panel dash-full">
-          <div class="panel-head"><h3>Repo Activity</h3></div>
+          <div class="panel-head"><h3>${tl("dash.repoActivity")}</h3></div>
           <div class="panel-body"><ul class="dev-list" id="gh-activity"></ul></div>
         </div>
       </div>
@@ -233,7 +234,7 @@ export async function renderDashboard(root) {
       <div class="dash-grid">
         <div class="dash-panel dash-full">
           <div class="panel-head">
-            <h3>Projects Overview</h3>
+            <h3>${tl("dash.projectsOverview")}</h3>
           </div>
           <div class="panel-body chart-wrap chart-wide">
             <canvas id="chart-projects"></canvas>
@@ -245,23 +246,23 @@ export async function renderDashboard(root) {
       <div class="dash-grid">
         <div class="dash-panel dash-full">
           <div class="panel-head">
-            <h3>Quick Links</h3>
+            <h3>${tl("dash.quickLinks")}</h3>
           </div>
           <div class="panel-body">
             <div class="quick-links">
               <a class="quick-link" href="/admin/users" data-nav>
                 <span class="ql-icon">&#9881;</span>
-                <span class="ql-label">Manage Users</span>
-                <span class="ql-count">${stats.totalUsers} users</span>
+                <span class="ql-label">${tl("dash.manageUsers")}</span>
+                <span class="ql-count">${tl("dash.usersCount", { count: stats.totalUsers })}</span>
               </a>
               <a class="quick-link" href="/admin/projects" data-nav>
                 <span class="ql-icon">&#128196;</span>
-                <span class="ql-label">Manage Projects</span>
-                <span class="ql-count">${stats.totalProjects} projects</span>
+                <span class="ql-label">${tl("dash.manageProjects")}</span>
+                <span class="ql-count">${tl("dash.projectsCount", { count: stats.totalProjects })}</span>
               </a>
               <a class="quick-link" href="/admin/settings" data-nav>
                 <span class="ql-icon">&#9881;</span>
-                <span class="ql-label">Settings</span>
+                <span class="ql-label">${tl("dash.settings")}</span>
               </a>
             </div>
           </div>
@@ -306,60 +307,60 @@ function filterBarHtml() {
   <div class="filter-bar" id="filter-bar">
     <div class="filter-row">
       <div class="filter-group">
-        <label class="filter-label">Project</label>
+        <label class="filter-label">${tl("dash.f.project")}</label>
         <select id="f-project" class="filter-select">
-          <option value="">All projects</option>
+          <option value="">${tl("dash.f.allProjects")}</option>
           ${opts.projects.map((p) => `<option value="${esc(p.id)}" ${filters.projectId === p.id ? "selected" : ""}>${esc(p.prefix)} - ${esc(p.name)}</option>`).join("")}
         </select>
       </div>
       <div class="filter-group">
-        <label class="filter-label">Sprint</label>
+        <label class="filter-label">${tl("dash.f.sprint")}</label>
         <select id="f-sprint" class="filter-select">
-          <option value="">All sprints</option>
+          <option value="">${tl("dash.f.allSprints")}</option>
           ${opts.sprints.map((s) => `<option value="${esc(s.id)}" ${filters.sprintId === s.id ? "selected" : ""}>${esc(s.sprintId)} - ${esc(s.name)}</option>`).join("")}
         </select>
       </div>
       <div class="filter-group">
-        <label class="filter-label">Assignee</label>
+        <label class="filter-label">${tl("dash.f.assignee")}</label>
         <select id="f-assignee" class="filter-select">
-          <option value="">Anyone</option>
+          <option value="">${tl("dash.f.anyone")}</option>
           ${opts.users.map((u) => `<option value="${esc(u.id)}" ${filters.assigneeId === u.id ? "selected" : ""}>${esc(u.name)}</option>`).join("")}
         </select>
       </div>
       <div class="filter-group">
-        <label class="filter-label">Status</label>
+        <label class="filter-label">${tl("dash.f.status")}</label>
         <select id="f-status" class="filter-select">
-          <option value="">Any status</option>
+          <option value="">${tl("dash.f.anyStatus")}</option>
           ${STATUSES.map((s) => `<option value="${esc(s)}" ${filters.status === s ? "selected" : ""}>${STATUS_LABELS[s]}</option>`).join("")}
         </select>
       </div>
       <div class="filter-group">
-        <label class="filter-label">Priority</label>
+        <label class="filter-label">${tl("dash.f.priority")}</label>
         <select id="f-priority" class="filter-select">
-          <option value="">Any priority</option>
+          <option value="">${tl("dash.f.anyPriority")}</option>
           ${PRIORITIES.map((p) => `<option value="${esc(p)}" ${filters.priority === p ? "selected" : ""}>${PRIORITY_LABELS[p]}</option>`).join("")}
         </select>
       </div>
       <div class="filter-group">
-        <label class="filter-label">Type</label>
+        <label class="filter-label">${tl("dash.f.type")}</label>
         <select id="f-type" class="filter-select">
-          <option value="">All types</option>
+          <option value="">${tl("dash.f.allTypes")}</option>
           ${TASK_TYPES.map((t) => `<option value="${esc(t)}" ${filters.type === t ? "selected" : ""}>${TYPE_LABELS[t]}</option>`).join("")}
         </select>
       </div>
       <div class="filter-group">
-        <label class="filter-label">Range</label>
+        <label class="filter-label">${tl("dash.f.range")}</label>
         <select id="f-days" class="filter-select filter-select-sm">
-          <option value="7" ${filters.days === 7 ? "selected" : ""}>7 days</option>
-          <option value="14" ${filters.days === 14 ? "selected" : ""}>14 days</option>
-          <option value="30" ${filters.days === 30 ? "selected" : ""}>30 days</option>
-          <option value="60" ${filters.days === 60 ? "selected" : ""}>60 days</option>
-          <option value="90" ${filters.days === 90 ? "selected" : ""}>90 days</option>
+          <option value="7" ${filters.days === 7 ? "selected" : ""}>${tl("dash.f.days", { count: 7 })}</option>
+          <option value="14" ${filters.days === 14 ? "selected" : ""}>${tl("dash.f.days", { count: 14 })}</option>
+          <option value="30" ${filters.days === 30 ? "selected" : ""}>${tl("dash.f.days", { count: 30 })}</option>
+          <option value="60" ${filters.days === 60 ? "selected" : ""}>${tl("dash.f.days", { count: 60 })}</option>
+          <option value="90" ${filters.days === 90 ? "selected" : ""}>${tl("dash.f.days", { count: 90 })}</option>
         </select>
       </div>
       ${hasActiveFilters() ? `
       <div class="filter-group filter-actions">
-        <button class="btn sm ghost" id="f-clear" title="Clear all filters">Clear filters</button>
+        <button class="btn sm ghost" id="f-clear" title="${tl("dash.f.clearTitle")}">${tl("dash.f.clear")}</button>
       </div>` : ""}
     </div>
     ${hasActiveFilters() ? activeFilterChipsHtml() : ""}
@@ -390,7 +391,7 @@ function activeFilterChipsHtml() {
 function chipHtml(key, label) {
   return `<span class="filter-chip" data-clear="${key}">
     ${esc(label)}
-    <button class="chip-x" data-clear="${key}" title="Remove">&times;</button>
+    <button class="chip-x" data-clear="${key}" title="${tl("dash.f.remove")}">&times;</button>
   </span>`;
 }
 
@@ -468,19 +469,19 @@ function statCardsHtml(stats, isSuper) {
     <div class="stat-cards">
       <div class="stat-card">
         <div class="stat-value">${stats.totalTickets}</div>
-        <div class="stat-label">Total Tickets</div>
+        <div class="stat-label">${tl("dash.totalTickets")}</div>
       </div>
       <div class="stat-card">
         <div class="stat-value">${stats.totalProjects}</div>
-        <div class="stat-label">Projects</div>
+        <div class="stat-label">${tl("dash.projects")}</div>
       </div>
       <div class="stat-card">
         <div class="stat-value">${stats.totalUsers}</div>
-        <div class="stat-label">Users</div>
+        <div class="stat-label">${tl("dash.users")}</div>
       </div>
       <div class="stat-card">
         <div class="stat-value">${stats.myTickets.length}</div>
-        <div class="stat-label">My Tickets</div>
+        <div class="stat-label">${tl("dash.myTickets")}</div>
       </div>
     </div>`;
   }
@@ -489,19 +490,19 @@ function statCardsHtml(stats, isSuper) {
   <div class="stat-cards">
     <div class="stat-card">
       <div class="stat-value">${stats.totalTickets}</div>
-      <div class="stat-label">Total Tickets</div>
+      <div class="stat-label">${tl("dash.totalTickets")}</div>
     </div>
     <div class="stat-card">
       <div class="stat-value">${stats.myProjects.length}</div>
-      <div class="stat-label">My Projects</div>
+      <div class="stat-label">${tl("dash.myProjects")}</div>
     </div>
     <div class="stat-card">
       <div class="stat-value">${stats.myTickets.length}</div>
-      <div class="stat-label">My Tickets</div>
+      <div class="stat-label">${tl("dash.myTickets")}</div>
     </div>
     <div class="stat-card">
       <div class="stat-value">${stats.statusCounts["DONE"] || 0}</div>
-      <div class="stat-label">Completed</div>
+      <div class="stat-label">${tl("dash.completed")}</div>
     </div>
   </div>`;
 }
@@ -529,7 +530,7 @@ function sprintBarHtml(s) {
     <div class="sb-head">
       <span class="ticket-id">${esc(s.sprintId)}</span>
       <span class="sb-name">${esc(s.name)}</span>
-      <span class="sb-meta">${esc(s.projectPrefix)} &middot; ${done}/${total} done (${pct}%)</span>
+      <span class="sb-meta">${tl("dash.sprintMeta", { prefix: esc(s.projectPrefix), done, total, pct })}</span>
     </div>
     <div class="sb-track">
       <div class="sb-fill" style="width:${pct}%"></div>
@@ -538,14 +539,14 @@ function sprintBarHtml(s) {
 }
 
 function activityItemHtml(ev) {
-  const who = ev.actorName || "Someone";
+  const who = ev.actorName || tl("dash.someone");
   const arrow = `<span class="act-arrow">&rarr;</span>`;
   return `
   <div class="act-row">
     ${avatarHtml(who, ev.actorId)}
     <div class="act-body">
       <div class="act-text">
-        <b>${esc(who)}</b> moved
+        <b>${esc(who)}</b> ${tl("dash.moved")}
         <a class="ticket-id" href="/projects/${encodeURIComponent(ev.projectId)}?task=${encodeURIComponent(ev.ticketId)}" data-nav>${esc(ev.ticketId)}</a>
         <span class="act-title">${esc(ev.taskTitle || "")}</span>
         ${statusPill(ev.oldStatus, undefined, true)} ${arrow} ${statusPill(ev.newStatus, undefined, true)}
@@ -663,8 +664,8 @@ function renderCharts(stats, isSuper, isAdmin) {
       data: {
         labels: wl.map((w) => w.name.split(" ")[0]),
         datasets: [
-          { label: "Open", data: wl.map((w) => w.openCount), backgroundColor: "#286EB4", borderRadius: 4 },
-          { label: "Done", data: wl.map((w) => w.doneCount), backgroundColor: "#236E37", borderRadius: 4 },
+          { label: tl("dash.open"), data: wl.map((w) => w.openCount), backgroundColor: "#286EB4", borderRadius: 4 },
+          { label: tl("dash.done"), data: wl.map((w) => w.doneCount), backgroundColor: "#236E37", borderRadius: 4 },
         ],
       },
       options: {
@@ -699,8 +700,8 @@ function renderCharts(stats, isSuper, isAdmin) {
       data: {
         labels: stats.projectStats.map((p) => `${p.prefix} - ${p.name}`),
         datasets: [
-          { label: "Open", data: stats.projectStats.map((p) => p.total - p.done), backgroundColor: "#286EB4", borderRadius: 4 },
-          { label: "Done", data: stats.projectStats.map((p) => p.done), backgroundColor: "#236E37", borderRadius: 4 },
+          { label: tl("dash.open"), data: stats.projectStats.map((p) => p.total - p.done), backgroundColor: "#286EB4", borderRadius: 4 },
+          { label: tl("dash.done"), data: stats.projectStats.map((p) => p.done), backgroundColor: "#236E37", borderRadius: 4 },
         ],
       },
       options: {
@@ -742,8 +743,8 @@ function renderTimelineChart(stats, timeframe) {
     data: {
       labels,
       datasets: [
-        { label: "Created", data: created, borderColor: "#286EB4", backgroundColor: "#286EB420", fill: true, tension: 0.3 },
-        { label: "Completed", data: completed, borderColor: "#236E37", backgroundColor: "#236E3720", fill: true, tension: 0.3 },
+        { label: tl("dash.created"), data: created, borderColor: "#286EB4", backgroundColor: "#286EB420", fill: true, tension: 0.3 },
+        { label: tl("dash.completed"), data: completed, borderColor: "#236E37", backgroundColor: "#236E3720", fill: true, tension: 0.3 },
       ],
     },
     options: {
