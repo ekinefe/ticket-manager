@@ -174,7 +174,7 @@ function crumbsHtml(path) {
     else parts.push([t("nav.board")]);
   } else if (path.startsWith("/admin")) {
     parts.push([t("nav.admin"), "/admin/users"]);
-    parts.push([t(path === "/admin/projects" ? "adm.tabProjects" : path === "/admin/settings" ? "adm.tabSettings" : "adm.tabUsers")]);
+    parts.push([t(path === "/admin/projects" ? "adm.tabProjects" : path === "/admin/settings" ? "adm.tabSettings" : path === "/admin/access" ? "adm.tabAccess" : "adm.tabUsers")]);
   } else return "";
   return parts.map(([label, href], i) => {
     const last = i === parts.length - 1;
