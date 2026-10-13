@@ -445,13 +445,16 @@ function backlogLaneHtml() {
 function laneListHtml(laneId) {
   return `
     <table class="data list-table" data-lane="${esc(laneId)}">
-      <thead><tr><th></th><th>Ticket</th><th>Title</th><th>Status</th><th>Type</th><th>Priority</th><th>Assignee</th></tr></thead>
+      <thead><tr><th></th><th>Ticket</th><th>Title</th><th><button type="button" class="th-sort" data-sort-status title="Sort by status">Status <span class="sort-arrow">${statusSortDesc ? "\u25BC" : "\u25B2"}</span></button></th><th>Type</th><th>Priority</th><th>Assignee</th></tr></thead>
       <tbody></tbody>
     </table>`;
 }
 
+let statusSortDesc = false;
+
 function laneTasksForList(laneId) {
-  return STATUSES.flatMap((s) => visibleTasks(s, laneId));
+  const order = statusSortDesc ? [...STATUSES].reverse() : STATUSES;
+  return order.flatMap((s) => visibleTasks(s, laneId));
 }
 
 function rowHtml(t) {
@@ -470,6 +473,10 @@ function rowHtml(t) {
 }
 
 function refreshListTables() {
+  document.querySelectorAll("[data-sort-status]").forEach((btn) => {
+    btn.querySelector(".sort-arrow").textContent = statusSortDesc ? "\u25BC" : "\u25B2";
+    btn.onclick = () => { statusSortDesc = !statusSortDesc; refreshListTables(); };
+  });
   document.querySelectorAll(".list-table").forEach((table) => {
     const laneId = table.dataset.lane;
     const tbody = table.querySelector("tbody");
