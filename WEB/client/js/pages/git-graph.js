@@ -1,5 +1,6 @@
 import { api } from "../api.js";
 import { esc, fmtDate } from "../ui.js";
+import { t as tl, locale } from "../i18n.js";
 
 const LANE_W = 14;
 const ROW_H = 30;
@@ -108,7 +109,7 @@ export async function renderGitGraph(root, projectId) {
   } catch (err) {
     root.innerHTML = `
       <div class="page">
-        <p><a href="/projects/${encodeURIComponent(projectId)}" data-nav>&larr; Board</a></p>
+        <p><a href="/projects/${encodeURIComponent(projectId)}" data-nav>&larr; ${tl("git.board")}</a></p>
         <div class="form-error">${esc(err.message)}</div>
       </div>`;
     return;
@@ -128,15 +129,15 @@ export async function renderGitGraph(root, projectId) {
   maxLanesForMarker = maxLanes; // PR markers sit one lane to the right of the tree
   const width = PAD * 2 + maxLanes * LANE_W;
   const defaults = new Set(data.branches.filter((b) => b.isDefault).map((b) => b.name));
-  const fmtDay = (ms) => new Date(ms).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
-  const fmtTime = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+  const fmtDay = (ms) => new Date(ms).toLocaleDateString(locale(), { day: "2-digit", month: "short", year: "numeric" });
+  const fmtTime = (ms) => new Date(ms).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit", hour12: false });
   const cols = `${width}px 170px 84px 170px minmax(280px, 1fr) 112px 56px`;
 
   const rowHtml = (r) => {
     const c = r.commit;
     if (c.kind === "pr") {
       const p = c.pr;
-      const label = { opened: "Opened", merged: "Merged", closed: "Closed" }[c.action];
+      const label = tl(`git.${c.action}`);
       return `
       <div class="git-row git-pr git-pr-${c.action}" style="grid-template-columns:${cols}">
         <div class="git-lanes">${rowSvg(r, width)}</div>
@@ -155,7 +156,7 @@ export async function renderGitGraph(root, projectId) {
         <div class="git-tags">${chips}</div>
         <div class="git-sha"><a href="${esc(c.url)}" target="_blank" rel="noopener noreferrer"><code>${esc(c.sha.slice(0, 7))}</code></a></div>
         <div class="git-author">${esc(c.author || "")}</div>
-        <div class="git-desc"><span title="${esc(c.message)}">${esc(c.message || "(no message)")}</span>${c.tickets.map((t) => ` <span class="prefix-chip">${esc(t)}</span>`).join("")}</div>
+        <div class="git-desc"><span title="${esc(c.message)}">${esc(c.message || tl("git.noMessage"))}</span>${c.tickets.map((t) => ` <span class="prefix-chip">${esc(t)}</span>`).join("")}</div>
         <div class="git-date">${fmtDay(c.time)}</div>
         <div class="git-time">${fmtTime(c.time)}</div>
       </div>`;
@@ -163,18 +164,18 @@ export async function renderGitGraph(root, projectId) {
 
   root.innerHTML = `
     <div class="page git-graph-page">
-      <p><a href="/projects/${encodeURIComponent(projectId)}" data-nav>&larr; Board</a></p>
+      <p><a href="/projects/${encodeURIComponent(projectId)}" data-nav>&larr; ${tl("git.board")}</a></p>
       <div class="page-head">
-        <h1>Git graph</h1>
-        <span class="share-note">${esc(data.repo)} &middot; ${data.commits.length} commits, ${data.branches.length} branch${data.branches.length === 1 ? "" : "es"}, ${(data.pulls || []).length} PRs</span>
+        <h1>${tl("git.title")}</h1>
+        <span class="share-note">${tl("git.summary", { repo: esc(data.repo), commits: data.commits.length, branches: tl(data.branches.length === 1 ? "git.branch.one" : "git.branch.many", { count: data.branches.length }), prs: (data.pulls || []).length })}</span>
       </div>
-      ${rows.length === 0 ? `<div class="empty-note">No commits found.</div>` : `
+      ${rows.length === 0 ? `<div class="empty-note">${tl("git.noCommits")}</div>` : `
       <div class="git-graph">
         <div class="git-row git-head" style="grid-template-columns:${cols}">
-          <div>Graph</div><div>Branch</div><div>Commit</div><div>Author</div><div>Description</div><div>Date</div><div>Time</div>
+          <div>${tl("git.colGraph")}</div><div>${tl("git.colBranch")}</div><div>${tl("git.colCommit")}</div><div>${tl("git.colAuthor")}</div><div>${tl("git.colDesc")}</div><div>${tl("git.colDate")}</div><div>${tl("git.colTime")}</div>
         </div>
         ${rows.map(rowHtml).join("")}
       </div>
-      <p class="share-note">Up to 40 recent commits on each of up to 8 branches (default branch first) and the 30 latest PRs. Hollow dots are merge commits; diamonds are PR events (green opened, purple merged, red closed).</p>`}
+      <p class="share-note">${tl("git.footnote")}</p>`}
     </div>`;
 }

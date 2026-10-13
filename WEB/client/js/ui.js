@@ -78,7 +78,7 @@ export function statusPill(status, count, light = false) {
 export function roleChip(role) {
   if (!role) return "";
   const cls = role === "SUPER_ADMIN" ? "role-super" : role === "ADMIN" ? "role-admin" : "role-member";
-  const label = role === "SUPER_ADMIN" ? "Super Admin" : role;
+  const label = t(`role.${role}`);
   return `<span class="role-chip ${cls}">${esc(label)}</span>`;
 }
 
@@ -220,7 +220,7 @@ export function openModal({ title = "", body = "", onMount, wide = false } = {})
       <div class="modal ${wide ? "modal-wide" : ""}" role="dialog" aria-modal="true">
         <div class="modal-head">
           <h2>${title}</h2>
-          <button class="modal-close" aria-label="Close" title="Close">&times;</button>
+          <button class="modal-close" aria-label="${t("common.close")}" title="${t("common.close")}">&times;</button>
         </div>
         <div class="modal-body">${body}</div>
       </div>
@@ -244,19 +244,20 @@ export function openModal({ title = "", body = "", onMount, wide = false } = {})
  */
 export async function bulkDeleteTickets(list) {
   if (list.length === 0) return null;
-  const preview = list.slice(0, 8).map((t) => t.ticketId).join(", ") + (list.length > 8 ? `, +${list.length - 8} more` : "");
-  if (!confirm(`Permanently delete ${list.length} ticket${list.length === 1 ? "" : "s"}?\n\n${preview}\n\nThis cannot be undone.`)) return null;
+  const shown = list.slice(0, 8).map((x) => x.ticketId).join(", ");
+  const preview = list.length > 8 ? t("bulk.preview.more", { list: shown, count: list.length - 8 }) : shown;
+  if (!confirm(t(list.length === 1 ? "bulk.confirm.one" : "bulk.confirm.many", { count: list.length, preview }))) return null;
   try {
-    const { deleted, skipped } = await api.post("/tasks/bulk-delete", { taskIds: list.map((t) => t.id) });
+    const { deleted, skipped } = await api.post("/tasks/bulk-delete", { taskIds: list.map((x) => x.id) });
     if (skipped.length === 0) {
-      toast(`Deleted ${deleted.length} ticket${deleted.length === 1 ? "" : "s"}`, "ok");
+      toast(t(deleted.length === 1 ? "bulk.deleted.one" : "bulk.deleted.many", { count: deleted.length }), "ok");
     } else {
       const names = skipped.map((s) => s.ticketId || s.taskId).slice(0, 6).join(", ");
-      toast(`Deleted ${deleted.length}, skipped ${skipped.length} (no DELETE permission): ${names}`, deleted.length ? "ok" : "err");
+      toast(t("bulk.deletedSkipped", { deleted: deleted.length, skipped: skipped.length, names }), deleted.length ? "ok" : "err");
     }
     return deleted;
   } catch (err) {
-    toast(err.message || "Bulk delete failed", "err");
+    toast(err.message || t("bulk.failed"), "err");
     return null;
   }
 }
