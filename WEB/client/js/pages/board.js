@@ -74,6 +74,12 @@ export async function renderBoard(root, projectId, initialSprint = "", initialTa
       if (s.id !== initialSprint) collapsedLanes.add(s.id);
     }
     if (initialSprint !== "backlog") collapsedLanes.add("backlog");
+  } else {
+    // Sprints whose tickets are all DONE start collapsed.
+    for (const s of project.sprints) {
+      const inSprint = tasks.filter((t) => t.sprintId === s.id);
+      if (inSprint.length && inSprint.every((t) => t.status === "DONE")) collapsedLanes.add(s.id);
+    }
   }
 
   drawShell(root);
@@ -402,6 +408,10 @@ function laneBodyHtml(laneId) {
     : `<div class="lane-columns">${STATUSES.map((s) => laneColumnHtml(laneId, s)).join("")}</div>`;
 }
 
+function workItems(n) {
+  return `${n} work item${n === 1 ? "" : "s"}`;
+}
+
 function laneHtml(sprint) {
   const collapsed = collapsedLanes.has(sprint.id);
   return `
@@ -410,7 +420,7 @@ function laneHtml(sprint) {
         <span class="lane-arrow">${collapsed ? "\u25B6" : "\u25BC"}</span>
         <span class="ticket-id lane-id">${esc(sprint.sprintId)}</span>
         <span class="lane-name">${esc(sprint.name)}</span>
-        <span class="lane-count">${Number(sprint.ticketCount ?? 0)} work items</span>
+        <span class="lane-count">${workItems(tasks.filter((t) => t.sprintId === sprint.id).length)}</span>
       </div>
       ${collapsed ? "" : laneBodyHtml(sprint.id)}
     </section>`;
@@ -424,7 +434,7 @@ function backlogLaneHtml() {
       <div class="sprint-lane-head" data-toggle="backlog">
         <span class="lane-arrow">${collapsed ? "\u25B6" : "\u25BC"}</span>
         <span class="lane-name">Everything else</span>
-        <span class="lane-count">${count} work items</span>
+        <span class="lane-count">${workItems(count)}</span>
       </div>
       ${collapsed ? "" : laneBodyHtml("backlog")}
     </section>`;
@@ -553,7 +563,17 @@ function visibleTasks(status, laneId) {
     .sort((a, b) => a.position - b.position);
 }
 
+function refreshLaneCounts() {
+  document.querySelectorAll(".sprint-lane[data-lane]").forEach((lane) => {
+    const id = lane.dataset.lane;
+    const n = tasks.filter((t) => (id === "backlog" ? !t.sprintId : t.sprintId === id)).length;
+    const el = lane.querySelector(".lane-count");
+    if (el) el.textContent = workItems(n);
+  });
+}
+
 function refreshColumns() {
+  refreshLaneCounts();
   if (viewMode === "list") {
     refreshListTables();
     renderBulkBar();
@@ -854,7 +874,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
     wide: true,
     title: !isEdit
       ? `New ticket`
-      : `<span class="ticket-id">${esc(task.ticketId)}</span> ${mayEdit ? "Edit ticket" : "Ticket details"}`,
+      : `<span class="ticket-path">${esc(project.name)} / ${esc(project.sprints.find((x) => x.id === task.sprintId)?.sprintId ?? "Backlog")} /</span> <span class="ticket-id">${esc(task.ticketId)}</span> ${mayEdit ? "Edit ticket" : "Ticket details"}`,
     body: `
       <div id="task-error" class="form-error hidden"></div>
       <form id="task-form">
