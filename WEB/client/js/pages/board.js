@@ -867,7 +867,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
     wide: true,
     title: !isEdit
       ? `New ticket`
-      : `<span class="ticket-id">${esc(task.ticketId)}</span> ${mayEdit ? "Edit ticket" : "Ticket details"}`,
+      : `<span class="ticket-path">${esc(project.name)} / ${esc(project.sprints.find((x) => x.id === task.sprintId)?.sprintId ?? "Backlog")} /</span> <span class="ticket-id">${esc(task.ticketId)}</span> ${mayEdit ? "Edit ticket" : "Ticket details"}`,
     body: `
       <div id="task-error" class="form-error hidden"></div>
       <form id="task-form">
