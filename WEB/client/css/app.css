@@ -1828,6 +1828,8 @@ input[type="checkbox"], input[type="radio"] {
 .th-sort:hover { color: var(--accent); }
 .th-sort .sort-arrow { font-size: 9px; }
 .ticket-path { color: var(--text-dim); font-size: 12px; font-weight: 400; margin-right: 2px; }
+.card-labels { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.label-chip { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim); }
 .card-due { margin-top: 6px; font-size: 11px; color: var(--text-dim); }
 .card-due.overdue { color: #f85149; font-weight: 600; }
 .landing { max-width: 960px; margin: 0 auto; padding: 56px 16px; }

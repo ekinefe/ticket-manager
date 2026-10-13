@@ -172,6 +172,22 @@ describe("tickets", () => {
     assert.equal(res.status, 403);
   });
 
+  it("normalizes, validates and clears labels", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: adminCookie, body: { title: "Label test", labels: [" api ", "API", "ui", ""] },
+    });
+    const task = await create.json();
+    assert.deepEqual(task.labels, ["api", "ui"]);
+    const tooLong = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}`, {
+      method: "PATCH", cookie: adminCookie, body: { labels: ["x".repeat(31)] },
+    });
+    assert.equal(tooLong.status, 400);
+    const cleared = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}`, {
+      method: "PATCH", cookie: adminCookie, body: { labels: [] },
+    });
+    assert.deepEqual((await cleared.json()).labels, []);
+  });
+
   it("sets, validates and clears a due date", async () => {
     const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
       method: "POST", cookie: adminCookie, body: { title: "Due test", dueDate: "2026-12-31" },
