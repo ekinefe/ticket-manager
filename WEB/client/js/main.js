@@ -13,6 +13,7 @@ import { renderForcePassword } from "./pages/force-password.js";
 import { renderSetup } from "./pages/setup.js";
 import { renderDashboard } from "./pages/dashboard.js";
 import { closeBoardStream } from "./pages/board.js";
+import { renderLanding, renderHome } from "./pages/welcome.js";
 
 export const state = {
   user: null, // { id, name, email, role }
@@ -39,7 +40,7 @@ function topbarHtml() {
         <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
       </svg>
     </button>
-    <a class="brand" href="/projects" data-nav>
+    <a class="brand" href="/welcome" data-nav>
       <span class="logo">TM</span> <span class="brand-text">Ticket Manager</span>
     </a>
     <div class="topsearch">
@@ -180,6 +181,8 @@ function sidebarHtml(activeId, activePath) {
   const isSuper = state.user.role === "SUPER_ADMIN";
   const ICON_DASH =
     `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;flex-shrink:0"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`;
+  const ICON_HOME =
+    `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;flex-shrink:0"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>`;
   const ICON_TICKET =
     `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;flex-shrink:0"><path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z"/><path d="M13 6v12" stroke-dasharray="2 2"/></svg>`;
   const CARET = `<span class="side-caret">&#9656;</span>`;
@@ -217,6 +220,9 @@ function sidebarHtml(activeId, activePath) {
   return `
     <aside class="proj-sidebar">
       <nav class="side-list">
+        <a class="side-item${activePath === "/welcome" ? " active" : ""}" href="/welcome" data-nav>
+          ${ICON_HOME} Home
+        </a>
         <a class="side-item${activePath === "/dashboard" ? " active" : ""}" href="/dashboard" data-nav>
           ${ICON_DASH} Dashboard
         </a>
@@ -341,8 +347,14 @@ async function route() {
     return;
   }
 
+  if (path === "/" && !state.user) {
+    topbar.classList.add("hidden");
+    renderLanding(appEl);
+    return;
+  }
+
   if (path === "/login") {
-    if (state.user) { navigate(state.user.mustChangePassword ? "/force-password" : "/projects"); return; }
+    if (state.user) { navigate(state.user.mustChangePassword ? "/force-password" : "/welcome"); return; }
     topbar.classList.add("hidden");
     await renderLogin(appEl);
     return;
@@ -406,7 +418,10 @@ async function route() {
   bindThemeControls();
 
   let m;
-  if (path === "/" || path === "" ) { navigate("/dashboard"); return; }
+  if (path === "/" || path === "") { navigate("/welcome"); return; }
+  if (path === "/welcome") {
+    await renderHome(page);
+  } else
   if (path === "/dashboard") {
     await renderDashboard(page);
   } else if (path === "/projects") {

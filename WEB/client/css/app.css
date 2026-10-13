@@ -1832,3 +1832,10 @@ input[type="checkbox"], input[type="radio"] {
 .label-chip { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-dim); }
 .card-due { margin-top: 6px; font-size: 11px; color: var(--text-dim); }
 .card-due.overdue { color: #f85149; font-weight: 600; }
+.landing { max-width: 960px; margin: 0 auto; padding: 56px 16px; }
+.landing-hero { text-align: center; margin-bottom: 40px; }
+.landing-hero h1 { margin: 12px 0 8px; font-size: 32px; }
+.landing-features { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+.landing-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.landing-card h3 { margin: 0 0 6px; font-size: 15px; }
+.landing-card p { margin: 0; color: var(--text-dim); font-size: 13px; }
