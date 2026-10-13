@@ -1,6 +1,7 @@
 import { api } from "../api.js";
-import { loadProjects, state } from "../main.js";
+import { loadProjects, navigate, state } from "../main.js";
 import { esc, roleChip, statusPill, STATUSES, toast, openModal } from "../ui.js";
+import { t } from "../i18n.js";
 
 const PROMPT_TEMPLATE = `You are a project planning assistant. Read the project description below carefully and break it into sprints and actionable tickets.
 
@@ -83,15 +84,15 @@ export async function renderProjects(root) {
   root.innerHTML = `
     <div class="page">
       <div class="page-head">
-        <h1>Projects</h1>
+        <h1>${t("projects.title")}</h1>
         <span class="spacer" style="flex:1"></span>
-        ${canImport ? `<button class="btn sm ghost" id="template-btn">AI Prompt</button>` : ""}
-        ${canImport ? `<button class="btn sm ghost" id="import-btn">Import JSON</button>` : ""}
-        ${isSuper || state.user.role === "ADMIN" ? `<a class="btn sm" href="/admin/projects" data-nav>+ New project</a>` : ""}
+        ${canImport ? `<button class="btn sm ghost" id="template-btn">${t("projects.aiPrompt")}</button>` : ""}
+        ${canImport ? `<button class="btn sm ghost" id="import-btn">${t("projects.importJson")}</button>` : ""}
+        ${isSuper || state.user.role === "ADMIN" ? `<a class="btn sm" href="/admin/projects" data-nav>${t("projects.new")}</a>` : ""}
         <input type="file" id="import-file" accept=".json" style="display:none" />
       </div>
       ${projects.length === 0
-        ? `<div class="empty-note">No projects yet.${isSuper ? " Create one from the admin panel." : " Ask an admin to invite you."}</div>`
+        ? `<div class="empty-note">${t("projects.empty")}${t(isSuper ? "projects.emptySuper" : "projects.emptyMember")}</div>`
         : `<div class="project-list">
             ${projects.map((p) => projectRow(p, isSuper)).join("")}
           </div>`}
@@ -100,23 +101,23 @@ export async function renderProjects(root) {
   if (canImport) {
     document.getElementById("template-btn").addEventListener("click", () => {
       openModal({
-        title: "AI Prompt Template",
+        title: t("projects.tplTitle"),
         wide: true,
         body: `
-          <p style="margin:0 0 10px;color:var(--text-dim);font-size:13px">Copy the prompt below, paste your project description where it says <code>[PASTE YOUR PROJECT DESCRIPTION HERE]</code>, and give it to any AI.</p>
+          <p style="margin:0 0 10px;color:var(--text-dim);font-size:13px">${t("projects.tplIntro", { placeholder: "<code>[PASTE YOUR PROJECT DESCRIPTION HERE]</code>" })}</p>
           <pre class="template-code" id="template-code">${esc(PROMPT_TEMPLATE)}</pre>
           <div class="modal-actions" style="margin-top:12px">
-            <button class="btn sm ghost" id="tpl-copy">Copy to clipboard</button>
-            <button class="btn sm" id="tpl-close">Done</button>
+            <button class="btn sm ghost" id="tpl-copy">${t("projects.copy")}</button>
+            <button class="btn sm" id="tpl-close">${t("projects.done")}</button>
           </div>`,
         onMount(modalEl, close) {
           modalEl.querySelector("#tpl-close").addEventListener("click", close);
           modalEl.querySelector("#tpl-copy").addEventListener("click", async () => {
             try {
               await navigator.clipboard.writeText(PROMPT_TEMPLATE);
-              toast("Copied to clipboard");
+              toast(t("projects.copied"));
             } catch {
-              toast("Copy failed — select manually", "error");
+              toast(t("projects.copyFailed"), "error");
             }
           });
         },
@@ -133,15 +134,15 @@ export async function renderProjects(root) {
         const text = await file.text();
         const data = JSON.parse(text);
         importBtn.disabled = true;
-        importBtn.textContent = "Importing...";
+        importBtn.textContent = t("projects.importing");
         const res = await api.post("/projects/import", data);
-        toast(`Imported: ${res.tasksCreated} tickets in ${res.sprintsCreated} sprints`);
+        toast(t("projects.imported", { tickets: res.tasksCreated, sprints: res.sprintsCreated }));
         navigate(`/projects/${res.projectId}`);
       } catch (err) {
-        toast(err.message || "Import failed", "error");
+        toast(err.message || t("projects.importFailed"), "error");
       } finally {
         importBtn.disabled = false;
-        importBtn.textContent = "Import JSON";
+        importBtn.textContent = t("projects.importJson");
         fileInput.value = "";
       }
     });
@@ -161,14 +162,14 @@ function projectRow(p, isSuper) {
       <span class="row-top">
         <span class="name">${esc(p.name)}</span>
         <span class="prefix-chip">${esc(p.prefix)}</span>
-        <span class="total" title="Total tickets">${tickets} ticket${tickets === 1 ? "" : "s"}</span>
+        <span class="total" title="${t("projects.totalTickets")}">${tickets === 1 ? t("projects.ticketCount.one") : t("projects.ticketCount.many", { count: tickets })}</span>
         <span class="meta">
           ${roleChip(myRole)}
-          <span class="arrow">Open board &rarr;</span>
+          <span class="arrow">${t("projects.openBoard")} &rarr;</span>
         </span>
       </span>
       <span class="row-tags">
-        ${breakdown || `<span style="color:var(--text-dim)">No tickets</span>`}
+        ${breakdown || `<span style="color:var(--text-dim)">${t("projects.noTickets")}</span>`}
       </span>
     </a>`;
 }
