@@ -163,4 +163,6 @@ export default {
   "bd.sh.revoked": "Sharing turned off — link revoked",
   "bd.sh.updated": "Sharing updated",
   "bd.sh.failed": "Could not update sharing",
+  "bd.dLabels": "Labels",
+  "bd.labelsPh": "comma, separated",
 };

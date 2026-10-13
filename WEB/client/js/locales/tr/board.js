@@ -163,4 +163,6 @@ export default {
   "bd.sh.revoked": "Paylaşım kapatıldı — bağlantı iptal edildi",
   "bd.sh.updated": "Paylaşım güncellendi",
   "bd.sh.failed": "Paylaşım güncellenemedi",
+  "bd.dLabels": "Etiketler",
+  "bd.labelsPh": "virgülle ayır",
 };
