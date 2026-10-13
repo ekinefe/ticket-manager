@@ -1390,7 +1390,7 @@ app.post("/api/projects/:id/tasks", (c) =>
     const u = await getSessionUser(c.req.raw, env);
     await requireProjectPermission(env.DB, u, projectId, "CREATE_TICKET");
 
-    const body = await readBody<{ title?: string; description?: string; status?: string; assigneeId?: string; type?: string; priority?: string; sprintId?: string | null; dueDate?: string | null }>(c);
+    const body = await readBody<{ title?: string; description?: string; status?: string; assigneeId?: string; type?: string; priority?: string; sprintId?: string | null; labels?: string[]; dueDate?: string | null }>(c);
     const title = body.title?.trim();
     if (!title) throw new ApiError(400, "Title is required");
     // Members may pick the initial assignee of a NEW ticket; reassigning later is admin-only.
@@ -1431,6 +1431,7 @@ app.post("/api/projects/:id/tasks", (c) =>
         priority: (body.priority ?? "MEDIUM") as "LOW" | "MEDIUM" | "HIGH" | "URGENT",
         assigneeId,
         sprintId: body.sprintId || null,
+        labels: body.labels !== undefined && normalizeLabels(body.labels).length ? JSON.stringify(normalizeLabels(body.labels)) : null,
         dueDate: body.dueDate && isValidDueDate(body.dueDate) ? body.dueDate : null,
         createdBy: u.id,
         position: Number(maxPos) + 1,
@@ -1478,6 +1479,24 @@ app.post("/api/projects/:id/tasks", (c) =>
   })
 );
 
+const MAX_LABELS = 10;
+const MAX_LABEL_LEN = 30;
+
+// Accepts an array of strings; trims, drops blanks and case-insensitive duplicates.
+function normalizeLabels(v: unknown): string[] {
+  if (!Array.isArray(v)) throw new ApiError(400, "Labels must be an array of strings");
+  const out: string[] = [];
+  for (const raw of v) {
+    if (typeof raw !== "string") throw new ApiError(400, "Labels must be an array of strings");
+    const l = raw.trim();
+    if (!l) continue;
+    if (l.length > MAX_LABEL_LEN) throw new ApiError(400, `A label can be at most ${MAX_LABEL_LEN} characters`);
+    if (!out.some((x) => x.toLowerCase() === l.toLowerCase())) out.push(l);
+  }
+  if (out.length > MAX_LABELS) throw new ApiError(400, `A ticket can have at most ${MAX_LABELS} labels`);
+  return out;
+}
+
 function isValidDueDate(v: unknown): v is string {
   if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
   const d = new Date(`${v}T00:00:00Z`);
@@ -1493,6 +1512,7 @@ interface TaskUpdateBody {
   type?: string;
   priority?: string;
   sprintId?: string | null;
+  labels?: string[];
   dueDate?: string | null;
 }
 
@@ -1550,6 +1570,10 @@ async function applyTaskUpdate(
         if (!sprint) throw new ApiError(400, "Invalid sprint for this project");
       }
       values.sprintId = body.sprintId || null;
+    }
+    if (body.labels !== undefined) {
+      const labels = normalizeLabels(body.labels);
+      values.labels = labels.length ? JSON.stringify(labels) : null;
     }
     if (body.dueDate !== undefined) {
       if (body.dueDate && !isValidDueDate(body.dueDate)) throw new ApiError(400, "Due date must be a valid YYYY-MM-DD date");
@@ -1944,9 +1968,20 @@ app.get("/api/github/activity", (c) =>
 
 // The share token is the secret behind a public link: only the project-admin
 // share endpoints may return it, never the generic ticket payloads.
-function withoutShareToken<T extends { shareToken?: string | null }>(row: T): Omit<T, "shareToken"> {
-  const { shareToken: _omit, ...rest } = row;
-  return rest;
+function parseLabels(v: string | null | undefined): string[] {
+  if (!v) return [];
+  try {
+    const parsed = JSON.parse(v);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+// Strips the share secret and turns the stored labels JSON into an array.
+function withoutShareToken<T extends { shareToken?: string | null; labels?: string | null }>(row: T): Omit<T, "shareToken" | "labels"> & { labels: string[] } {
+  const { shareToken: _omit, labels, ...rest } = row;
+  return { ...rest, labels: parseLabels(labels) };
 }
 
 // ---------- Ticket sharing ----------
@@ -2810,6 +2845,7 @@ app.get("/api/projects/:id/export", (c) =>
           priority: t.priority,
           sprint: sp ? sp.index : null,
           sprintId: sp?.sprintId ?? null,
+          labels: parseLabels(t.labels),
           dueDate: t.dueDate ?? null,
           sprintName: sp?.name ?? null,
           assigneeId: t.assigneeId || undefined,
