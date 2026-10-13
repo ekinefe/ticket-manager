@@ -1839,3 +1839,6 @@ input[type="checkbox"], input[type="radio"] {
 .landing-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
 .landing-card h3 { margin: 0 0 6px; font-size: 15px; }
 .landing-card p { margin: 0; color: var(--text-dim); font-size: 13px; }
+.lang-select { background: transparent; color: inherit; border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font: inherit; font-size: 12px; cursor: pointer; }
+.auth-lang, .landing-lang { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.topbar .lang-select { margin-right: 8px; }

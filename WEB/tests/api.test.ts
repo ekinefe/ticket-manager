@@ -205,6 +205,13 @@ describe("tickets", () => {
     assert.equal((await cleared.json()).dueDate, null);
   });
 
+  it("saves a valid UI language and rejects unknown ones", async () => {
+    const ok = await req("/api/me/language", { method: "PATCH", cookie: member1, body: { language: "tr" } });
+    assert.equal(ok.status, 200);
+    const bad = await req("/api/me/language", { method: "PATCH", cookie: member1, body: { language: "xx" } });
+    assert.equal(bad.status, 400);
+  });
+
   it("allows project admins to change priority", async () => {
     const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
       method: "POST", cookie: member1, body: { title: "Prio admin", assigneeId: "u_ayse" },

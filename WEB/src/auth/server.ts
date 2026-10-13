@@ -34,6 +34,11 @@ export function createAuth(env: Env) {
           defaultValue: false,
           input: false,
         },
+        language: {
+          type: "string",
+          required: false,
+          input: false,
+        },
       },
     },
   });
