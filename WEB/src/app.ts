@@ -1389,7 +1389,7 @@ app.post("/api/projects/:id/tasks", (c) =>
     const u = await getSessionUser(c.req.raw, env);
     await requireProjectPermission(env.DB, u, projectId, "CREATE_TICKET");
 
-    const body = await readBody<{ title?: string; description?: string; status?: string; assigneeId?: string; type?: string; priority?: string; sprintId?: string | null; labels?: string[] }>(c);
+    const body = await readBody<{ title?: string; description?: string; status?: string; assigneeId?: string; type?: string; priority?: string; sprintId?: string | null; labels?: string[]; dueDate?: string | null }>(c);
     const title = body.title?.trim();
     if (!title) throw new ApiError(400, "Title is required");
     // Members may pick the initial assignee of a NEW ticket; reassigning later is admin-only.
@@ -1431,6 +1431,7 @@ app.post("/api/projects/:id/tasks", (c) =>
         assigneeId,
         sprintId: body.sprintId || null,
         labels: body.labels !== undefined && normalizeLabels(body.labels).length ? JSON.stringify(normalizeLabels(body.labels)) : null,
+        dueDate: body.dueDate && isValidDueDate(body.dueDate) ? body.dueDate : null,
         createdBy: u.id,
         position: Number(maxPos) + 1,
         createdAt: now,
@@ -1495,6 +1496,12 @@ function normalizeLabels(v: unknown): string[] {
   return out;
 }
 
+function isValidDueDate(v: unknown): v is string {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
 interface TaskUpdateBody {
   title?: string;
   description?: string;
@@ -1505,6 +1512,7 @@ interface TaskUpdateBody {
   priority?: string;
   sprintId?: string | null;
   labels?: string[];
+  dueDate?: string | null;
 }
 
 // Shared by the single-ticket PATCH route and the bulk-update endpoint.
@@ -1565,6 +1573,10 @@ async function applyTaskUpdate(
     if (body.labels !== undefined) {
       const labels = normalizeLabels(body.labels);
       values.labels = labels.length ? JSON.stringify(labels) : null;
+    }
+    if (body.dueDate !== undefined) {
+      if (body.dueDate && !isValidDueDate(body.dueDate)) throw new ApiError(400, "Due date must be a valid YYYY-MM-DD date");
+      values.dueDate = body.dueDate || null;
     }
     if (body.assigneeId !== undefined) {
       // Assignment is an admin-only action; members cannot reassign even their own tickets.
@@ -2833,6 +2845,7 @@ app.get("/api/projects/:id/export", (c) =>
           sprint: sp ? sp.index : null,
           sprintId: sp?.sprintId ?? null,
           labels: parseLabels(t.labels),
+          dueDate: t.dueDate ?? null,
           sprintName: sp?.name ?? null,
           assigneeId: t.assigneeId || undefined,
           assignee: t.assigneeId ? nameById.get(t.assigneeId) ?? null : null,

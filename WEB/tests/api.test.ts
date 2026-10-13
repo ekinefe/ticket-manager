@@ -188,6 +188,23 @@ describe("tickets", () => {
     assert.deepEqual((await cleared.json()).labels, []);
   });
 
+  it("sets, validates and clears a due date", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: adminCookie, body: { title: "Due test", dueDate: "2026-12-31" },
+    });
+    const task = await create.json();
+    assert.equal(task.dueDate, "2026-12-31");
+    const bad = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}`, {
+      method: "PATCH", cookie: adminCookie, body: { dueDate: "2026-02-31" },
+    });
+    assert.equal(bad.status, 400);
+    const cleared = await req(`/api/projects/${PROJECT_ID}/tasks/${task.id}`, {
+      method: "PATCH", cookie: adminCookie, body: { dueDate: null },
+    });
+    assert.equal(cleared.status, 200);
+    assert.equal((await cleared.json()).dueDate, null);
+  });
+
   it("allows project admins to change priority", async () => {
     const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
       method: "POST", cookie: member1, body: { title: "Prio admin", assigneeId: "u_ayse" },
