@@ -7,6 +7,7 @@ import {
   TASK_TYPES, TYPE_LABELS, PRIORITIES, PRIORITY_LABELS, priorityPill, branchName, bulkDeleteTickets,
 } from "../ui.js";
 import { t as tl, labels } from "../i18n.js";
+import { openSyncImport } from "./sync-import.js";
 
 let project = null;
 let myRole = "MEMBER";
@@ -320,6 +321,7 @@ function drawShell(root) {
         <button class="btn sm ${viewMode === "list" ? "" : "ghost"}" id="view-list-btn" title="${tl("bd.listView")}">${tl("bd.list")}</button>
       </div>
       <div class="btn-group">
+        ${myRole === "ADMIN" ? `<button class="btn sm ghost" id="sync-btn" title="${tl("sync.hint")}">${tl("sync.button")}</button>` : ""}
         <button class="btn sm ghost" id="export-btn">${tl("bd.exportJson")}</button>
         <button class="btn sm ghost" id="export-csv-btn">${tl("bd.exportCsv")}</button>
         <button class="btn sm" id="new-task-btn">${tl("bd.newTicket")}</button>
@@ -367,6 +369,7 @@ function drawShell(root) {
   });
   openBoardStream(project.id);
 
+  document.getElementById("sync-btn")?.addEventListener("click", () => openSyncImport(project));
   const searchEl = document.getElementById("filter-text");
   searchEl.addEventListener("input", () => { filterText = searchEl.value.toLowerCase(); refreshColumns(); });
 
