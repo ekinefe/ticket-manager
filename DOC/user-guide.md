@@ -38,6 +38,25 @@ Project permissions (for example `CREATE_TICKET`, `DELETE_TICKET`,
 - **Export**: *Export JSON* (full detail: sprints, people, comments, activity,
   GitHub links) or *Export CSV* from the board toolbar.
 
+## Updating a project from an edited JSON
+
+Instead of deleting a project and importing it again, project admins can edit
+an export and apply only the differences:
+
+1. On the board, **Export JSON**; edit the file (for example with Claude).
+   Keep each ticket's `ticketId` — it is how tickets are matched. Only the
+   fields you leave in a ticket are compared; fields you remove are left alone
+   (use `null` / `""` to clear: `"sprintId": null` moves to Backlog,
+   `"assignee": null` unassigns).
+2. **Update from JSON** and choose the file. A preview lists new tickets,
+   changed tickets (field: old → new), tickets in the project that are not in
+   the file, and warnings.
+3. Choose what to apply: create new tickets, update existing ones (content,
+   status/order, sprint, assignee/labels/due date) and, off by default,
+   delete tickets that are missing from the file (permanent).
+4. **Apply changes**. Entries without a known ticket ID become new tickets with
+   the next free ID; unknown sprint names create new sprints.
+
 ## My Tickets, Unassigned, All Tickets
 
 - **My Tickets** lists tickets assigned to you across projects, plus an

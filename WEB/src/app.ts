@@ -26,6 +26,7 @@ import { logActivity } from "./lib/activity";
 import { REPO_RE, createBranch, fetchCommitGraph, extractTicketIds, githubConfigured, handleGithubEvent, ticketBranchName, verifyWebhookSignature } from "./lib/github";
 import { canTransition, STATUSES, type Status } from "./lib/status";
 import { buildReport, type Granularity } from "./lib/reports";
+import { planSync, DEFAULT_SYNC_OPTIONS, type SyncOptions, type SprintTarget } from "./lib/project-sync";
 import { isStatusMailEnabled, notifyStatusChanged } from "./lib/notify";
 import { validateInvitation, markInvitationAccepted, hashInviteToken, generateInviteToken } from "./lib/invite";
 import { searchAll } from "./lib/search";
@@ -3030,6 +3031,135 @@ app.get("/api/projects/:id/export", (c) =>
         };
       }),
     });
+  })
+);
+
+// ---------- Sync an existing project from an edited JSON export ----------
+// Project admins only. POST {data, options, apply}: apply=false (default)
+// returns a preview of what would change; apply=true performs it.
+
+app.post("/api/projects/:id/sync", (c) =>
+  guard(c, async () => {
+    const projectId = c.req.param("id");
+    const u = await getSessionUser(c.req.raw, env);
+    const access = await getProjectAccess(env.DB, u, projectId);
+    if (access.role !== "ADMIN") throw new ApiError(403, "Project admin role required");
+
+    const body = await readBody<{ data?: unknown; options?: Partial<SyncOptions> & { fields?: Partial<SyncOptions["fields"]> }; apply?: boolean }>(c);
+    const fileTasks = (body.data as { tasks?: unknown } | undefined)?.tasks;
+    if (!Array.isArray(fileTasks)) throw new ApiError(400, "The JSON must contain a \"tasks\" list");
+    if (fileTasks.length > 3000) throw new ApiError(400, "Too many tickets in one file (max 3000)");
+    const options: SyncOptions = {
+      create: body.options?.create ?? DEFAULT_SYNC_OPTIONS.create,
+      update: body.options?.update ?? DEFAULT_SYNC_OPTIONS.update,
+      remove: body.options?.remove ?? DEFAULT_SYNC_OPTIONS.remove,
+      fields: { ...DEFAULT_SYNC_OPTIONS.fields, ...(body.options?.fields ?? {}) },
+    };
+
+    const [project] = await env.DB.select({ id: projects.id, prefix: projects.prefix }).from(projects).where(eq(projects.id, projectId));
+    if (!project) throw new ApiError(404, "Project not found");
+    const [rows, sprintRows, memberRows] = await Promise.all([
+      env.DB.select().from(tasks).where(eq(tasks.projectId, projectId)),
+      env.DB.select({ id: sprints.id, sprintId: sprints.sprintId, name: sprints.name }).from(sprints).where(eq(sprints.projectId, projectId)),
+      env.DB.select({ userId: projectMembers.userId, name: user.name, email: user.email })
+        .from(projectMembers).innerJoin(user, eq(user.id, projectMembers.userId)).where(eq(projectMembers.projectId, projectId)),
+    ]);
+
+    const plan = planSync({
+      file: body.data, options, sprints: sprintRows, members: memberRows,
+      tasks: rows.map((t) => ({
+        id: t.id, ticketId: t.ticketId, title: t.title, description: t.description, status: t.status,
+        type: t.type, priority: t.priority, sprintId: t.sprintId, assigneeId: t.assigneeId,
+        labels: parseLabels(t.labels), dueDate: t.dueDate ?? null, position: t.position,
+      })),
+    });
+
+    const summary = {
+      creates: plan.creates.map((t) => ({ title: t.title, status: t.status, sourceTicketId: t.sourceTicketId })),
+      updates: plan.updates.slice(0, 500).map((x) => ({ ticketId: x.ticketId, title: x.title, changes: x.changes })),
+      updateCount: plan.updates.length,
+      missing: plan.missing.slice(0, 500),
+      missingCount: plan.missing.length,
+      deleteCount: plan.deletes.length,
+      sprintsToCreate: plan.sprintsToCreate,
+      unchanged: plan.unchanged,
+      warnings: plan.warnings.slice(0, 100),
+    };
+    if (!body.apply) return c.json({ applied: false, plan: summary });
+
+    // ---- apply ----
+    const now = Date.now();
+    const sprintIdByName = new Map<string, string>();
+    for (const name of plan.sprintsToCreate) {
+      const code = await nextSprintId(env.DB, projectId, project.prefix);
+      const id = crypto.randomUUID();
+      await env.DB.insert(sprints).values({ id, projectId, sprintId: code, name, createdAt: now });
+      sprintIdByName.set(name.trim().toLowerCase(), id);
+    }
+    const targetId = (t: SprintTarget): string | null =>
+      t.kind === "backlog" ? null : t.kind === "id" ? t.id : (sprintIdByName.get(t.name.trim().toLowerCase()) ?? null);
+    const sprintCode = new Map(sprintRows.map((s) => [s.id, s.sprintId]));
+    const label = (id: string | null) => (id ? (sprintCode.get(id) ?? id) : "Backlog");
+    const nameOf = (id: string | null) => (id ? (memberRows.find((m) => m.userId === id)?.name ?? id) : null);
+    const endOf = async (status: string) => {
+      const [{ maxPos }] = await env.DB
+        .select({ maxPos: sql<number>`coalesce(max(${tasks.position}), 0)` })
+        .from(tasks).where(and(eq(tasks.projectId, projectId), eq(tasks.status, status)));
+      return Number(maxPos) + 1;
+    };
+
+    for (const upd of plan.updates) {
+      const before = rows.find((r) => r.id === upd.id)!;
+      const p = upd.patch;
+      const values: Partial<typeof tasks.$inferInsert> = { updatedAt: now };
+      if (p.title !== undefined) values.title = p.title;
+      if (p.description !== undefined) values.description = p.description;
+      if (p.type !== undefined) values.type = p.type as "TASK" | "BUG";
+      if (p.priority !== undefined) values.priority = p.priority as "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+      if (p.status !== undefined) values.status = p.status;
+      if (p.position === null && p.status !== undefined) values.position = await endOf(p.status);
+      else if (typeof p.position === "number") values.position = p.position;
+      if (p.sprint !== undefined) values.sprintId = targetId(p.sprint);
+      if (p.assigneeId !== undefined) values.assigneeId = p.assigneeId;
+      if (p.labels !== undefined) values.labels = p.labels.length ? JSON.stringify(p.labels) : null;
+      if (p.dueDate !== undefined) values.dueDate = p.dueDate;
+      await env.DB.update(tasks).set(values).where(and(eq(tasks.id, upd.id), eq(tasks.projectId, projectId)));
+
+      const log = (eventType: Parameters<typeof logActivity>[1]["eventType"], extra: { oldStatus?: string; newStatus?: string; oldValue?: string | null; newValue?: string | null } = {}) =>
+        logActivity(env.DB, { taskId: upd.id, actorId: u.id, eventType, ...extra });
+      if (p.status !== undefined) await log("STATUS_CHANGED", { oldStatus: before.status, newStatus: p.status });
+      if (p.title !== undefined) await log("TITLE_CHANGED", { oldValue: before.title, newValue: p.title });
+      if (p.description !== undefined) await log("DESCRIPTION_CHANGED", { newValue: plainText(p.description ?? "").slice(0, 200) });
+      if (p.type !== undefined) await log("TYPE_CHANGED", { oldValue: before.type, newValue: p.type });
+      if (p.priority !== undefined) await log("PRIORITY_CHANGED", { oldValue: before.priority, newValue: p.priority });
+      if (p.assigneeId !== undefined) await log("ASSIGNEE_CHANGED", { oldValue: nameOf(before.assigneeId), newValue: nameOf(p.assigneeId) });
+      if (p.sprint !== undefined) await log("SPRINT_CHANGED", { oldValue: label(before.sprintId), newValue: label(targetId(p.sprint)) });
+    }
+
+    let created = 0;
+    for (const cr of plan.creates) {
+      const ticketId = await allocateTicketId(env.DB, projectId);
+      const [task] = await env.DB.insert(tasks).values({
+        id: crypto.randomUUID(), projectId, ticketId, title: cr.title, description: cr.description,
+        status: cr.status, type: cr.type as "TASK" | "BUG", priority: cr.priority as "LOW" | "MEDIUM" | "HIGH" | "URGENT",
+        assigneeId: cr.assigneeId, sprintId: targetId(cr.sprint),
+        labels: cr.labels.length ? JSON.stringify(cr.labels) : null, dueDate: cr.dueDate,
+        createdBy: u.id, position: await endOf(cr.status), createdAt: now, updatedAt: now,
+      }).returning();
+      await logActivity(env.DB, { taskId: task.id, actorId: u.id, eventType: "CREATED", newStatus: cr.status });
+      created++;
+    }
+
+    let deleted = 0;
+    const ids = plan.deletes.map((d) => d.id);
+    for (let i = 0; i < ids.length; i += 50) {
+      const chunk = ids.slice(i, i + 50);
+      const res = await env.DB.delete(tasks).where(and(eq(tasks.projectId, projectId), inArray(tasks.id, chunk))).returning({ id: tasks.id });
+      deleted += res.length;
+    }
+
+    publish(projectId, { type: "synced", actorId: u.id });
+    return c.json({ applied: true, plan: summary, result: { created, updated: plan.updates.length, deleted, sprintsCreated: plan.sprintsToCreate.length } });
   })
 );
 
