@@ -274,7 +274,7 @@ export function requireAuth(next) {
 
 const sidebarState = {
   projectsCollapsed: false,
-  collapsedProjects: new Set(), // project ids whose sub-list is collapsed
+  openProjects: new Set(), // project ids whose sub-list the user opened (closed by default)
 };
 
 function sidebarHtml(activeId, activePath) {
@@ -285,6 +285,8 @@ function sidebarHtml(activeId, activePath) {
     `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;flex-shrink:0"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`;
   const ICON_HOME =
     `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;flex-shrink:0"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>`;
+  const ICON_PROJECTS =
+    `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;flex-shrink:0"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
   const ICON_REPORT =
     `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;flex-shrink:0"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>`;
   const ICON_TICKET =
@@ -297,7 +299,7 @@ function sidebarHtml(activeId, activePath) {
       activePath === `${projPath}/members` ||
       activePath === `${projPath}/sprints` ||
       activePath === `${projPath}/graph`;
-    const subOpen = projActive || !sidebarState.collapsedProjects.has(p.id);
+    const subOpen = projActive || sidebarState.openProjects.has(p.id);
     const dashActive = activePath === projPath;
     const memActive = activePath === `${projPath}/members`;
     const sprActive = activePath === `${projPath}/sprints`;
@@ -335,10 +337,9 @@ function sidebarHtml(activeId, activePath) {
           ${ICON_REPORT} ${t("nav.reports")}
         </a>
 
-        <div class="side-group-head${sidebarState.projectsCollapsed ? "" : " open"}" id="projects-toggle">
-          <button class="side-caret-btn" type="button" data-projects-toggle aria-label="${t("nav.toggleProjects")}">${CARET}</button>
-          <a class="side-group-label" href="/projects" data-nav>${t("nav.projects")}</a>
-          <span class="side-count">${projects.length}</span>
+        <div class="side-item side-group-row${activePath === "/projects" ? " active" : ""}${sidebarState.projectsCollapsed ? "" : " open"}" id="projects-toggle">
+          <a class="side-group-link" href="/projects" data-nav>${ICON_PROJECTS} ${t("nav.projects")}</a>
+          <button class="side-caret-btn" type="button" data-projects-toggle aria-label="${t("nav.toggleProjects")}" aria-expanded="${sidebarState.projectsCollapsed ? "false" : "true"}">${CARET}</button>
         </div>
         <div class="side-group${sidebarState.projectsCollapsed ? " collapsed" : ""}" id="projects-group">
           ${projItems}
@@ -396,6 +397,7 @@ function bindSidebar(shell) {
       sidebarState.projectsCollapsed = !sidebarState.projectsCollapsed;
       groupHead.classList.toggle("open", !sidebarState.projectsCollapsed);
       group.classList.toggle("collapsed", sidebarState.projectsCollapsed);
+      groupToggle.setAttribute("aria-expanded", String(!sidebarState.projectsCollapsed));
     });
   }
 
@@ -409,8 +411,8 @@ function bindSidebar(shell) {
       const willOpen = sub.classList.contains("collapsed");
       sub.classList.toggle("collapsed", !willOpen);
       btn.classList.toggle("open", willOpen);
-      if (willOpen) sidebarState.collapsedProjects.delete(id);
-      else sidebarState.collapsedProjects.add(id);
+      if (willOpen) sidebarState.openProjects.add(id);
+      else sidebarState.openProjects.delete(id);
     });
   });
 }

@@ -1,0 +1,14 @@
+/* ---------- Sidebar: Projects group looks like the other nav items ---------- */
+.side-group-row { padding: 0; gap: 0; }
+.side-group-row .side-group-link {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  padding: 7px 0 7px 9px; color: inherit; text-decoration: none; font: inherit;
+}
+.side-group-row .side-group-link:hover { text-decoration: none; }
+.side-group-row .side-caret-btn { width: 30px; height: 30px; margin-right: 2px; }
+.side-group-row.open .side-caret { transform: rotate(90deg); }
+
+/* The projects sit inside the group with a thin guide line */
+.side-group { margin: 2px 0 4px 17px; padding-left: 6px; border-left: 1px solid var(--border); }
+.side-group .side-item { padding-top: 6px; padding-bottom: 6px; font-size: 13px; }
+.side-group .side-proj-sub { padding-left: 34px; }
