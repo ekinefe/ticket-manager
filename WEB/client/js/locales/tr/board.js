@@ -203,4 +203,6 @@ export default {
   "sync.field.assignee": "Atanan",
   "sync.field.labels": "Etiketler",
   "sync.field.dueDate": "Son tarih",
+  "bd.selectColumn": "Bu kolondakilerin hepsini seç (yalnızca bu sprint)",
+  "bd.selectLane": "Bu sprintteki hepsini seç",
 };

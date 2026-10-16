@@ -203,4 +203,6 @@ export default {
   "sync.field.assignee": "Assignee",
   "sync.field.labels": "Labels",
   "sync.field.dueDate": "Due date",
+  "bd.selectColumn": "Select all in this column (this sprint only)",
+  "bd.selectLane": "Select all in this sprint",
 };

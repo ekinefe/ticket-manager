@@ -380,7 +380,7 @@ function drawShell(root) {
   // Lane collapse toggles
   root.querySelectorAll(".sprint-lane-head").forEach((head) => {
     head.addEventListener("click", (e) => {
-      if (e.target.closest("button")) return;
+      if (e.target.closest("button, .select-group")) return;
       const id = head.dataset.toggle;
       if (collapsedLanes.has(id)) collapsedLanes.delete(id);
       else collapsedLanes.add(id);
@@ -394,7 +394,42 @@ function drawShell(root) {
   );
 
   bindDragAndDrop();
+  root.querySelectorAll(".select-group").forEach((cb) => {
+    cb.addEventListener("click", (e) => e.stopPropagation());
+    cb.addEventListener("change", () => {
+      const ids = groupTaskIds(cb.dataset.lane, cb.dataset.status);
+      for (const id of ids) { if (cb.checked) selectedIds.add(id); else selectedIds.delete(id); }
+      syncCardCheckboxes();
+      renderBulkBar();
+    });
+  });
   refreshColumns();
+}
+
+// Tickets a "select all" box covers: one status column inside one sprint lane,
+// or the whole lane. Only what is currently visible (search / assignee filter).
+function groupTaskIds(laneId, status) {
+  const list = status ? visibleTasks(status, laneId) : STATUSES.flatMap((s) => visibleTasks(s, laneId));
+  return list.map((t) => t.id);
+}
+
+function syncCardCheckboxes() {
+  document.querySelectorAll(".card-select").forEach((cb) => {
+    const on = selectedIds.has(cb.dataset.select);
+    cb.checked = on;
+    cb.closest(".card, .list-row")?.classList.toggle("selected", on);
+  });
+}
+
+// Checked = everything in the group is selected, indeterminate = some of it.
+function updateSelectGroups() {
+  document.querySelectorAll(".select-group").forEach((cb) => {
+    const ids = groupTaskIds(cb.dataset.lane, cb.dataset.status);
+    const n = ids.filter((id) => selectedIds.has(id)).length;
+    cb.disabled = ids.length === 0;
+    cb.checked = ids.length > 0 && n === ids.length;
+    cb.indeterminate = n > 0 && n < ids.length;
+  });
 }
 
 function setViewMode(root, mode) {
@@ -430,6 +465,7 @@ function laneHtml(sprint) {
   return `
     <section class="sprint-lane${collapsed ? " collapsed" : ""}" data-lane="${esc(sprint.id)}">
       <div class="sprint-lane-head" data-toggle="${esc(sprint.id)}">
+        <input type="checkbox" class="select-group lane-select" data-lane="${esc(sprint.id)}" title="${tl("bd.selectLane")}" aria-label="${tl("bd.selectLane")}" />
         <span class="lane-arrow">${collapsed ? "\u25B6" : "\u25BC"}</span>
         <span class="ticket-id lane-id">${esc(sprint.sprintId)}</span>
         <span class="lane-name">${esc(sprint.name)}</span>
@@ -445,6 +481,7 @@ function backlogLaneHtml() {
   return `
     <section class="sprint-lane backlog-lane${collapsed ? " collapsed" : ""}" data-lane="backlog">
       <div class="sprint-lane-head" data-toggle="backlog">
+        <input type="checkbox" class="select-group lane-select" data-lane="backlog" title="${tl("bd.selectLane")}" aria-label="${tl("bd.selectLane")}" />
         <span class="lane-arrow">${collapsed ? "\u25B6" : "\u25BC"}</span>
         <span class="lane-name">${tl("bd.everythingElse")}</span>
         <span class="lane-count">${workItems(count)}</span>
@@ -458,7 +495,7 @@ function backlogLaneHtml() {
 function laneListHtml(laneId) {
   return `
     <table class="data list-table" data-lane="${esc(laneId)}">
-      <thead><tr><th></th><th>${tl("bd.colTicket")}</th><th>${tl("bd.colTitle")}</th><th><button type="button" class="th-sort" data-sort-status title="${tl("bd.sortStatus")}">${tl("bd.colStatus")} <span class="sort-arrow">${statusSortDesc ? "\u25BC" : "\u25B2"}</span></button></th><th>${tl("bd.colType")}</th><th>${tl("bd.colPriority")}</th><th>${tl("bd.colAssignee")}</th></tr></thead>
+      <thead><tr><th><input type="checkbox" class="select-group lane-select" data-lane="${esc(laneId)}" title="${tl("bd.selectLane")}" aria-label="${tl("bd.selectLane")}" /></th><th>${tl("bd.colTicket")}</th><th>${tl("bd.colTitle")}</th><th><button type="button" class="th-sort" data-sort-status title="${tl("bd.sortStatus")}">${tl("bd.colStatus")} <span class="sort-arrow">${statusSortDesc ? "\u25BC" : "\u25B2"}</span></button></th><th>${tl("bd.colType")}</th><th>${tl("bd.colPriority")}</th><th>${tl("bd.colAssignee")}</th></tr></thead>
       <tbody></tbody>
     </table>`;
 }
@@ -522,6 +559,7 @@ function laneColumnHtml(laneId, status) {
   return `
     <section class="column" data-lane="${esc(laneId)}" data-status="${status}">
       <header class="col-head">
+        <input type="checkbox" class="select-group col-select" data-lane="${esc(laneId)}" data-status="${status}" title="${tl("bd.selectColumn")}" aria-label="${tl("bd.selectColumn")}" />
         <span class="col-dot" style="background:${getStatusColor(status)}"></span>
         <span class="col-label">${STATUS_LABELS[status]}</span>
         <span class="col-count" data-count>0</span>
@@ -647,6 +685,7 @@ function renderBulkBar() {
   const known = new Set(tasks.map((t) => t.id));
   for (const id of [...selectedIds]) if (!known.has(id)) selectedIds.delete(id);
 
+  updateSelectGroups();
   const bar = document.getElementById("bulk-bar");
   if (!bar) return;
   if (selectedIds.size === 0) {
