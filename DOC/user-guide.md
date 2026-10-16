@@ -43,6 +43,10 @@ Project permissions (for example `CREATE_TICKET`, `DELETE_TICKET`,
 Instead of deleting a project and importing it again, project admins can edit
 an export and apply only the differences:
 
+0. Every **Export JSON** starts with an `instructions` block: what can be changed
+   per ticket, what must not be touched, how to create / move / delete tickets,
+   and the allowed values for this project (statuses, sprints, members). Give the
+   file to Claude as is and it knows the rules — no extra prompt needed.
 1. On the board, **Export JSON**; edit the file (for example with Claude).
    Keep each ticket's `ticketId` — it is how tickets are matched. Only the
    fields you leave in a ticket are compared; fields you remove are left alone

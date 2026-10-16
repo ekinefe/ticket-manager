@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { planSync, DEFAULT_SYNC_OPTIONS, type ExistingTask } from "../src/lib/project-sync.ts";
+import { planSync, buildEditInstructions, DEFAULT_SYNC_OPTIONS, type ExistingTask } from "../src/lib/project-sync.ts";
 import { seed, cleanup, req, userCookie, PROJECT_ID } from "./helpers.ts";
 
 const task = (n: number, extra: Partial<ExistingTask> = {}): ExistingTask => ({
@@ -134,7 +134,29 @@ describe("POST /api/projects/:id/sync", () => {
     assert.ok(f.activity.some((a: any) => a.type === "STATUS_CHANGED" && a.newStatus === "DONE"));
   });
 
+  it("the export carries project-specific editing rules that the sync ignores", async () => {
+    const data = await exportJson();
+    assert.equal(data.exportVersion, 3);
+    const ins = data.instructions;
+    assert.ok(ins && Array.isArray(ins.how_to_edit) && Array.isArray(ins.do_not_change));
+    assert.deepEqual(ins.allowed_values.status, ["TODO", "IN_PROGRESS", "UNDER_REVIEW", "MERGED", "DEPLOYED", "TEST", "DONE"]);
+    assert.ok(ins.allowed_values.sprints.some((x: any) => x.sprintId === data.sprints[0].sprintId));
+    assert.ok(ins.allowed_values.assignee_members.length >= 1);
+    const preview = await (await sync({ data })).json();
+    assert.equal(preview.plan.updateCount, 0); // rules block does not count as a change
+  });
+
   it("rejects a file without a tasks list", async () => {
     assert.equal((await sync({ data: { project: {} } })).status, 400);
+  });
+});
+
+describe("buildEditInstructions", () => {
+  it("lists the project's real sprints and members and the read-only fields", () => {
+    const ins = buildEditInstructions({ prefix: "TM", sprints: [{ sprintId: "TM-S1", name: "Sprint 1" }], members: ["Ada Lovelace"] });
+    assert.deepEqual(ins.allowed_values.sprints, [{ sprintId: "TM-S1", name: "Sprint 1" }]);
+    assert.deepEqual(ins.allowed_values.assignee_members, ["Ada Lovelace"]);
+    assert.ok(ins.do_not_change.some((x) => x.includes("ticketId")));
+    assert.ok(ins.you_can_do.delete_a_ticket.includes("explicitly"));
   });
 });

@@ -254,3 +254,61 @@ export function planSync(input: {
     unchanged, warnings,
   };
 }
+
+/**
+ * Rules block embedded at the top of every JSON export, so one file is enough
+ * to brief an AI (or a person) on how to edit it and get it back in with
+ * "Update from JSON". Values (sprints, members, prefix) come from the project.
+ */
+export function buildEditInstructions(p: {
+  prefix: string;
+  sprints: { sprintId: string; name: string }[];
+  members: string[];
+}) {
+  return {
+    purpose:
+      "This file is an export of one project from Ticket Manager. You can edit it and the owner will load it back with the board's 'Update from JSON' button to update the SAME project (no need to delete and re-import). Before anything is applied the owner sees a preview of every change and chooses what to apply.",
+    how_to_edit: [
+      "Edit the entries in \"tasks\". Return the COMPLETE file as valid JSON only (no markdown fences, no commentary).",
+      "Tickets are matched by \"ticketId\" (for example \"" + p.prefix + "-12\"). Never change, reuse or invent a ticketId on an existing ticket.",
+      "Only fields that are present in a ticket are compared. A field you leave out stays as it is in the project. To clear a value, set it explicitly: \"sprintId\": null (moves to Backlog), \"assignee\": null (unassigns), \"dueDate\": null, \"labels\": [], \"description\": \"\".",
+      "Keep the ticket's own language and tone for titles and descriptions unless the owner asks otherwise.",
+    ],
+    you_can_change_per_ticket: {
+      title: "Non-empty text.",
+      description: "HTML string. Allowed tags only: b, strong, i, em, u, s, p, div, br, ul, ol, li, h2, h3, code, pre, blockquote, span, a (http/https links only). Leave existing <img>/<video> tags exactly as they are.",
+      status: "One of the allowed statuses below. Changing it moves the ticket to that column (at the end of the column).",
+      type: "TASK or BUG.",
+      priority: "LOW, MEDIUM, HIGH or URGENT.",
+      sprintId: "A sprint's code from the list below (for example \"" + (p.sprints[0]?.sprintId ?? p.prefix + "-S1") + "\"), or null for Backlog. You may use \"sprintName\" instead. A sprint name that does not exist yet creates a new sprint.",
+      assignee: "The full name of a project member from the list below, or null.",
+      labels: "List of up to 10 short strings (max 30 characters each).",
+      dueDate: "\"YYYY-MM-DD\" or null.",
+      position: "Optional number that sets the order inside a column (lower = higher up). Usually leave it alone.",
+    },
+    you_can_do: {
+      create_a_ticket: "Add a new object to \"tasks\" WITHOUT a ticketId (or with one that does not exist). It needs at least a \"title\"; status, type, priority, sprintId, assignee, labels, dueDate and description are optional. The next free ticketId is assigned automatically.",
+      move_a_ticket: "Change its \"status\" (column) and/or \"sprintId\".",
+      delete_a_ticket: "Remove its object from \"tasks\". Do this ONLY if the owner explicitly asks. Nothing is deleted unless the owner also ticks 'Delete tickets that are not in the file' in the preview, and deletion is permanent.",
+    },
+    do_not_change: [
+      "\"ticketId\" and \"id\" of existing tickets",
+      "\"createdAt\", \"updatedAt\", \"createdBy\", \"branch\"",
+      "\"comments\", \"activity\", \"github\" (read-only history; ignored on import — keep them or leave them out, never rewrite them)",
+      "the top-level \"project\", \"members\", \"summary\", \"exportedAt\", \"exportedBy\" and this \"instructions\" block (informational; ignored on import)",
+      "do not rename the field names, and do not add fields that are not listed here (they are ignored)",
+    ],
+    allowed_values: {
+      status: [...STATUSES],
+      type: [...TYPES],
+      priority: [...PRIORITIES],
+      sprints: p.sprints.map((s) => ({ sprintId: s.sprintId, name: s.name })),
+      assignee_members: p.members,
+    },
+    before_you_answer: [
+      "Check that every ticketId you kept still exists exactly once.",
+      "Check that every status / type / priority / sprintId / assignee you used is in allowed_values.",
+      "Check that the output is valid JSON and contains the complete \"tasks\" list.",
+    ],
+  };
+}
