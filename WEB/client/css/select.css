@@ -1,0 +1,5 @@
+/* ---------- Select-all boxes on columns and sprint lanes ---------- */
+.select-group { margin: 0 6px 0 0; accent-color: var(--accent); cursor: pointer; flex: 0 0 auto; }
+.select-group:disabled { opacity: .35; cursor: default; }
+.col-head .select-group { margin-right: 8px; }
+.sprint-lane-head .select-group { margin-right: 10px; }
