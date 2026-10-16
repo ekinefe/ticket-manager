@@ -26,7 +26,7 @@ import { logActivity } from "./lib/activity";
 import { REPO_RE, createBranch, fetchCommitGraph, extractTicketIds, githubConfigured, handleGithubEvent, ticketBranchName, verifyWebhookSignature } from "./lib/github";
 import { canTransition, STATUSES, type Status } from "./lib/status";
 import { buildReport, type Granularity } from "./lib/reports";
-import { planSync, DEFAULT_SYNC_OPTIONS, type SyncOptions, type SprintTarget } from "./lib/project-sync";
+import { planSync, buildEditInstructions, DEFAULT_SYNC_OPTIONS, type SyncOptions, type SprintTarget } from "./lib/project-sync";
 import { isStatusMailEnabled, notifyStatusChanged } from "./lib/notify";
 import { validateInvitation, markInvitationAccepted, hashInviteToken, generateInviteToken } from "./lib/invite";
 import { searchAll } from "./lib/search";
@@ -2977,7 +2977,12 @@ app.get("/api/projects/:id/export", (c) =>
     for (const t of projectTasks) statusCounts[t.status] = (statusCounts[t.status] ?? 0) + 1;
 
     return c.json({
-      exportVersion: 2,
+      exportVersion: 3,
+      instructions: buildEditInstructions({
+        prefix: project.prefix,
+        sprints: projectSprints.map((sp) => ({ sprintId: sp.sprintId, name: sp.name })),
+        members: members.map((m) => m.name),
+      }),
       exportedAt: new Date().toISOString(),
       exportedBy: u.name,
       project: {

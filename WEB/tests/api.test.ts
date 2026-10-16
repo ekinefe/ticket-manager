@@ -890,7 +890,7 @@ describe("export / import", () => {
     const text = await (await req(`/api/projects/${PROJECT_ID}/export`, { cookie: superCookie })).text();
     const data = JSON.parse(text);
     const t = data.tasks.find((x: any) => x.id === task.id);
-    assert.equal(data.exportVersion, 2);
+    assert.equal(data.exportVersion, 3);
     assert.equal(t.ticketId, task.ticketId);
     assert.equal(t.assignee, "ayse");
     assert.equal(t.branch, `feature/${task.ticketId}`);
