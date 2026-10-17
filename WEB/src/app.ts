@@ -2957,7 +2957,7 @@ app.get("/api/projects/:id/export", (c) =>
 
     if (format === "csv") {
       const header = [
-        "Ticket ID", "Title", "Status", "Type", "Priority", "Sprint ID", "Sprint", "Assignee", "Created by",
+        "Ticket ID", "Title", "Status", "Type", "Priority", "Labels", "Due date", "Sprint ID", "Sprint", "Assignee", "Created by",
         "Created", "Updated", "Branch", "Comments", "Linked commits/PRs", "Description",
       ];
       const lines = [header.map(csvCell).join(",")];
@@ -2965,7 +2965,7 @@ app.get("/api/projects/:id/export", (c) =>
         const sp = t.sprintId ? sprintById.get(t.sprintId) : undefined;
         const links = (linksBy.get(t.id) ?? []).map((l) => (l.kind === "PR" ? `PR #${l.ref}` : l.ref.slice(0, 7))).join("; ");
         lines.push([
-          t.ticketId, t.title, t.status, t.type, t.priority, sp?.sprintId ?? "", sp?.name ?? "Backlog",
+          t.ticketId, t.title, t.status, t.type, t.priority, parseLabels(t.labels).join("; "), t.dueDate ?? "", sp?.sprintId ?? "", sp?.name ?? "Backlog",
           t.assigneeId ? nameById.get(t.assigneeId) ?? "" : "", t.createdBy ? nameById.get(t.createdBy) ?? "" : "",
           iso(t.createdAt), iso(t.updatedAt), branchOf(t), (commentsBy.get(t.id) ?? []).length, links, plainText(t.description),
         ].map(csvCell).join(","));
