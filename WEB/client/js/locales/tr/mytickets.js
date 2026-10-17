@@ -31,4 +31,5 @@ export default {
   "mt.colPriority": "Öncelik",
   "mt.selectTicket": "Bileti seç",
   "mt.openInBoard": "{project} panosunda aç",
+  "mt.colLabels": "Etiketler",
 };

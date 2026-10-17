@@ -348,14 +348,14 @@ app.post("/api/setup/complete", setupLimiter, (c) =>
 app.get("/api/my-tickets", (c) =>
   guard(c, async () => {
     const u = await getSessionUser(c.req.raw, env);
-    return c.json(await listAssignedTickets(env.DB, u));
+    return c.json(withLabelArrays(await listAssignedTickets(env.DB, u)));
   })
 );
 
 app.get("/api/my-tickets/unassigned", (c) =>
   guard(c, async () => {
     const u = await getSessionUser(c.req.raw, env);
-    return c.json(await listUnassignedTickets(env.DB, u));
+    return c.json(withLabelArrays(await listUnassignedTickets(env.DB, u)));
   })
 );
 
@@ -364,7 +364,7 @@ app.get("/api/all-tickets", (c) =>
     const u = await getSessionUser(c.req.raw, env);
     requireSuperAdmin(u);
     const assigneeId = (c.req.query("assigneeId") || "").trim() || undefined;
-    return c.json(await listAllTickets(env.DB, assigneeId));
+    return c.json(withLabelArrays(await listAllTickets(env.DB, assigneeId)));
   })
 );
 
@@ -2133,6 +2133,11 @@ app.get("/api/github/activity", (c) =>
 
 // The share token is the secret behind a public link: only the project-admin
 // share endpoints may return it, never the generic ticket payloads.
+// List endpoints select the raw JSON column; hand the client real arrays.
+function withLabelArrays<T extends { labels: string | null }>(rows: T[]): (Omit<T, "labels"> & { labels: string[] })[] {
+  return rows.map((r) => ({ ...r, labels: parseLabels(r.labels) }));
+}
+
 function parseLabels(v: string | null | undefined): string[] {
   if (!v) return [];
   try {

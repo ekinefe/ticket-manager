@@ -205,4 +205,5 @@ export default {
   "sync.field.dueDate": "Due date",
   "bd.selectColumn": "Select all in this column (this sprint only)",
   "bd.selectLane": "Select all in this sprint",
+  "bd.colLabels": "Labels",
 };
