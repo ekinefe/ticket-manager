@@ -495,7 +495,7 @@ function backlogLaneHtml() {
 function laneListHtml(laneId) {
   return `
     <table class="data list-table" data-lane="${esc(laneId)}">
-      <thead><tr><th><input type="checkbox" class="select-group lane-select" data-lane="${esc(laneId)}" title="${tl("bd.selectLane")}" aria-label="${tl("bd.selectLane")}" /></th><th>${tl("bd.colTicket")}</th><th>${tl("bd.colTitle")}</th><th><button type="button" class="th-sort" data-sort-status title="${tl("bd.sortStatus")}">${tl("bd.colStatus")} <span class="sort-arrow">${statusSortDesc ? "\u25BC" : "\u25B2"}</span></button></th><th>${tl("bd.colType")}</th><th>${tl("bd.colPriority")}</th><th>${tl("bd.colAssignee")}</th></tr></thead>
+      <thead><tr><th><input type="checkbox" class="select-group lane-select" data-lane="${esc(laneId)}" title="${tl("bd.selectLane")}" aria-label="${tl("bd.selectLane")}" /></th><th>${tl("bd.colTicket")}</th><th>${tl("bd.colTitle")}</th><th>${tl("bd.colLabels")}</th><th><button type="button" class="th-sort" data-sort-status title="${tl("bd.sortStatus")}">${tl("bd.colStatus")} <span class="sort-arrow">${statusSortDesc ? "\u25BC" : "\u25B2"}</span></button></th><th>${tl("bd.colType")}</th><th>${tl("bd.colPriority")}</th><th>${tl("bd.colAssignee")}</th></tr></thead>
       <tbody></tbody>
     </table>`;
 }
@@ -515,6 +515,7 @@ function rowHtml(t) {
       <td><input type="checkbox" class="card-select" data-select="${esc(t.id)}" ${checked ? "checked" : ""} title="${tl("bd.selectTicket")}" /></td>
       <td class="ticket-id">${esc(t.ticketId)}</td>
       <td class="title-cell">${esc(t.title)}</td>
+      <td>${t.labels?.length ? `<div class="card-labels" style="margin-top:0">${t.labels.map((l) => `<span class="label-chip">${esc(l)}</span>`).join("")}</div>` : ""}</td>
       <td>${statusPill(t.status)}</td>
       <td>${TYPE_LABELS[t.type]}</td>
       <td>${priorityPill(t.priority)}</td>
@@ -531,7 +532,7 @@ function refreshListTables() {
     const laneId = table.dataset.lane;
     const tbody = table.querySelector("tbody");
     const list = laneTasksForList(laneId);
-    tbody.innerHTML = list.length ? list.map(rowHtml).join("") : `<tr><td colspan="7" class="list-empty">${tl("bd.noTickets")}</td></tr>`;
+    tbody.innerHTML = list.length ? list.map(rowHtml).join("") : `<tr><td colspan="8" class="list-empty">${tl("bd.noTickets")}</td></tr>`;
     tbody.querySelectorAll(".list-row").forEach((row) => {
       row.addEventListener("click", (e) => {
         if (e.target.closest(".card-select")) return;

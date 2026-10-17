@@ -229,6 +229,18 @@ describe("tickets", () => {
     assert.equal(bad.status, 400);
   });
 
+  it("My Tickets / All Tickets include each ticket's labels as an array", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: adminCookie, body: { title: "List labels", assigneeId: "u_admin", labels: ["ui", "api"] },
+    });
+    const task = await create.json();
+    const mine = await (await req("/api/my-tickets", { cookie: adminCookie })).json();
+    assert.deepEqual(mine.find((t: any) => t.id === task.id).labels, ["ui", "api"]);
+    const none = await (await req(`/api/projects/${PROJECT_ID}/tasks`, { method: "POST", cookie: adminCookie, body: { title: "No labels", assigneeId: "u_admin" } })).json();
+    const again = await (await req("/api/my-tickets", { cookie: adminCookie })).json();
+    assert.deepEqual(again.find((t: any) => t.id === none.id).labels, []);
+  });
+
   it("allows project admins to change priority", async () => {
     const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
       method: "POST", cookie: member1, body: { title: "Prio admin", assigneeId: "u_ayse" },

@@ -205,4 +205,5 @@ export default {
   "sync.field.dueDate": "Son tarih",
   "bd.selectColumn": "Bu kolondakilerin hepsini seç (yalnızca bu sprint)",
   "bd.selectLane": "Bu sprintteki hepsini seç",
+  "bd.colLabels": "Etiketler",
 };
