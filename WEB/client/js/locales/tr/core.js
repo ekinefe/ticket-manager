@@ -117,4 +117,5 @@ export default {
   "hdr.create": "Oluştur",
   "hdr.noProjects": "Önce bir projeye katıl veya proje oluştur.",
   "hdr.created": "{id} oluşturuldu",
+  "nav.unassigned": "Atanmamış",
 };
