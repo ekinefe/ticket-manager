@@ -925,6 +925,20 @@ describe("export / import", () => {
     assert.equal((await req(`/api/projects/${PROJECT_ID}/export?format=xml`, { cookie: superCookie })).status, 400);
   });
 
+  it("CSV export has Labels and Due date columns", async () => {
+    const create = await req(`/api/projects/${PROJECT_ID}/tasks`, {
+      method: "POST", cookie: superCookie, body: { title: "CSV label row", labels: ["ui", "api"], dueDate: "2026-12-24" },
+    });
+    const task = await create.json();
+    const csv = await (await req(`/api/projects/${PROJECT_ID}/export?format=csv`, { cookie: superCookie })).text();
+    const lines = csv.split("\r\n");
+    const header = lines[0].replace("\uFEFF", "").split(",");
+    assert.deepEqual(header.slice(0, 7), ["Ticket ID", "Title", "Status", "Type", "Priority", "Labels", "Due date"].map((h) => (h.includes(" ") ? `"${h}"` : h)).map((h) => h.replaceAll('"', "")));
+    const row = lines.find((l) => l.startsWith(task.ticketId + ","))!;
+    assert.ok(row.includes("ui; api"), row);
+    assert.ok(row.includes("2026-12-24"), row);
+  });
+
   it("export still round-trips through import", async () => {
     const exported = await (await req(`/api/projects/${PROJECT_ID}/export`, { cookie: superCookie })).json();
     exported.project.prefix = "RTP";
