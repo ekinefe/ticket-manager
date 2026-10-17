@@ -32,4 +32,5 @@ export default {
   "mt.selectTicket": "Bileti seç",
   "mt.openInBoard": "{project} panosunda aç",
   "mt.assignTo": "Ata…",
+  "mt.colLabels": "Etiketler",
 };

@@ -237,7 +237,7 @@ function boardHtml(tasks) {
 function listTableHtml(projectId, tasks) {
   return `
     <table class="data list-table">
-      <thead><tr><th></th><th>${tl("mt.colTicket")}</th><th>${tl("mt.colTitle")}</th><th>${tl("mt.colStatus")}</th><th>${tl("mt.colType")}</th><th>${tl("mt.colPriority")}</th></tr></thead>
+      <thead><tr><th></th><th>${tl("mt.colTicket")}</th><th>${tl("mt.colTitle")}</th><th>${tl("mt.colLabels")}</th><th>${tl("mt.colStatus")}</th><th>${tl("mt.colType")}</th><th>${tl("mt.colPriority")}</th></tr></thead>
       <tbody>${tasks.map((t) => listRowHtml(projectId, t)).join("")}</tbody>
     </table>`;
 }
@@ -249,6 +249,7 @@ function listRowHtml(projectId, t) {
       <td><input type="checkbox" class="card-select" data-select="${esc(t.id)}" ${checked ? "checked" : ""} title="${tl("mt.selectTicket")}" /></td>
       <td class="ticket-id">${esc(t.ticketId)}</td>
       <td class="title-cell">${esc(t.title)}</td>
+      <td>${t.labels?.length ? `<div class="card-labels" style="margin-top:0">${t.labels.map((l) => `<span class="label-chip">${esc(l)}</span>`).join("")}</div>` : ""}</td>
       <td>${statusPill(t.status)}</td>
       <td>${TYPE_LABELS[t.type]}</td>
       <td>${priorityPill(t.priority)}</td>
@@ -262,6 +263,7 @@ function cardHtml(t) {
       <div class="ticket-shape">
       <div class="ticket-body">
         <p class="title">${esc(t.title)}</p>
+        ${t.labels?.length ? `<div class="card-labels">${t.labels.map((l) => `<span class="label-chip">${esc(l)}</span>`).join("")}</div>` : ""}
         ${t.ticketId ? `<div class="branch-line"><span class="branch-ico">&#9123;</span>${esc(branchName(t))}</div>` : ""}
       </div>
       <div class="row ticket-stub">
