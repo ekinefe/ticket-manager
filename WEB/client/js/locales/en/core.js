@@ -117,4 +117,5 @@ export default {
   "hdr.create": "Create",
   "hdr.noProjects": "Join or create a project first.",
   "hdr.created": "{id} created",
+  "nav.unassigned": "Unassigned",
 };

@@ -14,9 +14,23 @@ let allAssignee = "";
 
 export function renderMyTickets(root) { return renderTickets(root, "mine"); }
 export function renderAllTickets(root) { return renderTickets(root, "all"); }
+export function renderUnassigned(root) { return renderTickets(root, "unassigned"); }
+
+// Who a bulk "Assign to…" can pick: members of the projects shown on the page.
+let pageMode = "mine";
+let assignable = [];
+async function loadAssignable(list) {
+  const ids = [...new Set(list.map((t) => t.projectId))];
+  const projects = await Promise.all(ids.map((id) => api.get(`/projects/${encodeURIComponent(id)}`).catch(() => null)));
+  const byId = new Map();
+  for (const p of projects) for (const mem of p?.members ?? []) byId.set(mem.userId, mem.name);
+  assignable = [...byId].map(([userId, name]) => ({ userId, name })).sort((a, b) => a.name.localeCompare(b.name));
+}
 
 async function renderTickets(root, mode) {
   const isAll = mode === "all";
+  const isUn = mode === "unassigned";
+  pageMode = mode;
   root.innerHTML = `<div class="page"><div class="spinner"></div></div>`;
 
   let tickets, unassigned = [], users = [];
@@ -26,6 +40,10 @@ async function renderTickets(root, mode) {
         api.get(`/all-tickets${allAssignee ? `?assigneeId=${encodeURIComponent(allAssignee)}` : ""}`),
         api.get("/admin/users"),
       ]);
+    } else if (isUn) {
+      tickets = [];
+      unassigned = await api.get("/my-tickets/unassigned");
+      await loadAssignable(unassigned);
     } else {
       [tickets, unassigned] = await Promise.all([api.get("/my-tickets"), api.get("/my-tickets/unassigned")]);
     }
@@ -54,8 +72,8 @@ async function renderTickets(root, mode) {
   root.innerHTML = `
     <div class="page">
       <div class="page-head">
-        <h1>${tl(isAll ? "mt.all" : "mt.mine")}</h1>
-        <span class="mt-total">${isAll ? tl(tickets.length === 1 ? "mt.ticketCount.one" : "mt.ticketCount.many", { count: tickets.length }) : `${tickets.length} ${tl("mt.assignedToYou")}`}</span>
+        <h1>${tl(isAll ? "mt.all" : isUn ? "mt.unassigned" : "mt.mine")}</h1>
+        <span class="mt-total">${isUn ? tl("mt.withoutAssignee", { count: unassigned.length }) : isAll ? tl(tickets.length === 1 ? "mt.ticketCount.one" : "mt.ticketCount.many", { count: tickets.length }) : `${tickets.length} ${tl("mt.assignedToYou")}`}</span>
         ${isAll ? `<select id="all-assignee" aria-label="${tl("mt.filterAssignee")}">
           <option value="">${tl("mt.allAssignees")}</option>
           <option value="none"${allAssignee === "none" ? " selected" : ""}>${tl("mt.unassigned")}</option>
@@ -66,10 +84,14 @@ async function renderTickets(root, mode) {
           <button class="btn sm ${viewMode === "list" ? "" : "ghost"}" id="view-list-btn">${tl("mt.list")}</button>
         </div>
       </div>
-      ${groups.size === 0
+      ${isUn
+        ? (unassignedGroups.size === 0
+          ? `<div class="empty-note">${tl("mt.noUnassigned")}</div>`
+          : [...unassignedGroups.entries()].map(([projectId, g]) => projectSection(projectId, g)).join(""))
+        : groups.size === 0
         ? `<div class="empty-note">${tl(isAll ? "mt.noMatch" : "mt.noneAssigned")}</div>`
         : [...groups.entries()].map(([projectId, g]) => projectSection(projectId, g)).join("")}
-      ${isAll ? "" : `
+      ${isAll || isUn ? "" : `
         <div class="page-head" style="margin-top:28px">
           <h1>${tl("mt.unassigned")}</h1>
           <span class="mt-total">${tl("mt.withoutAssignee", { count: unassigned.length })}</span>
@@ -79,6 +101,12 @@ async function renderTickets(root, mode) {
           : [...unassignedGroups.entries()].map(([projectId, g]) => projectSection(projectId, g)).join("")}`}
       <div class="bulk-bar hidden" id="bulk-bar"></div>
     </div>`;
+
+  if (isUn) {
+    // keep the sidebar count in step with what this page just loaded
+    const badge = document.getElementById("unassigned-count");
+    if (badge) { badge.textContent = String(unassigned.length); badge.classList.toggle("hidden", unassigned.length === 0); }
+  }
 
   root.querySelector("#view-board-btn").addEventListener("click", () => { if (viewMode !== "board") { viewMode = "board"; localStorage.setItem("tm-ticket-view", "board"); rerender(); } });
   root.querySelector("#view-list-btn").addEventListener("click", () => { if (viewMode !== "list") { viewMode = "list"; localStorage.setItem("tm-ticket-view", "list"); rerender(); } });
@@ -128,6 +156,10 @@ function renderBulkBar(root, rerender) {
       <option value="">${tl("mt.changePriority")}</option>
       ${PRIORITIES.map((p) => `<option value="${p}">${PRIORITY_LABELS[p]}</option>`).join("")}
     </select>
+    ${pageMode === "unassigned" ? `<select id="bulk-assignee">
+      <option value="">${tl("mt.assignTo")}</option>
+      ${assignable.map((a) => `<option value="${esc(a.userId)}">${esc(a.name)}</option>`).join("")}
+    </select>` : ""}
     <button class="btn sm danger" id="bulk-delete">${tl("mt.delete")}</button>
     <button class="btn sm ghost" id="bulk-clear">${tl("mt.clear")}</button>`;
 
@@ -163,6 +195,7 @@ function renderBulkBar(root, rerender) {
   bar.querySelector("#bulk-status").addEventListener("change", (e) => apply({ status: e.target.value }, e.target));
   bar.querySelector("#bulk-type").addEventListener("change", (e) => apply({ type: e.target.value }, e.target));
   bar.querySelector("#bulk-priority").addEventListener("change", (e) => apply({ priority: e.target.value }, e.target));
+  bar.querySelector("#bulk-assignee")?.addEventListener("change", (e) => e.target.value && apply({ assigneeId: e.target.value }, e.target));
   bar.querySelector("#bulk-clear").addEventListener("click", () => {
     selectedIds = new Set();
     rerender();

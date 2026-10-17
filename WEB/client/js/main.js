@@ -8,7 +8,7 @@ import { renderAcceptInvite } from "./pages/accept-invite.js";
 import { renderAdmin } from "./pages/admin.js";
 import { renderGitGraph } from "./pages/git-graph.js";
 import { renderShare } from "./pages/share.js";
-import { renderMyTickets, renderAllTickets } from "./pages/my-tickets.js";
+import { renderMyTickets, renderAllTickets, renderUnassigned } from "./pages/my-tickets.js";
 import { renderResetPassword } from "./pages/reset-password.js";
 import { renderForcePassword } from "./pages/force-password.js";
 import { renderSetup } from "./pages/setup.js";
@@ -164,6 +164,7 @@ function crumbsHtml(path) {
   else if (path === "/reports") parts.push([t("nav.reports")]);
   else if (path === "/my-tickets") parts.push([t("nav.myTickets")]);
   else if (path === "/all-tickets") parts.push([t("nav.allTickets")]);
+  else if (path === "/unassigned") parts.push([t("nav.unassigned")]);
   else if (path === "/projects") parts.push([t("nav.projects")]);
   else if ((m = path.match(/^\/projects\/([^/]+)(?:\/(members|sprints|graph))?$/))) {
     const id = decodeURIComponent(m[1]);
@@ -351,6 +352,9 @@ function sidebarHtml(activeId, activePath) {
         <a class="side-item${activePath === "/my-tickets" ? " active" : ""}" href="/my-tickets" data-nav>
           ${ICON_TICKET} ${t("nav.myTickets")}
         </a>
+        <a class="side-item${activePath === "/unassigned" ? " active" : ""}" href="/unassigned" data-nav>
+          ${ICON_TICKET} ${t("nav.unassigned")} <span class="side-count hidden" id="unassigned-count"></span>
+        </a>
         ${isSuper ? `<a class="side-item${activePath === "/all-tickets" ? " active" : ""}" href="/all-tickets" data-nav>
           ${ICON_TICKET} ${t("nav.allTickets")}
         </a>` : ""}
@@ -529,6 +533,11 @@ async function route() {
   bindSidebar(appEl);
   bindNavToggle(topbar, appEl);
   bindThemeControls();
+  // Live count next to "Unassigned" (best effort, never blocks the page).
+  api.get("/my-tickets/unassigned").then((rows) => {
+    const badge = document.getElementById("unassigned-count");
+    if (badge && rows.length) { badge.textContent = String(rows.length); badge.classList.remove("hidden"); }
+  }).catch(() => {});
 
   let m;
   if (path === "/" || path === "") { navigate("/welcome"); return; }
@@ -543,6 +552,8 @@ async function route() {
     await renderProjects(page);
   } else if (path === "/my-tickets") {
     await renderMyTickets(page);
+  } else if (path === "/unassigned") {
+    await renderUnassigned(page);
   } else if (path === "/all-tickets" && state.user.role === "SUPER_ADMIN") {
     await renderAllTickets(page);
   } else if ((m = path.match(/^\/projects\/([^/]+)$/))) {

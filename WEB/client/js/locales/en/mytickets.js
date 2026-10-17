@@ -31,5 +31,6 @@ export default {
   "mt.colPriority": "Priority",
   "mt.selectTicket": "Select ticket",
   "mt.openInBoard": "Open in {project} board",
+  "mt.assignTo": "Assign to…",
   "mt.colLabels": "Labels",
 };
