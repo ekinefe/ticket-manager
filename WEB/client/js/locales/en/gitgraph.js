@@ -16,5 +16,5 @@ export default {
   "git.merged": "Merged",
   "git.closed": "Closed",
   "git.noMessage": "(no message)",
-  "git.footnote": "Up to 40 recent commits on each of up to 8 branches (default branch first) and the 30 latest PRs. Hollow dots are merge commits; diamonds are PR events (green opened, purple merged, red closed).",
+  "git.footnote": "Up to 100 recent commits on the default branch and 40 on each of up to 9 other branches (the ones recent PRs merged into come first) and the 30 latest PRs. Hollow dots are merge commits; diamonds are PR events (green opened, purple merged, red closed).",
 };
