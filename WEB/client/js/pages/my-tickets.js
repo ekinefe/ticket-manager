@@ -6,11 +6,13 @@ import {
   TASK_TYPES, TYPE_LABELS, PRIORITIES, PRIORITY_LABELS,
 } from "../ui.js";
 import { t as tl } from "../i18n.js";
+import { openExportDialog, printSections, ticketTablesHtml, exportTicketsPdf, pdfButton } from "../export-pdf.js";
 
 let selectedIds = new Set();
 let viewMode = localStorage.getItem("tm-ticket-view") || "board";
 
 let allAssignee = "";
+let lastLists = { mode: "mine", tickets: [], unassigned: [] };
 
 export function renderMyTickets(root) { return renderTickets(root, "mine"); }
 export function renderAllTickets(root) { return renderTickets(root, "all"); }
@@ -53,6 +55,7 @@ async function renderTickets(root, mode) {
   }
 
   const rerender = () => renderTickets(root, mode);
+  lastLists = { mode, tickets, unassigned };
   const known = new Set([...tickets, ...unassigned].map((t) => t.id));
   for (const id of [...selectedIds]) if (!known.has(id)) selectedIds.delete(id);
 
@@ -79,7 +82,8 @@ async function renderTickets(root, mode) {
           <option value="none"${allAssignee === "none" ? " selected" : ""}>${tl("mt.unassigned")}</option>
           ${users.map((x) => `<option value="${esc(x.id)}"${allAssignee === x.id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}
         </select>` : ""}
-        <div class="btn-group view-toggle" role="group" aria-label="${tl("mt.view")}" style="margin-left:auto">
+        <span style="margin-left:auto">${pdfButton("mt-pdf")}</span>
+        <div class="btn-group view-toggle" role="group" aria-label="${tl("mt.view")}">
           <button class="btn sm ${viewMode === "board" ? "" : "ghost"}" id="view-board-btn">${tl("mt.board")}</button>
           <button class="btn sm ${viewMode === "list" ? "" : "ghost"}" id="view-list-btn">${tl("mt.list")}</button>
         </div>
@@ -112,8 +116,38 @@ async function renderTickets(root, mode) {
   root.querySelector("#view-list-btn").addEventListener("click", () => { if (viewMode !== "list") { viewMode = "list"; localStorage.setItem("tm-ticket-view", "list"); rerender(); } });
   root.querySelector("#all-assignee")?.addEventListener("change", (e) => { allAssignee = e.target.value; rerender(); });
 
+  root.querySelector("#mt-pdf").addEventListener("click", openListExport);
   bindRows(root, rerender);
   renderBulkBar(root, rerender);
+}
+
+// Lists are filtered locally from what the page already loaded.
+function openListExport() {
+  const { mode, tickets, unassigned } = lastLists;
+  const all = [...tickets, ...unassigned];
+  const projects = [...new Map(all.map((x) => [x.projectId, `${x.projectPrefix} - ${x.projectName}`])).entries()];
+  const labelSet = [...new Set(all.flatMap((x) => x.labels ?? []))].sort();
+  const fields = [
+    { key: "projects", kind: "multi", label: tl("pdf.projects"), options: projects.map(([value, label]) => ({ value, label })) },
+    { key: "status", kind: "multi", label: tl("pdf.status"), options: STATUSES.map((value) => ({ value, label: STATUS_LABELS[value] })) },
+    { key: "priority", kind: "multi", label: tl("pdf.priority"), options: PRIORITIES.map((value) => ({ value, label: PRIORITY_LABELS[value] })) },
+  ];
+  if (labelSet.length) fields.push({ key: "labels", kind: "multi", label: tl("pdf.labels"), options: labelSet.map((value) => ({ value, label: value })) });
+  openExportDialog({
+    title: tl("pdf.title"),
+    fields,
+    onExport: async (v) => {
+      const keep = (x) =>
+        (!v.projects || v.projects.includes(x.projectId)) &&
+        (!v.status || v.status.includes(x.status)) &&
+        (!v.priority || v.priority.includes(x.priority)) &&
+        (!v.labels || (x.labels ?? []).some((l) => v.labels.includes(l)));
+      const sections = [];
+      if (mode !== "unassigned") sections.push({ title: tl(mode === "all" ? "mt.all" : "mt.mine"), html: ticketTablesHtml(tickets.filter(keep)) });
+      if (mode !== "all") sections.push({ title: tl("mt.unassigned"), html: ticketTablesHtml(unassigned.filter(keep)) });
+      await printSections(tl("pdf.doc.tickets"), sections, v.paper);
+    },
+  });
 }
 
 function bindRows(root, rerender) {
@@ -160,8 +194,14 @@ function renderBulkBar(root, rerender) {
       <option value="">${tl("mt.assignTo")}</option>
       ${assignable.map((a) => `<option value="${esc(a.userId)}">${esc(a.name)}</option>`).join("")}
     </select>` : ""}
+    <button class="btn sm ghost" id="bulk-pdf">${tl("pdf.button")}</button>
     <button class="btn sm danger" id="bulk-delete">${tl("mt.delete")}</button>
     <button class="btn sm ghost" id="bulk-clear">${tl("mt.clear")}</button>`;
+
+  bar.querySelector("#bulk-pdf").addEventListener("click", () => {
+    const { tickets, unassigned } = lastLists;
+    exportTicketsPdf([...tickets, ...unassigned].filter((x) => selectedIds.has(x.id)).map((x) => ({ projectId: x.projectId, id: x.id })));
+  });
 
   bar.querySelector("#bulk-delete").addEventListener("click", async () => {
     const list = [...root.querySelectorAll(".mt-card, .list-row")]

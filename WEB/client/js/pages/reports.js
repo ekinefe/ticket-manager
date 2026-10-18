@@ -1,6 +1,7 @@
 import { api } from "../api.js";
 import { esc, fmtDate, STATUSES, STATUS_LABELS, getStatusColor } from "../ui.js";
 import { t as tl, locale } from "../i18n.js";
+import { openExportDialog, printSections, snapshotPage, withoutAnimation, pdfButton } from "../export-pdf.js";
 
 // Reports: performance, tasks, completed work and a three-scenario forecast.
 const COLORS = {
@@ -9,6 +10,7 @@ const COLORS = {
 };
 const charts = {};
 const state = { granularity: "weekly", projectId: "" };
+let knownProjects = [];
 
 function destroyCharts() {
   for (const k of Object.keys(charts)) { charts[k]?.destroy(); delete charts[k]; }
@@ -38,6 +40,7 @@ async function load(root) {
     root.innerHTML = `<div class="page"><div class="form-error">${esc(err.message)}</div></div>`;
     return;
   }
+  knownProjects = data.projects;
   const g = data.granularity;
   const k = data.kpis;
   const f = data.forecast;
@@ -51,6 +54,7 @@ async function load(root) {
           <option value="">${tl("rep.allProjects")}</option>
           ${data.projects.map((p) => `<option value="${esc(p.id)}" ${state.projectId === p.id ? "selected" : ""}>${esc(p.prefix)} - ${esc(p.name)}</option>`).join("")}
         </select>
+        ${pdfButton("rep-pdf")}
         <div class="chart-toggle" id="rep-gran">
           ${["daily", "weekly", "monthly"].map((x) => `<button class="btn sm ghost ${g === x ? "active" : ""}" data-g="${x}">${tl(`rep.${x}`)}</button>`).join("")}
         </div>
@@ -116,7 +120,41 @@ async function load(root) {
     const b = e.target.closest("button[data-g]");
     if (b) { state.granularity = b.dataset.g; load(root); }
   });
+  root.querySelector("#rep-pdf").addEventListener("click", () => openReportExport(root));
   if (k.total > 0) drawCharts(data);
+}
+
+// Every chosen project x period becomes its own section of one PDF.
+function openReportExport(root) {
+  openExportDialog({
+    title: tl("pdf.title"),
+    fields: [
+      { key: "projects", kind: "multi", label: tl("pdf.projects"), defaults: state.projectId ? [state.projectId] : [], options: knownProjects.map((p) => ({ value: p.id, label: `${p.prefix} - ${p.name}` })) },
+      { key: "periods", kind: "multi", label: tl("pdf.periods"), defaults: [state.granularity], options: ["daily", "weekly", "monthly"].map((x) => ({ value: x, label: tl(`rep.${x}`) })) },
+    ],
+    onExport: async (v) => {
+      const saved = { ...state };
+      const projects = v.projects ?? [""];
+      const periods = v.periods ?? ["daily", "weekly", "monthly"];
+      const sections = [];
+      try {
+        await withoutAnimation(async () => {
+          for (const projectId of projects) {
+            for (const granularity of periods) {
+              Object.assign(state, { projectId, granularity });
+              await load(root);
+              const p = knownProjects.find((x) => x.id === projectId);
+              sections.push({ title: `${p ? `${p.prefix} - ${p.name}` : tl("pdf.allProjects")} - ${tl(`rep.${granularity}`)}`, html: snapshotPage(root) });
+            }
+          }
+        });
+      } finally {
+        Object.assign(state, saved);
+        await load(root);
+      }
+      await printSections(tl("pdf.doc.reports"), sections, v.paper);
+    },
+  });
 }
 
 const kpi = (value, label, cls = "") => `<div class="stat-card ${cls}"><div class="stat-value">${esc(value)}</div><div class="stat-label">${esc(label)}</div></div>`;

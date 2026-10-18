@@ -1,0 +1,45 @@
+/* PDF export: the print copy lives in #print-root and is only shown when printing. */
+#print-root { display: none; }
+#print-root.pr-measure { display: block; position: absolute; left: -99999px; top: 0; width: 794px; }
+
+.pdf-form { display: flex; flex-direction: column; gap: 14px; min-width: min(460px, 100%); }
+.pdf-field { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.pdf-label { font-size: 12px; font-weight: 600; color: var(--text-dim); padding: 0; }
+.pdf-opts { display: flex; flex-wrap: wrap; gap: 6px 14px; max-height: 150px; overflow: auto; }
+.pdf-opt { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.pdf-opt-all { font-weight: 600; }
+.pdf-hint { margin: 0; font-size: 12px; color: var(--text-dim); }
+
+/* layout (also applied off-screen when measuring the endless page) */
+#print-root { background: #fff; color: #111; font-family: var(--font-body); font-size: 12px; }
+.pr-section { break-before: page; }
+.pr-section:first-child { break-before: auto; }
+.pr-endless .pr-section { break-before: auto; padding-bottom: 28px; margin-bottom: 28px; border-bottom: 2px solid #e2e2e6; }
+.pr-endless { width: 794px; box-sizing: border-box; padding: 24px; }
+.pr-endless .pr-section:last-child { border-bottom: 0; }
+.pr-head { margin-bottom: 14px; border-bottom: 2px solid #111; padding-bottom: 8px; }
+.pr-kicker { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: .04em; }
+.pr-title { margin: 4px 0 0; font-size: 20px; }
+.pr-sub { margin: 16px 0 6px; font-size: 14px; }
+.pr-sub small { color: #666; font-weight: 400; }
+.pr-section .chart-wrap { min-height: 0; height: auto !important; }
+.pr-chart { display: block; width: 100%; max-width: 100%; height: auto; }
+.chart-short .pr-chart { max-height: 240px; width: auto; margin: 0 auto; }
+.pr-section .dash-panel, .pr-section .stat-card, .pr-section tr, .pr-comment, .pr-event, .pr-scn { break-inside: avoid; }
+.pr-section .dash-grid { gap: 12px; }
+.pr-table { width: 100%; border-collapse: collapse; }
+.pr-table th, .pr-table td { padding: 4px 6px; border-bottom: 1px solid #ddd; text-align: left; vertical-align: top; font-size: 11px; }
+.pr-meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 14px; margin: 8px 0; }
+.pr-meta-grid dt { font-size: 10px; color: #666; text-transform: uppercase; }
+.pr-meta-grid dd { margin: 2px 0 0; }
+.pr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pr-comment-meta span, .pr-event span { color: #777; font-size: 10px; margin-left: 6px; }
+.pr-rich img, .pr-rich video { max-width: 100%; height: auto; }
+.pr-none, .pr-empty { color: #777; }
+.pr-project { margin: 0 0 6px; }
+
+@media print {
+  body.printing { background: #fff !important; }
+  body.printing > *:not(#print-root) { display: none !important; }
+  body.printing #print-root { display: block; }
+}
