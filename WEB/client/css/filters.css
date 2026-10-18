@@ -1,0 +1,20 @@
+/* Board filter row (multi-select menus + chips) */
+.filter-row2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 14px; }
+.fmenu { position: relative; }
+.fmenu-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; font: inherit; font-size: 12.5px; font-weight: 600;
+  color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-component); cursor: pointer;
+}
+.fmenu-btn:hover { background: var(--hover); }
+.fmenu.active .fmenu-btn { border-color: var(--accent); background: var(--accent-soft); }
+.fmenu-n:not(:empty) { background: var(--accent); color: var(--accent-contrast); border-radius: 9px; padding: 0 6px; font-size: 11px; }
+.fmenu-caret { font-size: 10px; color: var(--text-dim); }
+.fmenu-pop {
+  display: none; position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 200px; max-height: 280px; overflow: auto;
+  padding: 6px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-component); box-shadow: var(--shadow);
+}
+.fmenu.open .fmenu-pop { display: block; }
+.fmenu-opt { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.fmenu-opt:hover { background: var(--hover); }
+.fmenu-all { font-weight: 600; border-bottom: 1px solid var(--border); border-radius: 6px 6px 0 0; margin-bottom: 4px; }
+.filter-row2 .filter-chips { display: flex; flex-wrap: wrap; gap: 6px; }

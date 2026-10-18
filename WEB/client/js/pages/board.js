@@ -8,14 +8,17 @@ import {
 } from "../ui.js";
 import { t as tl, labels } from "../i18n.js";
 import { openSyncImport } from "./sync-import.js";
-import { exportTicketsPdf } from "../export-pdf.js";
+import { exportTicketsPdf, openExportDialog, printSections, ticketTablesHtml } from "../export-pdf.js";
+import { filterRowHtml, bindFilterRow } from "../filters.js";
 
 let project = null;
 let myRole = "MEMBER";
 let tasks = [];
 let filterText = "";
-let filterAssignee = "";
-let filterSprint = "";
+// Multi-select filters (empty set = All). Kept in the URL as ?f.<key>=a,b so a refresh keeps them.
+const FILTER_KEYS = ["sprint", "assignee", "status", "priority", "type", "label", "due"];
+const filterSel = Object.fromEntries(FILTER_KEYS.map((k) => [k, new Set()]));
+const DUE_OPTIONS = ["overdue", "week", "none"];
 let collapsedLanes = new Set();
 let boardStream = null;
 let refreshTimer = null;
@@ -69,7 +72,7 @@ export async function renderBoard(root, projectId, initialSprint = "", initialTa
   // Each sprint gets its own swim lane. A deep-link (?sprint=<id>) auto-expands
   // only that lane and collapses the rest; otherwise all lanes are expanded.
   filterText = "";
-  filterAssignee = "";
+  readFiltersFromUrl();
   collapsedLanes = new Set();
   selectedIds = new Set();
   if (initialSprint && (initialSprint === "backlog" || project.sprints.some((s) => s.id === initialSprint))) {
@@ -313,10 +316,6 @@ function drawShell(root) {
     ${headHtml("board")}
     <div class="toolbar">
       <input type="text" class="search" id="filter-text" placeholder="${tl("bd.searchPh")}" value="${esc(filterText)}" />
-      <select id="filter-assignee">
-        <option value="">${tl("bd.allAssignees")}</option>
-        ${project.members.map((m) => `<option value="${esc(m.userId)}">${esc(m.name)}</option>`).join("")}
-      </select>
       <div class="btn-group view-toggle" role="group" aria-label="${tl("bd.view")}">
         <button class="btn sm ${viewMode === "board" ? "" : "ghost"}" id="view-board-btn" title="${tl("bd.boardView")}">${tl("bd.board")}</button>
         <button class="btn sm ${viewMode === "list" ? "" : "ghost"}" id="view-list-btn" title="${tl("bd.listView")}">${tl("bd.list")}</button>
@@ -325,9 +324,11 @@ function drawShell(root) {
         ${myRole === "ADMIN" ? `<button class="btn sm ghost" id="sync-btn" title="${tl("sync.hint")}">${tl("sync.button")}</button>` : ""}
         <button class="btn sm ghost" id="export-btn">${tl("bd.exportJson")}</button>
         <button class="btn sm ghost" id="export-csv-btn">${tl("bd.exportCsv")}</button>
+        <button class="btn sm ghost" id="export-pdf-btn" title="${tl("pdf.title")}">${tl("pdf.button")}</button>
         <button class="btn sm" id="new-task-btn">${tl("bd.newTicket")}</button>
       </div>
     </div>
+    ${filterRowHtml(filterDefs(), filterSel)}
     <div class="board-scroll">
       <div class="board">
         ${project.sprints.map((s) => laneHtml(s)).join("")}
@@ -356,7 +357,10 @@ function drawShell(root) {
   });
   document.getElementById("export-csv-btn").addEventListener("click", async () => {
     try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/export?format=csv`, { credentials: "same-origin" });
+      // With filters/search active only the matching tickets are exported.
+      const ids = tasks.filter(matchesFilters).map((t) => t.ticketId);
+      const filtered = hasActiveFilters() && ids.length < tasks.length;
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}/export?format=csv${filtered ? `&ids=${encodeURIComponent(ids.join(","))}` : ""}`, { credentials: "same-origin" });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || tl("bd.exportFailed"));
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");
@@ -374,9 +378,8 @@ function drawShell(root) {
   const searchEl = document.getElementById("filter-text");
   searchEl.addEventListener("input", () => { filterText = searchEl.value.toLowerCase(); refreshColumns(); });
 
-  const assigneeEl = document.getElementById("filter-assignee");
-  assigneeEl.value = filterAssignee;
-  assigneeEl.addEventListener("change", () => { filterAssignee = assigneeEl.value; refreshColumns(); });
+  bindFilterRow(root, filterDefs(), filterSel, () => { syncFiltersToUrl(); refreshColumns(); });
+  document.getElementById("export-pdf-btn").addEventListener("click", openBoardPdf);
 
   // Lane collapse toggles
   root.querySelectorAll(".sprint-lane-head").forEach((head) => {
@@ -613,6 +616,81 @@ function canModifyTask(t) {
   return t.assigneeId === state.user.id || t.createdBy === state.user.id;
 }
 
+function filterDefs() {
+  const labelSet = [...new Set(tasks.flatMap((t) => t.labels ?? []))].sort();
+  const opt = (value, label) => ({ value, label });
+  return [
+    { key: "sprint", label: tl("flt.sprint"), options: [...project.sprints.map((s) => opt(s.id, `${s.sprintId} - ${s.name}`)), opt("backlog", tl("bd.backlog"))] },
+    { key: "assignee", label: tl("flt.assignee"), options: [...project.members.map((m) => opt(m.userId, m.name)), opt("none", tl("bd.unassigned"))] },
+    { key: "status", label: tl("flt.status"), options: STATUSES.map((v) => opt(v, STATUS_LABELS[v])) },
+    { key: "priority", label: tl("flt.priority"), options: PRIORITIES.map((v) => opt(v, PRIORITY_LABELS[v])) },
+    { key: "type", label: tl("flt.type"), options: TASK_TYPES.map((v) => opt(v, TYPE_LABELS[v])) },
+    ...(labelSet.length ? [{ key: "label", label: tl("flt.label"), options: labelSet.map((v) => opt(v, v)) }] : []),
+    { key: "due", label: tl("flt.due"), options: DUE_OPTIONS.map((v) => opt(v, tl(`flt.due.${v}`))) },
+  ];
+}
+
+function readFiltersFromUrl() {
+  const q = new URLSearchParams(location.search);
+  for (const k of FILTER_KEYS) {
+    filterSel[k] = new Set((q.get(`f.${k}`) || "").split(",").filter(Boolean));
+  }
+}
+
+function syncFiltersToUrl() {
+  const q = new URLSearchParams(location.search);
+  for (const k of FILTER_KEYS) {
+    if (filterSel[k].size) q.set(`f.${k}`, [...filterSel[k]].join(","));
+    else q.delete(`f.${k}`);
+  }
+  const qs = q.toString();
+  history.replaceState(null, "", `${location.pathname}${qs ? `?${qs}` : ""}`);
+}
+
+function hasActiveFilters() {
+  return Boolean(filterText) || FILTER_KEYS.some((k) => filterSel[k].size > 0);
+}
+
+function matchesFilters(t) {
+  const f = filterSel;
+  if (filterText && !t.title.toLowerCase().includes(filterText) && !t.ticketId.toLowerCase().includes(filterText)) return false;
+  if (f.sprint.size && !f.sprint.has(t.sprintId || "backlog")) return false;
+  if (f.assignee.size && !f.assignee.has(t.assigneeId || "none")) return false;
+  if (f.status.size && !f.status.has(t.status)) return false;
+  if (f.priority.size && !f.priority.has(t.priority)) return false;
+  if (f.type.size && !f.type.has(t.type)) return false;
+  if (f.label.size && !(t.labels ?? []).some((l) => f.label.has(l))) return false;
+  if (f.due.size) {
+    const today = todayStr();
+    const weekEnd = new Date(Date.now() + 7 * 864e5);
+    const end = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, "0")}-${String(weekEnd.getDate()).padStart(2, "0")}`;
+    const ok = (f.due.has("none") && !t.dueDate)
+      || (f.due.has("overdue") && t.dueDate && t.dueDate < today && t.status !== "DONE")
+      || (f.due.has("week") && t.dueDate && t.dueDate >= today && t.dueDate <= end);
+    if (!ok) return false;
+  }
+  return true;
+}
+
+// A sprint filter also hides the swim lanes that were not picked.
+function applyLaneFilter() {
+  document.querySelectorAll(".sprint-lane[data-lane]").forEach((lane) => {
+    lane.classList.toggle("hidden", filterSel.sprint.size > 0 && !filterSel.sprint.has(lane.dataset.lane));
+  });
+}
+
+// PDF of the tickets the filters currently show (one table per project).
+function openBoardPdf() {
+  openExportDialog({
+    title: tl("pdf.title"),
+    fields: [],
+    onExport: async ({ paper }) => {
+      const list = tasks.filter(matchesFilters).map((t) => ({ ...t, projectId: project.id, projectName: project.name, projectPrefix: project.prefix }));
+      await printSections(tl("pdf.doc.tickets"), [{ title: `${project.prefix} - ${project.name}`, html: ticketTablesHtml(list) }], paper);
+    },
+  });
+}
+
 function visibleTasks(status, laneId) {
   return tasks
     .filter((t) => t.status === status)
@@ -620,10 +698,7 @@ function visibleTasks(status, laneId) {
       if (laneId === "backlog") return !t.sprintId;
       return t.sprintId === laneId;
     })
-    .filter((t) => !filterText ||
-      t.title.toLowerCase().includes(filterText) ||
-      t.ticketId.toLowerCase().includes(filterText))
-    .filter((t) => !filterAssignee || t.assigneeId === filterAssignee)
+    .filter(matchesFilters)
     .sort((a, b) => a.position - b.position);
 }
 
@@ -637,6 +712,7 @@ function refreshLaneCounts() {
 }
 
 function refreshColumns() {
+  applyLaneFilter();
   refreshLaneCounts();
   if (viewMode === "list") {
     refreshListTables();
