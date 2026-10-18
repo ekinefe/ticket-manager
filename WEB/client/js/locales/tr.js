@@ -9,5 +9,6 @@ import share from "./tr/share.js";
 import auth from "./tr/auth.js";
 import reports from "./tr/reports.js";
 import errors from "./tr/errors.js";
+import pdf from "./tr/pdf.js";
 
-export default { ...core, ...board, ...dashboard, ...projects, ...mytickets, ...admin, ...gitgraph, ...share, ...auth, ...reports, ...errors };
+export default { ...core, ...board, ...dashboard, ...projects, ...mytickets, ...admin, ...gitgraph, ...share, ...auth, ...reports, ...errors, ...pdf };

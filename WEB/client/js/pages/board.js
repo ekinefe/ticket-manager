@@ -8,6 +8,7 @@ import {
 } from "../ui.js";
 import { t as tl, labels } from "../i18n.js";
 import { openSyncImport } from "./sync-import.js";
+import { exportTicketsPdf } from "../export-pdf.js";
 
 let project = null;
 let myRole = "MEMBER";
@@ -714,6 +715,7 @@ function renderBulkBar() {
       <option value="__unassign__">${tl("bd.unassigned")}</option>
       ${project.members.map((m) => `<option value="${esc(m.userId)}">${esc(m.name)}${m.userId === state.user.id ? ` ${tl("bd.me")}` : ""}</option>`).join("")}
     </select>
+    <button class="btn sm ghost" id="bulk-pdf">${tl("pdf.button")}</button>
     <button class="btn sm danger" id="bulk-delete">${tl("bd.bulkDelete")}</button>
     <button class="btn sm ghost" id="bulk-clear">${tl("bd.clearSel")}</button>`;
 
@@ -729,6 +731,9 @@ function renderBulkBar() {
   bar.querySelector("#bulk-priority").addEventListener("change", (e) => bulkApply({ priority: e.target.value }, e.target));
   bar.querySelector("#bulk-assignee").addEventListener("change", (e) => {
     bulkApply({ assigneeId: e.target.value === "__unassign__" ? null : e.target.value }, e.target);
+  });
+  bar.querySelector("#bulk-pdf").addEventListener("click", () => {
+    exportTicketsPdf([...selectedIds].map((id) => ({ projectId: project.id, id })));
   });
   bar.querySelector("#bulk-clear").addEventListener("click", () => {
     selectedIds.clear();
@@ -976,6 +981,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
             </div>
             <div class="modal-actions">
               ${isEdit && mayEdit && canDeleteTickets() ? `<button type="button" class="btn danger" id="tf-delete">${tl("bd.delete")}</button>` : ""}
+              ${isEdit ? `<button type="button" class="btn ghost" id="tf-pdf" title="${tl("pdf.title")}">${tl("pdf.button")}</button>` : ""}
               ${isEdit && myRole === "ADMIN" ? `<button type="button" class="btn ghost" id="tf-share-toggle">${tl("bd.share")}</button>` : ""}
               ${!mayEdit ? `<span class="ro-note">${tl("bd.readOnly")}</span>` : ""}
               <span id="tf-savestate" class="save-state"></span>
@@ -1406,6 +1412,7 @@ function taskModal(task, presetStatus = "TODO", presetSprintId = "") {
 
       if (isEdit && myRole === "ADMIN") setupSharePanel(modalEl, task);
       if (isEdit) loadDevPanel(modalEl, task);
+      modalEl.querySelector("#tf-pdf")?.addEventListener("click", () => exportTicketsPdf([{ projectId: project.id, id: task.id }]));
       const delBtn = modalEl.querySelector("#tf-delete");
       if (delBtn) {
         delBtn.addEventListener("click", async () => {

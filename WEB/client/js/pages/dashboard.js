@@ -7,6 +7,7 @@ import {
   TASK_TYPES, TYPE_LABELS,
 } from "../ui.js";
 import { t as tl } from "../i18n.js";
+import { openExportDialog, printSections, snapshotPage, withoutAnimation, pdfButton } from "../export-pdf.js";
 
 let charts = {};
 let currentStats = null;
@@ -82,10 +83,12 @@ async function fetchStats() {
   return api.get(`/dashboard/stats${qs ? `?${qs}` : ""}`);
 }
 
-export async function renderDashboard(root) {
+export async function renderDashboard(root, override) {
   root.innerHTML = `<div class="page"><div class="spinner"></div></div>`;
 
-  readFiltersFromUrl();
+  // `override` renders with explicit filters (PDF export) without touching the URL.
+  if (override) Object.assign(filters, override);
+  else readFiltersFromUrl();
 
   let stats;
   try {
@@ -108,6 +111,7 @@ export async function renderDashboard(root) {
       <div class="page-head">
         <h1>${tl("dash.title")}</h1>
         <span class="spacer" style="flex:1"></span>
+        ${pdfButton("dash-pdf")}
         <a class="btn sm ghost" href="/projects" data-nav>${tl("dash.viewProjects")}</a>
       </div>
 
@@ -275,6 +279,7 @@ export async function renderDashboard(root) {
   renderCharts(stats, isSuper, isAdmin);
   bindTimeframeToggle(stats, isSuper, isAdmin);
   if (isSuper) bindFilterBar();
+  root.querySelector("#dash-pdf")?.addEventListener("click", () => openDashboardExport(root, isSuper));
 }
 
 /* ---------- GitHub repo activity (hidden unless a project has a linked repo) ---------- */
@@ -298,6 +303,50 @@ async function loadRepoActivity(root) {
       <span class="act-when">${esc(e.author || "")} &middot; ${fmtDate(e.updatedAt)}</span>
     </li>`).join("");
   grid.classList.remove("hidden");
+}
+
+/* ---------- PDF export ---------- */
+
+// One section per chosen project (or one for "All"). Each is the dashboard rendered with
+// those filters, copied as a snapshot; the page is then put back to what the user had.
+function openDashboardExport(root, isSuper) {
+  const opts = filterOptions || { projects: [], users: [] };
+  const fields = [{
+    key: "projects", kind: "multi", label: tl("pdf.projects"),
+    options: opts.projects.map((p) => ({ value: p.id, label: `${p.prefix} - ${p.name}` })),
+  }];
+  if (isSuper) {
+    fields.push(
+      { key: "assigneeId", kind: "single", label: tl("pdf.assignee"), value: filters.assigneeId, options: opts.users.map((u) => ({ value: u.id, label: u.name })) },
+      { key: "status", kind: "single", label: tl("pdf.status"), value: filters.status, options: STATUSES.map((v) => ({ value: v, label: STATUS_LABELS[v] })) },
+      { key: "priority", kind: "single", label: tl("pdf.priority"), value: filters.priority, options: PRIORITIES.map((v) => ({ value: v, label: PRIORITY_LABELS[v] })) },
+      { key: "type", kind: "single", label: tl("pdf.type"), value: filters.type, options: TASK_TYPES.map((v) => ({ value: v, label: TYPE_LABELS[v] })) },
+      { key: "days", kind: "single", noAll: true, label: tl("pdf.range"), value: String(filters.days), options: [7, 14, 30, 60, 90].map((n) => ({ value: String(n), label: tl("dash.f.days", { count: n }) })) },
+    );
+  }
+  openExportDialog({
+    title: tl("pdf.title"),
+    fields,
+    onExport: async (v) => {
+      const variants = v.projects ?? [""];
+      const base = isSuper
+        ? { assigneeId: v.assigneeId, status: v.status, priority: v.priority, type: v.type, days: Number(v.days) || 14 }
+        : {};
+      const sections = [];
+      try {
+        await withoutAnimation(async () => {
+          for (const projectId of variants) {
+            await renderDashboard(root, { ...base, projectId, sprintId: "" });
+            const p = opts.projects.find((x) => x.id === projectId);
+            sections.push({ title: p ? `${p.prefix} - ${p.name}` : tl("pdf.allProjects"), html: snapshotPage(root) });
+          }
+        });
+      } finally {
+        await renderDashboard(root);
+      }
+      await printSections(tl("pdf.doc.dashboard"), sections, v.paper);
+    },
+  });
 }
 
 /* ---------- Filter bar ---------- */
