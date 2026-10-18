@@ -2961,7 +2961,11 @@ app.get("/api/projects/:id/export", (c) =>
         "Created", "Updated", "Branch", "Comments", "Linked commits/PRs", "Description",
       ];
       const lines = [header.map(csvCell).join(",")];
+      // ?ids=GNR-1,GNR-2 limits the CSV to those tickets (the board's filtered view)
+      const only = (c.req.query("ids") || "").split(",").map((x) => x.trim()).filter(Boolean);
+      const wanted = only.length ? new Set(only) : null;
       for (const t of projectTasks) {
+        if (wanted && !wanted.has(t.ticketId)) continue;
         const sp = t.sprintId ? sprintById.get(t.sprintId) : undefined;
         const links = (linksBy.get(t.id) ?? []).map((l) => (l.kind === "PR" ? `PR #${l.ref}` : l.ref.slice(0, 7))).join("; ");
         lines.push([
