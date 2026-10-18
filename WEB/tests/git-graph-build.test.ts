@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { labelBranches, orderCommits, pickBranches } from "../src/lib/git-graph-build.ts";
+import { collectPages, labelBranches, orderCommits, pickBranches } from "../src/lib/git-graph-build.ts";
 
 const c = (sha: string, message: string, ...parents: string[]) => ({ sha, parents, message, branch: null as string | null });
 
@@ -62,5 +62,19 @@ describe("orderCommits", () => {
     const list = [c("a", "a"), c("b", "b"), c("d", "d")];
     const date: Record<string, number> = { a: 1, b: 3, d: 2 };
     assert.deepEqual(orderCommits(list, (x) => date[x.sha]).map((x) => x.sha), ["b", "d", "a"]);
+  });
+});
+
+describe("collectPages", () => {
+  const pages = (sizes: number[]) => async (page: number) => (page <= sizes.length ? Array.from({ length: sizes[page - 1] }, (_, i) => `${page}-${i}`) : []);
+  it("reads every page until a short one (127 branches = 100 + 27)", async () => {
+    const rows = await collectPages(pages([100, 27]), 100, 5);
+    assert.equal(rows.length, 127);
+    assert.ok(rows.includes("2-26"));
+  });
+  it("stops after maxPages and when a page fails", async () => {
+    assert.equal((await collectPages(pages([100, 100, 100, 100]), 100, 2)).length, 200);
+    assert.equal((await collectPages(async (p) => (p === 1 ? ["a", "b"] : null), 2, 5)).length, 2);
+    assert.equal((await collectPages(async (p) => (p === 1 ? new Array(2).fill("x") : null), 2, 5)).length, 2);
   });
 });

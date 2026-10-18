@@ -6,7 +6,7 @@ import { isStatusMailEnabled, notifyStatusChanged } from "./notify";
 import { publish } from "./realtime";
 import type { Status } from "./status";
 import { ApiError } from "./http";
-import { labelBranches, orderCommits, pickBranches } from "./git-graph-build";
+import { collectPages, labelBranches, orderCommits, pickBranches } from "./git-graph-build";
 
 // ---------- Pure helpers ----------
 
@@ -294,11 +294,26 @@ export async function fetchCommitGraph(env: Env, repo: string): Promise<CommitGr
   if (!info.ok) throw new ApiError(502, `GitHub error (${info.status}) reading the repository`);
   const defaultBranch = ((await info.json()) as { default_branch: string }).default_branch;
 
-  const br = await gh(`/repos/${repo}/branches?per_page=100`, token);
-  if (!br.ok) throw new ApiError(502, `GitHub error (${br.status}) listing branches`);
-  const all = ((await br.json()) as { name: string; commit: { sha: string } }[]).map((b) => ({
-    name: b.name, sha: b.commit.sha, isDefault: b.name === defaultBranch,
-  }));
+  // GitHub lists branches alphabetically, 100 per page — read every page (up to
+  // 500 branches) or branches late in the alphabet (e.g. `main`) go missing.
+  const rawBranches = await collectPages<{ name: string; commit: { sha: string } }>(
+    async (page) => {
+      const r = await gh(`/repos/${repo}/branches?per_page=100&page=${page}`, token);
+      if (!r.ok) {
+        if (page === 1) throw new ApiError(502, `GitHub error (${r.status}) listing branches`);
+        return null;
+      }
+      return (await r.json()) as { name: string; commit: { sha: string } }[];
+    },
+    100,
+    5
+  );
+  const all = rawBranches.map((b) => ({ name: b.name, sha: b.commit.sha, isDefault: b.name === defaultBranch }));
+  // Never lose the default branch, even in a repo with more branches than we list.
+  if (!all.some((b) => b.isDefault)) {
+    const d = await gh(`/repos/${repo}/branches/${encodeURIComponent(defaultBranch)}`, token);
+    if (d.ok) all.push({ name: defaultBranch, sha: ((await d.json()) as { commit: { sha: string } }).commit.sha, isDefault: true });
+  }
 
   // Recent PRs (open and finished). Optional: a failure here must not hide the commits.
   const pr = await gh(`/repos/${repo}/pulls?state=all&sort=updated&direction=desc&per_page=30`, token);
