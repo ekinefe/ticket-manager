@@ -6,6 +6,7 @@ import { isStatusMailEnabled, notifyStatusChanged } from "./notify";
 import { publish } from "./realtime";
 import type { Status } from "./status";
 import { ApiError } from "./http";
+import { labelBranches, orderCommits, pickBranches } from "./git-graph-build";
 
 // ---------- Pure helpers ----------
 
@@ -268,7 +269,7 @@ export interface CommitGraph {
   pulls: GraphPull[];
 }
 
-const MAX_BRANCHES = 8;
+const MAX_BRANCHES = 10;
 const COMMITS_PER_BRANCH = 40;
 const GRAPH_TTL_MS = 60_000;
 const graphCache = new Map<string, { at: number; data: CommitGraph }>();
@@ -291,15 +292,23 @@ export async function fetchCommitGraph(env: Env, repo: string): Promise<CommitGr
   if (!info.ok) throw new ApiError(502, `GitHub error (${info.status}) reading the repository`);
   const defaultBranch = ((await info.json()) as { default_branch: string }).default_branch;
 
-  const br = await gh(`/repos/${repo}/branches?per_page=30`, token);
+  const br = await gh(`/repos/${repo}/branches?per_page=100`, token);
   if (!br.ok) throw new ApiError(502, `GitHub error (${br.status}) listing branches`);
   const all = ((await br.json()) as { name: string; commit: { sha: string } }[]).map((b) => ({
     name: b.name, sha: b.commit.sha, isDefault: b.name === defaultBranch,
   }));
-  all.sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
-  const branches = all.slice(0, MAX_BRANCHES);
+
+  // Recent PRs (open and finished). Optional: a failure here must not hide the commits.
+  const pr = await gh(`/repos/${repo}/pulls?state=all&sort=updated&direction=desc&per_page=30`, token);
+  const rawPulls: any[] = pr.ok ? ((await pr.json()) as any[]) : [];
+  const branches = pickBranches(
+    all,
+    rawPulls.map((p) => ({ base: p.base?.ref ?? "", head: p.head?.ref ?? "", state: p.draft ? "draft" : p.state })),
+    MAX_BRANCHES
+  );
 
   const bySha = new Map<string, GraphCommit>();
+  const committerDate = new Map<string, number>();
   const lists = await Promise.all(
     branches.map(async (b) => {
       const r = await gh(`/repos/${repo}/commits?sha=${encodeURIComponent(b.name)}&per_page=${COMMITS_PER_BRANCH}`, token);
@@ -318,24 +327,16 @@ export async function fetchCommitGraph(env: Env, repo: string): Promise<CommitGr
         url: c.html_url,
         branch: null,
       });
+      committerDate.set(c.sha, Date.parse(c.commit?.committer?.date) || 0);
     }
   }
-  // Label each commit with the branch it was made on: walk every branch's
-  // first-parent chain from its tip (default branch first). A commit merged in
-  // from `dev` is not on `main`'s first-parent chain, so it stays labelled `dev`.
-  for (const b of branches) {
-    let cur = bySha.get(b.sha);
-    while (cur && cur.branch === null) {
-      cur.branch = b.name;
-      cur = cur.parents[0] ? bySha.get(cur.parents[0]) : undefined;
-    }
-  }
-  const commits = [...bySha.values()].sort((a, b) => b.date - a.date);
+  // Order parents after children (by committer date among independent commits),
+  // then name every commit's branch — including branches deleted after merging.
+  const commits = orderCommits([...bySha.values()], (c) => committerDate.get(c.sha) ?? c.date);
+  labelBranches(commits, branches, new Map(rawPulls.filter((p) => p.head?.ref).map((p) => [p.number as number, p.head.ref as string])));
 
-  // Recent PRs (open and finished). Optional: a failure here must not hide the commits.
-  const pr = await gh(`/repos/${repo}/pulls?state=all&sort=updated&direction=desc&per_page=30`, token);
   const pulls: GraphPull[] = pr.ok
-    ? ((await pr.json()) as any[]).map((p) => ({
+    ? rawPulls.map((p) => ({
         number: p.number,
         title: String(p.title || "").slice(0, 200),
         url: p.html_url,
