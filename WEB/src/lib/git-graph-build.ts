@@ -110,3 +110,22 @@ export function orderCommits<T extends { sha: string; parents: string[] }>(
   }
   return out;
 }
+
+/**
+ * Collects a paginated list (pages of `perPage`), stopping at the first short
+ * page or after `maxPages`. `fetchPage` returns null to stop early.
+ */
+export async function collectPages<T>(
+  fetchPage: (page: number) => Promise<T[] | null>,
+  perPage: number,
+  maxPages: number
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const rows = await fetchPage(page);
+    if (!rows) break;
+    out.push(...rows);
+    if (rows.length < perPage) break;
+  }
+  return out;
+}
