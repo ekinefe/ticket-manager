@@ -271,6 +271,8 @@ export interface CommitGraph {
 
 const MAX_BRANCHES = 10;
 const COMMITS_PER_BRANCH = 40;
+// The default branch carries every merged PR (its own commits + the merge), so read more of it.
+const COMMITS_DEFAULT_BRANCH = 100;
 const GRAPH_TTL_MS = 60_000;
 const graphCache = new Map<string, { at: number; data: CommitGraph }>();
 
@@ -311,7 +313,8 @@ export async function fetchCommitGraph(env: Env, repo: string): Promise<CommitGr
   const committerDate = new Map<string, number>();
   const lists = await Promise.all(
     branches.map(async (b) => {
-      const r = await gh(`/repos/${repo}/commits?sha=${encodeURIComponent(b.name)}&per_page=${COMMITS_PER_BRANCH}`, token);
+      const per = b.isDefault ? COMMITS_DEFAULT_BRANCH : COMMITS_PER_BRANCH;
+      const r = await gh(`/repos/${repo}/commits?sha=${encodeURIComponent(b.name)}&per_page=${per}`, token);
       return r.ok ? ((await r.json()) as any[]) : [];
     })
   );

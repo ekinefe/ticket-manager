@@ -16,5 +16,5 @@ export default {
   "git.merged": "Birleştirildi",
   "git.closed": "Kapatıldı",
   "git.noMessage": "(mesaj yok)",
-  "git.footnote": "En fazla 8 dalın her birinde son 40 commit (önce varsayılan dal) ve son 30 PR. Boş noktalar birleştirme commitleridir; baklava şekilleri PR olaylarıdır (yeşil açıldı, mor birleştirildi, kırmızı kapatıldı).",
+  "git.footnote": "Varsayılan branch'ten son 100, diğer en fazla 9 branch'in her birinden son 40 commit (son PR'ların birleştiği branch'ler önce gelir) ve son 30 PR. Boş noktalar birleştirme commitleridir; baklava şekilleri PR olaylarıdır (yeşil açıldı, mor birleştirildi, kırmızı kapatıldı).",
 };
