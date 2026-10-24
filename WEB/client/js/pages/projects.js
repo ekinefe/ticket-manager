@@ -2,8 +2,9 @@ import { api } from "../api.js";
 import { loadProjects, navigate, state } from "../main.js";
 import { esc, roleChip, statusPill, STATUSES, toast, openModal } from "../ui.js";
 import { t } from "../i18n.js";
+import { openProjectsExport, openProjectsImport } from "./projects-transfer.js";
 
-const PROMPT_TEMPLATE = `You are a project planning assistant. Read the project description below carefully and break it into sprints and actionable tickets.
+export const PROMPT_TEMPLATE = `You are a project planning assistant. Read the project description below carefully and break it into sprints and actionable tickets.
 
 Output ONLY valid JSON — no markdown, no explanation, no code fences.
 
@@ -87,6 +88,7 @@ export async function renderProjects(root) {
         <h1>${t("projects.title")}</h1>
         <span class="spacer" style="flex:1"></span>
         ${canImport ? `<button class="btn sm ghost" id="template-btn">${t("projects.aiPrompt")}</button>` : ""}
+        ${canImport && projects.length ? `<button class="btn sm ghost" id="export-btn">${t("pt.export")}</button>` : ""}
         ${canImport ? `<button class="btn sm ghost" id="import-btn">${t("projects.importJson")}</button>` : ""}
         ${isSuper || state.user.role === "ADMIN" ? `<a class="btn sm" href="/admin/projects" data-nav>${t("projects.new")}</a>` : ""}
         <input type="file" id="import-file" accept=".json" style="display:none" />
@@ -124,27 +126,27 @@ export async function renderProjects(root) {
       });
     });
 
+    document.getElementById("export-btn")?.addEventListener("click", () => openProjectsExport(projects, PROMPT_TEMPLATE));
+
     const importBtn = document.getElementById("import-btn");
     const fileInput = document.getElementById("import-file");
     importBtn.addEventListener("click", () => fileInput.click());
     fileInput.addEventListener("change", async () => {
       const file = fileInput.files?.[0];
+      fileInput.value = "";
       if (!file) return;
+      let data;
       try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-        importBtn.disabled = true;
-        importBtn.textContent = t("projects.importing");
-        const res = await api.post("/projects/import", data);
-        toast(t("projects.imported", { tickets: res.tasksCreated, sprints: res.sprintsCreated }));
-        navigate(`/projects/${res.projectId}`);
-      } catch (err) {
-        toast(err.message || t("projects.importFailed"), "error");
-      } finally {
-        importBtn.disabled = false;
-        importBtn.textContent = t("projects.importJson");
-        fileInput.value = "";
+        data = JSON.parse(await file.text());
+      } catch {
+        toast(t("projects.importFailed"), "error");
+        return;
       }
+      // Choose which projects to create (and fix clashing prefixes) before anything is written.
+      openProjectsImport(data, projects, async (projectId) => {
+        if (projectId) navigate(`/projects/${projectId}`);
+        else await renderProjects(root);
+      });
     });
   }
 }

@@ -3193,6 +3193,8 @@ app.post("/api/projects/import", (c) =>
         priority?: string;
         sprint?: number | null;
         assigneeId?: string;
+        labels?: string[];
+        dueDate?: string | null;
       }[];
     }>(c);
 
@@ -3202,7 +3204,13 @@ app.post("/api/projects/import", (c) =>
     if (!prefix || !/^[A-Z0-9]{2,5}$/.test(prefix)) {
       throw new ApiError(400, "Prefix must be 2-5 uppercase letters/digits");
     }
-    if (!body.sprints?.length) throw new ApiError(400, "At least one sprint is required");
+    if (!body.sprints?.length && !body.tasks?.length) throw new ApiError(400, "At least one sprint or ticket is required");
+    const sprintList = body.sprints ?? [];
+
+    const [taken] = await env.DB.select({ id: projects.id }).from(projects).where(eq(projects.prefix, prefix));
+    if (taken) throw new ApiError(409, `The prefix ${prefix} is already used by another project`);
+    // Exports carry user ids from the instance they came from; keep only the ones that exist here.
+    const knownUsers = new Set((await env.DB.select({ id: user.id }).from(user)).map((r) => r.id));
 
     const projectId = crypto.randomUUID();
     const now = Date.now();
@@ -3229,8 +3237,8 @@ app.post("/api/projects/import", (c) =>
       role: "ADMIN",
     }).run();
 
-    for (let i = 0; i < body.sprints!.length; i++) {
-      const s = body.sprints![i];
+    for (let i = 0; i < sprintList.length; i++) {
+      const s = sprintList[i];
       const sprintIdStr = `${prefix}-S${i + 1}`;
       const sprintUuid = crypto.randomUUID();
       await env.DB.insert(sprints).values({
@@ -3259,6 +3267,10 @@ app.post("/api/projects/import", (c) =>
         sprintUuid = createdSprints[t.sprint].id;
       }
 
+      // Imported files may carry odd labels; drop them rather than fail the whole import.
+      let importLabels: string[] = [];
+      try { importLabels = t.labels === undefined ? [] : normalizeLabels(t.labels); } catch { /* ignore */ }
+
       const taskUuid = crypto.randomUUID();
       await env.DB.insert(tasks).values({
         id: taskUuid,
@@ -3269,9 +3281,11 @@ app.post("/api/projects/import", (c) =>
         status,
         type: type as "TASK" | "BUG",
         priority: priority as "LOW" | "MEDIUM" | "HIGH" | "URGENT",
-        assigneeId: t.assigneeId || null,
+        assigneeId: t.assigneeId && knownUsers.has(t.assigneeId) ? t.assigneeId : null,
         sprintId: sprintUuid,
         createdBy: u.id,
+        labels: importLabels.length ? JSON.stringify(importLabels) : null,
+        dueDate: t.dueDate && isValidDueDate(t.dueDate) ? t.dueDate : null,
         position: ticketSeq,
         createdAt: now,
         updatedAt: now,
