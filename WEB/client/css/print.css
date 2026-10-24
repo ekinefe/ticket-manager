@@ -50,3 +50,10 @@
 #print-root .dash-panel .panel-head { background: var(--accent-soft); }
 #print-root .dash-panel .panel-head h3 { color: var(--accent-dark); }
 #print-root .label-chip { background: var(--accent-soft); color: var(--accent-dark); border-radius: 6px; padding: 1px 6px; }
+
+/* Projects export / import dialogs */
+.pt-list { max-height: 240px; overflow: auto; flex-direction: column; gap: 6px; }
+.pt-include { flex-direction: column; gap: 6px; }
+.pt-table .pt-prefix { width: 80px; text-transform: uppercase; }
+.pt-bad { color: var(--danger); font-size: 12px; }
+.pt-ok { color: var(--ok); font-size: 12px; }
