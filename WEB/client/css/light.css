@@ -1,0 +1,7 @@
+/* Light-theme fixes. Tokens that only existed in the dark :root fell through to dark values. */
+[data-theme="light"] {
+  --surface-raised: #f4f4f6;
+}
+
+/* The ticket id in list tables is a cell, not a chip: don't paint the whole cell. */
+td.ticket-id { background: transparent; }
