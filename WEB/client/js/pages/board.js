@@ -4,7 +4,7 @@ import {
   STATUSES, getStatusColor, STATUS_LABELS, canTransition,
   esc, avatarHtml, statusPill, openModal, toast, fmtDate,
   sanitizeDesc, descToEditorHtml, isEmptyDesc,
-  TASK_TYPES, TYPE_LABELS, PRIORITIES, PRIORITY_LABELS, priorityPill, branchName, bulkDeleteTickets,
+  TASK_TYPES, TYPE_LABELS, PRIORITIES, PRIORITY_LABELS, priorityPill, branchName, bulkDeleteTickets, sortTickets,
 } from "../ui.js";
 import { t as tl, labels } from "../i18n.js";
 import { openSyncImport } from "./sync-import.js";
@@ -24,6 +24,9 @@ let boardStream = null;
 let refreshTimer = null;
 let selectedIds = new Set();
 let viewMode = localStorage.getItem("tm-ticket-view") || "board";
+// sort "priority": urgent first, then oldest; "manual": drag order. group: a lane per sprint, or every ticket together.
+let sortMode = localStorage.getItem("tm-ticket-sort") === "manual" ? "manual" : "priority";
+let groupMode = localStorage.getItem("tm-ticket-group") === "all" ? "all" : "sprint";
 
 // Live updates: one EventSource per board; closed on navigation.
 function openBoardStream(projectId) {
@@ -320,6 +323,14 @@ function drawShell(root) {
         <button class="btn sm ${viewMode === "board" ? "" : "ghost"}" id="view-board-btn" title="${tl("bd.boardView")}">${tl("bd.board")}</button>
         <button class="btn sm ${viewMode === "list" ? "" : "ghost"}" id="view-list-btn" title="${tl("bd.listView")}">${tl("bd.list")}</button>
       </div>
+      <select id="group-mode" aria-label="${tl("bd.group")}" title="${tl("bd.group")}">
+        <option value="sprint"${groupMode === "sprint" ? " selected" : ""}>${tl("bd.groupSprint")}</option>
+        <option value="all"${groupMode === "all" ? " selected" : ""}>${tl("bd.groupAll")}</option>
+      </select>
+      <select id="sort-mode" aria-label="${tl("bd.sort")}" title="${tl("bd.sort")}">
+        <option value="priority"${sortMode === "priority" ? " selected" : ""}>${tl("bd.sortPriority")}</option>
+        <option value="manual"${sortMode === "manual" ? " selected" : ""}>${tl("bd.sortManual")}</option>
+      </select>
       <div class="btn-group">
         ${myRole === "ADMIN" ? `<button class="btn sm ghost" id="sync-btn" title="${tl("sync.hint")}">${tl("sync.button")}</button>` : ""}
         <button class="btn sm ghost" id="export-btn">${tl("bd.exportJson")}</button>
@@ -331,8 +342,7 @@ function drawShell(root) {
     ${filterRowHtml(filterDefs(), filterSel)}
     <div class="board-scroll">
       <div class="board">
-        ${project.sprints.map((s) => laneHtml(s)).join("")}
-        ${backlogLaneHtml()}
+        ${groupMode === "all" ? allLaneHtml() : project.sprints.map((s) => laneHtml(s)).join("") + backlogLaneHtml()}
       </div>
     </div>
     <div class="bulk-bar hidden" id="bulk-bar"></div>`;
@@ -340,6 +350,16 @@ function drawShell(root) {
   bindTabs();
   document.getElementById("view-board-btn").addEventListener("click", () => setViewMode(root, "board"));
   document.getElementById("view-list-btn").addEventListener("click", () => setViewMode(root, "list"));
+  document.getElementById("group-mode").addEventListener("change", (e) => {
+    groupMode = e.target.value;
+    localStorage.setItem("tm-ticket-group", groupMode);
+    drawShell(root);
+  });
+  document.getElementById("sort-mode").addEventListener("change", (e) => {
+    sortMode = e.target.value;
+    localStorage.setItem("tm-ticket-sort", sortMode);
+    refreshColumns();
+  });
   document.getElementById("new-task-btn").addEventListener("click", () => taskModal(null));
   document.getElementById("export-btn").addEventListener("click", async () => {
     try {
@@ -394,7 +414,7 @@ function drawShell(root) {
 
   // "+ Create" inside each lane column
   root.querySelectorAll(".col-add").forEach((btn) =>
-    btn.addEventListener("click", () => taskModal(null, btn.dataset.add, btn.dataset.lane || ""))
+    btn.addEventListener("click", () => taskModal(null, btn.dataset.add, btn.dataset.lane === "all" ? "" : btn.dataset.lane || ""))
   );
 
   bindDragAndDrop();
@@ -476,6 +496,20 @@ function laneHtml(sprint) {
         <span class="lane-count">${workItems(tasks.filter((t) => t.sprintId === sprint.id).length)}</span>
       </div>
       ${collapsed ? "" : laneBodyHtml(sprint.id)}
+    </section>`;
+}
+
+function allLaneHtml() {
+  const collapsed = collapsedLanes.has("all");
+  return `
+    <section class="sprint-lane${collapsed ? " collapsed" : ""}" data-lane="all">
+      <div class="sprint-lane-head" data-toggle="all">
+        <input type="checkbox" class="select-group lane-select" data-lane="all" title="${tl("bd.selectLane")}" aria-label="${tl("bd.selectLane")}" />
+        <span class="lane-arrow">${collapsed ? "\u25B6" : "\u25BC"}</span>
+        <span class="lane-name">${tl("bd.allTickets")}</span>
+        <span class="lane-count">${workItems(tasks.length)}</span>
+      </div>
+      ${collapsed ? "" : laneBodyHtml("all")}
     </section>`;
 }
 
@@ -675,7 +709,7 @@ function matchesFilters(t) {
 // A sprint filter also hides the swim lanes that were not picked.
 function applyLaneFilter() {
   document.querySelectorAll(".sprint-lane[data-lane]").forEach((lane) => {
-    lane.classList.toggle("hidden", filterSel.sprint.size > 0 && !filterSel.sprint.has(lane.dataset.lane));
+    lane.classList.toggle("hidden", lane.dataset.lane !== "all" && filterSel.sprint.size > 0 && !filterSel.sprint.has(lane.dataset.lane));
   });
 }
 
@@ -692,20 +726,20 @@ function openBoardPdf() {
 }
 
 function visibleTasks(status, laneId) {
-  return tasks
+  return sortTickets(tasks
     .filter((t) => t.status === status)
     .filter((t) => {
+      if (laneId === "all") return true;
       if (laneId === "backlog") return !t.sprintId;
       return t.sprintId === laneId;
     })
-    .filter(matchesFilters)
-    .sort((a, b) => a.position - b.position);
+    .filter(matchesFilters), sortMode);
 }
 
 function refreshLaneCounts() {
   document.querySelectorAll(".sprint-lane[data-lane]").forEach((lane) => {
     const id = lane.dataset.lane;
-    const n = tasks.filter((t) => (id === "backlog" ? !t.sprintId : t.sprintId === id)).length;
+    const n = tasks.filter((t) => (id === "all" ? true : id === "backlog" ? !t.sprintId : t.sprintId === id)).length;
     const el = lane.querySelector(".lane-count");
     if (el) el.textContent = workItems(n);
   });
@@ -913,7 +947,8 @@ function bindDragAndDrop() {
       const dragged = tasks.find((t) => t.id === draggedId);
       if (!dragged) return;
 
-      const { beforeTaskId } = insertionIndex(body, e.clientY, draggedId);
+      // sorted by priority, so a drop position means nothing: only status or sprint can change
+      const beforeTaskId = sortMode === "priority" ? undefined : insertionIndex(body, e.clientY, draggedId).beforeTaskId;
       const sameColumn = dragged.status === status;
       if (!sameColumn && !canTransition(dragged.status, status)) {
         toast(tl("bd.illegal", { from: STATUS_LABELS[dragged.status], to: STATUS_LABELS[status] }), "err");
@@ -921,10 +956,10 @@ function bindDragAndDrop() {
       }
 
       // Determine new sprint: moving across lanes changes the sprint assignment.
-      const newSprintId = laneId === "backlog" ? null : laneId;
-      const sprintChanged = dragged.sprintId !== newSprintId;
+      const newSprintId = laneId === "all" ? undefined : laneId === "backlog" ? null : laneId;
+      const sprintChanged = newSprintId !== undefined && dragged.sprintId !== newSprintId;
 
-      if (sameColumn && !sprintChanged && sameColumnOrderUnchanged(dragged, status, beforeTaskId, laneId)) return;
+      if (sameColumn && !sprintChanged && (sortMode === "priority" || sameColumnOrderUnchanged(dragged, status, beforeTaskId, laneId))) return;
 
       await moveTask(dragged, status, beforeTaskId, newSprintId);
     });

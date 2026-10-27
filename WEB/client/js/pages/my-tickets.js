@@ -1,7 +1,7 @@
 import { api } from "../api.js";
 import { navigate } from "../main.js";
 import {
-  esc, priorityPill, branchName, toast, statusPill, bulkDeleteTickets,
+  esc, priorityPill, branchName, toast, statusPill, bulkDeleteTickets, sortTickets,
   STATUSES, getStatusColor, STATUS_LABELS,
   TASK_TYPES, TYPE_LABELS, PRIORITIES, PRIORITY_LABELS,
 } from "../ui.js";
@@ -67,6 +67,8 @@ async function renderTickets(root, mode) {
       }
       groups.get(t.projectId).tasks.push(t);
     }
+    // urgent first, oldest first within a priority
+    for (const g of groups.values()) g.tasks = sortTickets(g.tasks);
     return groups;
   };
   const groups = groupBy(tickets);
