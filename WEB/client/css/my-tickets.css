@@ -45,3 +45,9 @@
 }
 .mt-table .title-cell { max-width: none; font-weight: 500; }
 .mt-table .card-labels { flex-wrap: nowrap; overflow: hidden; }
+
+.mt-add { width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); font-size: 16px; line-height: 1; cursor: pointer; }
+.mt-add:hover { color: var(--accent, #22d3ee); border-color: var(--accent, #22d3ee); }
+.mt-quick { display: flex; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.mt-quick input { flex: 1; }
+.mt-project.closed .mt-quick { display: none; }
