@@ -218,6 +218,7 @@ export default {
   "flt.remove": "Filtreyi kaldır",
   "flt.sprint": "Sprint",
   "flt.assignee": "Kişi",
+  "flt.project": "Proje",
   "flt.status": "Durum",
   "flt.priority": "Öncelik",
   "flt.type": "Tür",

@@ -1,4 +1,5 @@
 export default {
+  "mt.filters": "Filters",
   "mt.newTicket": "New ticket",
   "mt.quickPh": "Ticket title, press Enter",
   "mt.quickAdd": "Add",

@@ -103,13 +103,15 @@ export const TYPE_LABELS = labels("type", ["TASK", "BUG"]);
 export const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 export const PRIORITY_LABELS = labels("priority", ["LOW", "MEDIUM", "HIGH", "URGENT"]);
 // Most urgent first; within one priority the oldest ticket comes first.
-// "manual" keeps the drag-and-drop order (position).
+// "manual" keeps the drag-and-drop order (position). "list" is the same as
+// "priority" but finished (DONE) tickets sink to the bottom.
 export function sortTickets(list, mode = "priority") {
   const rank = (t) => PRIORITIES.indexOf(t.priority);
+  const done = (t) => (mode === "list" && t.status === "DONE" ? 1 : 0);
   return [...list].sort((a, b) =>
     mode === "manual"
       ? (a.position ?? 0) - (b.position ?? 0)
-      : rank(b) - rank(a) || (a.createdAt ?? 0) - (b.createdAt ?? 0) || (a.position ?? 0) - (b.position ?? 0));
+      : done(a) - done(b) || rank(b) - rank(a) || (a.createdAt ?? 0) - (b.createdAt ?? 0) || (a.position ?? 0) - (b.position ?? 0));
 }
 
 export const PRIORITY_COLORS = { LOW: "#555555", MEDIUM: "#00f3ff", HIGH: "#ffb700", URGENT: "#ff3333" };
