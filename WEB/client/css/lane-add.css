@@ -1,2 +1,4 @@
-/* "+" in a sprint lane header (creates a ticket in that sprint) */
-.sprint-lane-head .lane-add { margin-left: auto; flex-shrink: 0; }
+/* "+" in a sprint lane header (creates a ticket in that sprint).
+   Sits right after the work-item count: the lane is wider than the screen
+   (columns scroll sideways), so a right-aligned button would be off-screen. */
+.sprint-lane-head .lane-add { margin-left: 6px; flex-shrink: 0; }
