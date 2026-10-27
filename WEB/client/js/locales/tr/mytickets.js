@@ -11,6 +11,7 @@ export default {
   "mt.list": "Liste",
   "mt.noMatch": "Bu filtreye uyan bilet yok.",
   "mt.noneAssigned": "Sana atanmış bilet yok. Tüm projelerdeki atanmış biletler burada görünür.",
+  "mt.toggle": "Daralt / genişlet",
   "mt.unassigned": "Atanmamış",
   "mt.withoutAssignee": "{count} bilet atanmamış",
   "mt.noUnassigned": "Görüntüleyebildiğin projelerde atanmamış bilet yok.",
