@@ -951,6 +951,23 @@ describe("export / import", () => {
     assert.equal(res.status, 403);
   });
 
+  it("import keeps labels and due dates, drops unknown assignees and refuses a used prefix", async () => {
+    const payload = {
+      project: { name: "Round trip", prefix: "ZQX" },
+      sprints: [{ name: "S" }],
+      tasks: [{ title: "Labelled", sprint: 0, labels: ["api", "ui"], dueDate: "2030-01-31", assigneeId: "no-such-user" }],
+    };
+    const res = await req("/api/projects/import", { method: "POST", cookie: superCookie, body: payload });
+    assert.equal(res.status, 201);
+    const { projectId } = await res.json();
+    const list = await (await req(`/api/projects/${projectId}/tasks`, { cookie: superCookie })).json();
+    assert.deepEqual(list[0].labels, ["api", "ui"]);
+    assert.equal(list[0].dueDate, "2030-01-31");
+    assert.equal(list[0].assigneeId, null);
+    const again = await req("/api/projects/import", { method: "POST", cookie: superCookie, body: payload });
+    assert.equal(again.status, 409);
+  });
+
   it("imports a new project from JSON", async () => {
     const payload = {
       project: { name: "Imported Project", prefix: "IMP" },
