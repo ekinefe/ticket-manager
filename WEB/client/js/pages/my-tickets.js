@@ -6,12 +6,34 @@ import {
   TASK_TYPES, TYPE_LABELS, PRIORITIES, PRIORITY_LABELS,
 } from "../ui.js";
 import { t as tl } from "../i18n.js";
+import { filterRowHtml, bindFilterRow } from "../filters.js";
 import { openExportDialog, printSections, ticketTablesHtml, exportTicketsPdf, pdfButton } from "../export-pdf.js";
 
 let selectedIds = new Set();
 let viewMode = localStorage.getItem("tm-ticket-view") || "board";
 
 let allAssignee = "";
+// Multi-select filters (empty set = All); applied locally to what the page loaded.
+const FILTER_KEYS = ["project", "status", "priority", "type", "label"];
+const mtSel = Object.fromEntries(FILTER_KEYS.map((k) => [k, new Set()]));
+const passesFilters = (t) =>
+  (!mtSel.project.size || mtSel.project.has(t.projectId)) &&
+  (!mtSel.status.size || mtSel.status.has(t.status)) &&
+  (!mtSel.priority.size || mtSel.priority.has(t.priority)) &&
+  (!mtSel.type.size || mtSel.type.has(t.type)) &&
+  (!mtSel.label.size || (t.labels ?? []).some((l) => mtSel.label.has(l)));
+function filterDefs(list) {
+  const opt = (value, label) => ({ value, label });
+  const projects = [...new Map(list.map((t) => [t.projectId, `${t.projectPrefix} - ${t.projectName}`])).entries()];
+  const labelSet = [...new Set(list.flatMap((t) => t.labels ?? []))].sort();
+  return [
+    { key: "project", label: tl("flt.project"), options: projects.map(([v, l]) => opt(v, l)) },
+    { key: "status", label: tl("flt.status"), options: STATUSES.map((v) => opt(v, STATUS_LABELS[v])) },
+    { key: "priority", label: tl("flt.priority"), options: PRIORITIES.map((v) => opt(v, PRIORITY_LABELS[v])) },
+    { key: "type", label: tl("flt.type"), options: TASK_TYPES.map((v) => opt(v, TYPE_LABELS[v])) },
+    ...(labelSet.length ? [{ key: "label", label: tl("flt.label"), options: labelSet.map((v) => opt(v, v)) }] : []),
+  ];
+}
 let lastLists = { mode: "mine", tickets: [], unassigned: [] };
 
 export function renderMyTickets(root) { return renderTickets(root, "mine"); }
@@ -68,29 +90,16 @@ async function renderTickets(root, mode) {
       groups.get(t.projectId).tasks.push(t);
     }
     // urgent first, oldest first within a priority
-    for (const g of groups.values()) g.tasks = sortTickets(g.tasks);
+    for (const g of groups.values()) g.tasks = sortTickets(g.tasks, viewMode === "list" ? "list" : "priority");
     return groups;
   };
-  const groups = groupBy(tickets);
-  const unassignedGroups = groupBy(unassigned);
+  const defs = filterDefs([...tickets, ...unassigned]);
+  for (const k of FILTER_KEYS) if (!defs.some((d) => d.key === k)) mtSel[k].clear();
 
-  root.innerHTML = `
-    <div class="page">
-      <div class="page-head">
-        <h1>${tl(isAll ? "mt.all" : isUn ? "mt.unassigned" : "mt.mine")}</h1>
-        <span class="mt-total">${isUn ? tl("mt.withoutAssignee", { count: unassigned.length }) : isAll ? tl(tickets.length === 1 ? "mt.ticketCount.one" : "mt.ticketCount.many", { count: tickets.length }) : `${tickets.length} ${tl("mt.assignedToYou")}`}</span>
-        ${isAll ? `<select id="all-assignee" aria-label="${tl("mt.filterAssignee")}">
-          <option value="">${tl("mt.allAssignees")}</option>
-          <option value="none"${allAssignee === "none" ? " selected" : ""}>${tl("mt.unassigned")}</option>
-          ${users.map((x) => `<option value="${esc(x.id)}"${allAssignee === x.id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}
-        </select>` : ""}
-        <span style="margin-left:auto">${pdfButton("mt-pdf")}</span>
-        <div class="btn-group view-toggle" role="group" aria-label="${tl("mt.view")}">
-          <button class="btn sm ${viewMode === "board" ? "" : "ghost"}" id="view-board-btn">${tl("mt.board")}</button>
-          <button class="btn sm ${viewMode === "list" ? "" : "ghost"}" id="view-list-btn">${tl("mt.list")}</button>
-        </div>
-      </div>
-      ${isUn
+  const sectionsHtml = () => {
+    const groups = groupBy(tickets.filter(passesFilters));
+    const unassignedGroups = groupBy(unassigned.filter(passesFilters));
+    return `${isUn
         ? (unassignedGroups.size === 0
           ? `<div class="empty-note">${tl("mt.noUnassigned")}</div>`
           : [...unassignedGroups.entries()].map(([projectId, g]) => projectSection(projectId, g)).join(""))
@@ -104,7 +113,29 @@ async function renderTickets(root, mode) {
         </div>
         ${unassignedGroups.size === 0
           ? `<div class="empty-note">${tl("mt.noUnassigned")}</div>`
-          : [...unassignedGroups.entries()].map(([projectId, g]) => projectSection(projectId, g)).join("")}`}
+          : [...unassignedGroups.entries()].map(([projectId, g]) => projectSection(projectId, g)).join("")}`}`;
+  };
+
+  root.innerHTML = `
+    <div class="page">
+      <div class="page-head">
+        <h1>${tl(isAll ? "mt.all" : isUn ? "mt.unassigned" : "mt.mine")}</h1>
+        <span class="mt-total">${isUn ? tl("mt.withoutAssignee", { count: unassigned.length }) : isAll ? tl(tickets.length === 1 ? "mt.ticketCount.one" : "mt.ticketCount.many", { count: tickets.length }) : `${tickets.length} ${tl("mt.assignedToYou")}`}</span>
+        ${isAll ? `<select id="all-assignee" aria-label="${tl("mt.filterAssignee")}">
+          <option value="">${tl("mt.allAssignees")}</option>
+          <option value="none"${allAssignee === "none" ? " selected" : ""}>${tl("mt.unassigned")}</option>
+          ${users.map((x) => `<option value="${esc(x.id)}"${allAssignee === x.id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}
+        </select>` : ""}
+        <span style="margin-left:auto"></span>
+        ${defs.length > 1 ? `<button type="button" class="btn sm ghost" id="mt-filter-toggle" aria-expanded="false">${tl("mt.filters")}<span id="mt-filter-n"></span></button>` : ""}
+        ${pdfButton("mt-pdf")}
+        <div class="btn-group view-toggle" role="group" aria-label="${tl("mt.view")}">
+          <button class="btn sm ${viewMode === "board" ? "" : "ghost"}" id="view-board-btn">${tl("mt.board")}</button>
+          <button class="btn sm ${viewMode === "list" ? "" : "ghost"}" id="view-list-btn">${tl("mt.list")}</button>
+        </div>
+      </div>
+      ${defs.length > 1 ? `<div id="mt-filters" class="hidden">${filterRowHtml(defs, mtSel)}</div>` : ""}
+      <div id="mt-sections">${sectionsHtml()}</div>
       <div class="bulk-bar hidden" id="bulk-bar"></div>
     </div>`;
 
@@ -119,18 +150,42 @@ async function renderTickets(root, mode) {
   root.querySelector("#all-assignee")?.addEventListener("change", (e) => { allAssignee = e.target.value; rerender(); });
 
   root.querySelector("#mt-pdf").addEventListener("click", openListExport);
-  for (const btn of root.querySelectorAll(".mt-toggle")) {
-    btn.addEventListener("click", () => {
-      const sec = btn.closest(".mt-project");
-      const closed = sec.classList.toggle("closed");
-      btn.setAttribute("aria-expanded", String(!closed));
-      closed ? collapsed.add(sec.dataset.key) : collapsed.delete(sec.dataset.key);
-      localStorage.setItem("tm-mt-collapsed", JSON.stringify([...collapsed]));
+  const box = root.querySelector("#mt-sections");
+  const bindSections = () => {
+    for (const btn of box.querySelectorAll(".mt-toggle")) {
+      btn.addEventListener("click", () => {
+        const sec = btn.closest(".mt-project");
+        const closed = sec.classList.toggle("closed");
+        btn.setAttribute("aria-expanded", String(!closed));
+        closed ? collapsed.add(sec.dataset.key) : collapsed.delete(sec.dataset.key);
+        localStorage.setItem("tm-mt-collapsed", JSON.stringify([...collapsed]));
+      });
+    }
+    bindRows(box, rerender);
+    bindColumnDrops(box, rerender);
+    renderBulkBar(root, rerender);
+  };
+  bindSections();
+  if (root.querySelector("#filter-row2")) {
+    const panel = root.querySelector("#mt-filters");
+    const toggle = root.querySelector("#mt-filter-toggle");
+    const sync = () => {
+      const n = FILTER_KEYS.reduce((sum, k) => sum + mtSel[k].size, 0);
+      root.querySelector("#mt-filter-n").textContent = n ? ` (${n})` : "";
+      toggle.classList.toggle("ghost", !n);
+    };
+    toggle.addEventListener("click", () => {
+      const open = panel.classList.toggle("hidden") === false;
+      toggle.setAttribute("aria-expanded", String(open));
+      localStorage.setItem("tm-mt-filters-open", open ? "1" : "0");
     });
+    if (localStorage.getItem("tm-mt-filters-open") === "1" || FILTER_KEYS.some((k) => mtSel[k].size)) {
+      panel.classList.remove("hidden");
+      toggle.setAttribute("aria-expanded", "true");
+    }
+    bindFilterRow(root, defs, mtSel, () => { sync(); box.innerHTML = sectionsHtml(); bindSections(); });
+    sync();
   }
-  bindRows(root, rerender);
-  bindColumnDrops(root, rerender);
-  renderBulkBar(root, rerender);
 }
 
 // Lists are filtered locally from what the page already loaded.

@@ -218,6 +218,7 @@ export default {
   "flt.remove": "Remove filter",
   "flt.sprint": "Sprint",
   "flt.assignee": "Assignee",
+  "flt.project": "Project",
   "flt.status": "Status",
   "flt.priority": "Priority",
   "flt.type": "Type",

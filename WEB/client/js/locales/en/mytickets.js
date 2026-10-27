@@ -1,4 +1,5 @@
 export default {
+  "mt.filters": "Filters",
   "mt.all": "All Tickets",
   "mt.mine": "My Tickets",
   "mt.ticketCount.one": "1 ticket",

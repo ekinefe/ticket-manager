@@ -1,4 +1,5 @@
 export default {
+  "mt.filters": "Filtreler",
   "mt.all": "Tüm Biletler",
   "mt.mine": "Biletlerim",
   "mt.ticketCount.one": "1 bilet",
