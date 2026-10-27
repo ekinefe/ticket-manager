@@ -1,0 +1,2 @@
+/* "+" in a sprint lane header (creates a ticket in that sprint) */
+.sprint-lane-head .lane-add { margin-left: auto; flex-shrink: 0; }

@@ -66,6 +66,7 @@ export default {
   "bd.colAssignee": "Atanan",
   "bd.selectTicket": "Bileti seç",
   "bd.addHere": "Buraya bilet ekle",
+  "bd.addToSprint": "Bu sprinte bilet ekle",
   "bd.due": "Son tarih {date}",
   "bd.selected": "{count} seçili",
   "bd.moveStatus": "Duruma taşı…",
