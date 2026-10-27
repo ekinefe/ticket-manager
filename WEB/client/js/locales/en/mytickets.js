@@ -1,5 +1,8 @@
 export default {
   "mt.filters": "Filters",
+  "mt.newTicket": "New ticket",
+  "mt.quickPh": "Ticket title, press Enter",
+  "mt.quickAdd": "Add",
   "mt.all": "All Tickets",
   "mt.mine": "My Tickets",
   "mt.ticketCount.one": "1 ticket",

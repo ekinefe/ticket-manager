@@ -1,5 +1,8 @@
 export default {
   "mt.filters": "Filtreler",
+  "mt.newTicket": "Yeni bilet",
+  "mt.quickPh": "Bilet başlığı, Enter ile ekle",
+  "mt.quickAdd": "Ekle",
   "mt.all": "Tüm Biletler",
   "mt.mine": "Biletlerim",
   "mt.ticketCount.one": "1 bilet",

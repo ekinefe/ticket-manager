@@ -1,5 +1,5 @@
 import { api } from "../api.js";
-import { navigate } from "../main.js";
+import { navigate, state } from "../main.js";
 import {
   esc, priorityPill, branchName, toast, statusPill, bulkDeleteTickets, sortTickets,
   STATUSES, getStatusColor, STATUS_LABELS,
@@ -51,6 +51,25 @@ async function loadAssignable(list) {
   assignable = [...byId].map(([userId, name]) => ({ userId, name })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// Per-project what the viewer may do here, plus the newest sprint (where quick-added tickets land).
+let projInfo = new Map();
+async function loadProjectInfo(list) {
+  const ids = [...new Set(list.map((t) => t.projectId))];
+  const infos = await Promise.all(ids.map((id) => api.get(`/projects/${encodeURIComponent(id)}`).catch(() => null)));
+  projInfo = new Map();
+  ids.forEach((id, i) => {
+    const p = infos[i];
+    if (!p) return;
+    const perms = p.myPermissions || [];
+    projInfo.set(id, {
+      canCreate: perms.includes("CREATE_TICKET"),
+      canMoveOthers: perms.includes("MOVE_OTHERS_TICKETS"),
+      sprintId: p.sprints?.length ? p.sprints[p.sprints.length - 1].id : null,
+    });
+  });
+}
+const canMove = (t) => !!projInfo.get(t.projectId)?.canMoveOthers || t.assigneeId === state.user?.id;
+
 async function renderTickets(root, mode) {
   const isAll = mode === "all";
   const isUn = mode === "unassigned";
@@ -75,6 +94,8 @@ async function renderTickets(root, mode) {
     root.innerHTML = `<div class="page"><div class="form-error">${esc(err.message)}</div></div>`;
     return;
   }
+
+  await loadProjectInfo([...tickets, ...unassigned]);
 
   const rerender = () => renderTickets(root, mode);
   lastLists = { mode, tickets, unassigned };
@@ -163,6 +184,7 @@ async function renderTickets(root, mode) {
     }
     bindRows(box, rerender);
     bindColumnDrops(box, rerender);
+    bindQuickAdd(box, rerender);
     renderBulkBar(root, rerender);
   };
   bindSections();
@@ -366,9 +388,14 @@ function projectSection(projectId, g) {
         <button type="button" class="mt-toggle" aria-expanded="${!isClosed}" title="${tl("mt.toggle")}"><span class="mt-chev">&#9662;</span></button>
         <span class="prefix-chip">${esc(g.prefix)}</span>
         <h2><a href="/projects/${encodeURIComponent(projectId)}" data-nav>${esc(g.name)}</a></h2>
+        ${projInfo.get(projectId)?.canCreate ? `<button type="button" class="mt-add" title="${tl("mt.newTicket")}" aria-label="${tl("mt.newTicket")}">+</button>` : ""}
         <span class="mt-chips">${counts}</span>
         <span class="mt-count">${tl(g.tasks.length === 1 ? "mt.ticketCount.one" : "mt.ticketCount.many", { count: g.tasks.length })}</span>
       </div>
+      <form class="mt-quick hidden" autocomplete="off">
+        <input type="text" maxlength="200" placeholder="${tl("mt.quickPh")}" aria-label="${tl("mt.newTicket")}" />
+        <button type="submit" class="btn sm">${tl("mt.quickAdd")}</button>
+      </form>
       <div class="mt-body">${viewMode === "list" ? listTableHtml(projectId, g.tasks) : boardHtml(g.tasks)}</div>
     </section>`;
 }
@@ -416,7 +443,7 @@ function listRowHtml(projectId, t) {
 function cardHtml(t) {
   const checked = selectedIds.has(t.id);
   return `
-    <article class="card ticket mt-card${checked ? " selected" : ""}" draggable="true" data-id="${esc(t.id)}" data-project="${esc(t.projectId)}" title="${tl("mt.openInBoard", { project: esc(t.projectName) })}">
+    <article class="card ticket mt-card${checked ? " selected" : ""}" ${canMove(t) ? 'draggable="true" ' : ""}data-id="${esc(t.id)}" data-project="${esc(t.projectId)}" title="${tl("mt.openInBoard", { project: esc(t.projectName) })}">
       <div class="ticket-shape">
       <div class="ticket-body">
         <p class="title">${esc(t.title)}</p>
@@ -430,4 +457,38 @@ function cardHtml(t) {
       </div>
       </div>
     </article>`;
+}
+
+// "+" beside a project opens a one-line form; the ticket is assigned to the viewer, in the newest sprint.
+function bindQuickAdd(root, rerender) {
+  for (const sec of root.querySelectorAll(".mt-project")) {
+    const btn = sec.querySelector(".mt-add");
+    if (!btn) continue;
+    const form = sec.querySelector(".mt-quick");
+    const input = form.querySelector("input");
+    btn.addEventListener("click", () => {
+      form.classList.toggle("hidden");
+      if (!form.classList.contains("hidden")) { sec.classList.remove("closed"); input.focus(); }
+    });
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const title = input.value.trim();
+      if (!title) return;
+      const projectId = sec.dataset.project;
+      const submit = form.querySelector("button");
+      submit.disabled = true;
+      try {
+        const created = await api.post(`/projects/${encodeURIComponent(projectId)}/tasks`, {
+          title,
+          assigneeId: state.user?.id,
+          sprintId: projInfo.get(projectId)?.sprintId ?? null,
+        });
+        toast(tl("bd.ticketCreated", { id: created.ticketId }), "ok");
+        await rerender();
+      } catch (err) {
+        toast(err.message, "err");
+        submit.disabled = false;
+      }
+    });
+  }
 }
