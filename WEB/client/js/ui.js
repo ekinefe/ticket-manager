@@ -102,6 +102,16 @@ export const TYPE_LABELS = labels("type", ["TASK", "BUG"]);
 
 export const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 export const PRIORITY_LABELS = labels("priority", ["LOW", "MEDIUM", "HIGH", "URGENT"]);
+// Most urgent first; within one priority the oldest ticket comes first.
+// "manual" keeps the drag-and-drop order (position).
+export function sortTickets(list, mode = "priority") {
+  const rank = (t) => PRIORITIES.indexOf(t.priority);
+  return [...list].sort((a, b) =>
+    mode === "manual"
+      ? (a.position ?? 0) - (b.position ?? 0)
+      : rank(b) - rank(a) || (a.createdAt ?? 0) - (b.createdAt ?? 0) || (a.position ?? 0) - (b.position ?? 0));
+}
+
 export const PRIORITY_COLORS = { LOW: "#555555", MEDIUM: "#00f3ff", HIGH: "#ffb700", URGENT: "#ff3333" };
 
 const PRIORITY_COLORS_LIGHT = { LOW: "#71717a", MEDIUM: "#0090a8", HIGH: "#b8860b", URGENT: "#d32f2f" };
