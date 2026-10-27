@@ -129,6 +129,7 @@ async function renderTickets(root, mode) {
     });
   }
   bindRows(root, rerender);
+  bindColumnDrops(root, rerender);
   renderBulkBar(root, rerender);
 }
 
@@ -167,6 +168,17 @@ function bindRows(root, rerender) {
       if (e.target.closest(".card-select")) return;
       navigate(`/projects/${card.dataset.project}`);
     });
+    if (card.classList.contains("mt-card")) {
+      card.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/plain", card.dataset.id);
+        e.dataTransfer.effectAllowed = "move";
+        requestAnimationFrame(() => card.classList.add("dragging"));
+      });
+      card.addEventListener("dragend", () => {
+        card.classList.remove("dragging");
+        root.querySelectorAll(".mt-col").forEach((c) => c.classList.remove("drop-ok"));
+      });
+    }
     const cb = card.querySelector(".card-select");
     cb.addEventListener("click", (e) => e.stopPropagation());
     cb.addEventListener("change", () => {
@@ -174,6 +186,36 @@ function bindRows(root, rerender) {
       else selectedIds.delete(card.dataset.id);
       card.classList.toggle("selected", cb.checked);
       renderBulkBar(root, rerender);
+    });
+  }
+}
+
+// Drag a card to another status column of the same project to change its status.
+function bindColumnDrops(root, rerender) {
+  for (const col of root.querySelectorAll(".mt-col")) {
+    const projectId = col.closest(".mt-project")?.dataset.project;
+    col.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      col.classList.add("drop-ok");
+    });
+    col.addEventListener("dragleave", (e) => {
+      if (!col.contains(e.relatedTarget)) col.classList.remove("drop-ok");
+    });
+    col.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      col.classList.remove("drop-ok");
+      const id = e.dataTransfer.getData("text/plain");
+      const card = root.querySelector(`.mt-card[data-id="${CSS.escape(id)}"]`);
+      if (!card || card.dataset.project !== projectId) return;
+      if (card.closest(".mt-col") === col) return;
+      try {
+        await api.patch(`/projects/${projectId}/tasks/${id}`, { status: col.dataset.status });
+        toast(tl("bd.movedTo", { id: card.querySelector(".ticket-id")?.textContent || id, where: STATUS_LABELS[col.dataset.status] }), "ok");
+      } catch (err) {
+        toast(err.message, "err");
+      }
+      await rerender();
     });
   }
 }
@@ -264,7 +306,7 @@ function projectSection(projectId, g) {
     .map((c) => `<span class="mt-chip" title="${STATUS_LABELS[c.s]}"><i style="background:${getStatusColor(c.s)}"></i>${c.n}</span>`)
     .join("");
   return `
-    <section class="mt-project${isClosed ? " closed" : ""}" data-key="${esc(key)}">
+    <section class="mt-project${isClosed ? " closed" : ""}" data-key="${esc(key)}" data-project="${esc(projectId)}">
       <div class="mt-head">
         <button type="button" class="mt-toggle" aria-expanded="${!isClosed}" title="${tl("mt.toggle")}"><span class="mt-chev">&#9662;</span></button>
         <span class="prefix-chip">${esc(g.prefix)}</span>
@@ -319,7 +361,7 @@ function listRowHtml(projectId, t) {
 function cardHtml(t) {
   const checked = selectedIds.has(t.id);
   return `
-    <article class="card ticket mt-card${checked ? " selected" : ""}" data-id="${esc(t.id)}" data-project="${esc(t.projectId)}" title="${tl("mt.openInBoard", { project: esc(t.projectName) })}">
+    <article class="card ticket mt-card${checked ? " selected" : ""}" draggable="true" data-id="${esc(t.id)}" data-project="${esc(t.projectId)}" title="${tl("mt.openInBoard", { project: esc(t.projectName) })}">
       <div class="ticket-shape">
       <div class="ticket-body">
         <p class="title">${esc(t.title)}</p>
