@@ -117,6 +117,15 @@ async function renderTickets(root, mode) {
   root.querySelector("#all-assignee")?.addEventListener("change", (e) => { allAssignee = e.target.value; rerender(); });
 
   root.querySelector("#mt-pdf").addEventListener("click", openListExport);
+  for (const btn of root.querySelectorAll(".mt-toggle")) {
+    btn.addEventListener("click", () => {
+      const sec = btn.closest(".mt-project");
+      const closed = sec.classList.toggle("closed");
+      btn.setAttribute("aria-expanded", String(!closed));
+      closed ? collapsed.add(sec.dataset.key) : collapsed.delete(sec.dataset.key);
+      localStorage.setItem("tm-mt-collapsed", JSON.stringify([...collapsed]));
+    });
+  }
   bindRows(root, rerender);
   renderBulkBar(root, rerender);
 }
@@ -242,33 +251,41 @@ function renderBulkBar(root, rerender) {
   });
 }
 
+const collapsed = new Set(JSON.parse(localStorage.getItem("tm-mt-collapsed") || "[]"));
+
 function projectSection(projectId, g) {
+  const key = `${viewMode}:${projectId}:${g.tasks[0]?.assigneeId ?? "none"}`;
+  const isClosed = collapsed.has(key);
+  const counts = STATUSES
+    .map((s) => ({ s, n: g.tasks.filter((t) => t.status === s).length }))
+    .filter((c) => c.n > 0)
+    .map((c) => `<span class="mt-chip" title="${STATUS_LABELS[c.s]}"><i style="background:${getStatusColor(c.s)}"></i>${c.n}</span>`)
+    .join("");
   return `
-    <section class="mt-project">
+    <section class="mt-project${isClosed ? " closed" : ""}" data-key="${esc(key)}">
       <div class="mt-head">
+        <button type="button" class="mt-toggle" aria-expanded="${!isClosed}" title="${tl("mt.toggle")}"><span class="mt-chev">&#9662;</span></button>
         <span class="prefix-chip">${esc(g.prefix)}</span>
         <h2><a href="/projects/${encodeURIComponent(projectId)}" data-nav>${esc(g.name)}</a></h2>
+        <span class="mt-chips">${counts}</span>
         <span class="mt-count">${tl(g.tasks.length === 1 ? "mt.ticketCount.one" : "mt.ticketCount.many", { count: g.tasks.length })}</span>
       </div>
-      ${viewMode === "list" ? listTableHtml(projectId, g.tasks) : boardHtml(g.tasks)}
+      <div class="mt-body">${viewMode === "list" ? listTableHtml(projectId, g.tasks) : boardHtml(g.tasks)}</div>
     </section>`;
 }
 
 function boardHtml(tasks) {
-  const cols = STATUSES
-    .map((s) => ({ status: s, list: tasks.filter((t) => t.status === s) }))
-    .filter((c) => c.list.length > 0);
   return `
     <div class="mt-board">
-      ${cols.map((c) => `
-        <div class="column mt-col" data-status="${c.status}">
+      ${STATUSES.map((status) => ({ status, list: tasks.filter((t) => t.status === status) })).map((c) => `
+        <div class="column mt-col${c.list.length ? "" : " mt-col-empty"}" data-status="${c.status}">
           <header class="col-head">
             <span class="col-dot" style="background:${getStatusColor(c.status)}"></span>
             <span class="col-label">${STATUS_LABELS[c.status]}</span>
             <span class="col-count">${c.list.length}</span>
           </header>
           <div class="col-body">
-            ${c.list.map((t) => cardHtml(t)).join("")}
+            ${c.list.map((t) => cardHtml(t)).join("") || `<div class="mt-none">&mdash;</div>`}
           </div>
         </div>`).join("")}
     </div>`;
@@ -276,7 +293,8 @@ function boardHtml(tasks) {
 
 function listTableHtml(projectId, tasks) {
   return `
-    <table class="data list-table">
+    <table class="data list-table mt-table">
+      <colgroup><col class="c-sel"><col class="c-id"><col><col class="c-labels"><col class="c-status"><col class="c-type"><col class="c-prio"></colgroup>
       <thead><tr><th></th><th>${tl("mt.colTicket")}</th><th>${tl("mt.colTitle")}</th><th>${tl("mt.colLabels")}</th><th>${tl("mt.colStatus")}</th><th>${tl("mt.colType")}</th><th>${tl("mt.colPriority")}</th></tr></thead>
       <tbody>${tasks.map((t) => listRowHtml(projectId, t)).join("")}</tbody>
     </table>`;

@@ -11,6 +11,7 @@ export default {
   "mt.list": "List",
   "mt.noMatch": "No tickets match this filter.",
   "mt.noneAssigned": "No tickets are assigned to you. Assigned tickets from every project will show up here.",
+  "mt.toggle": "Collapse / expand",
   "mt.unassigned": "Unassigned",
   "mt.withoutAssignee": "{count} without an assignee",
   "mt.noUnassigned": "No unassigned tickets in projects you can view.",
