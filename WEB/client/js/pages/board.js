@@ -417,6 +417,11 @@ function drawShell(root) {
     btn.addEventListener("click", () => taskModal(null, btn.dataset.add, btn.dataset.lane === "all" ? "" : btn.dataset.lane || ""))
   );
 
+  // "+" in a sprint header: sprint preselected, status stays the default (To Do)
+  root.querySelectorAll(".lane-add").forEach((btn) =>
+    btn.addEventListener("click", () => taskModal(null, "TODO", btn.dataset.addLane))
+  );
+
   bindDragAndDrop();
   root.querySelectorAll(".select-group").forEach((cb) => {
     cb.addEventListener("click", (e) => e.stopPropagation());
@@ -480,6 +485,10 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function canCreateTicket() {
+  return myRole === "ADMIN" || (project?.myPermissions || []).includes("CREATE_TICKET");
+}
+
 function workItems(n) {
   return n === 1 ? tl("bd.workItem.one") : tl("bd.workItem.many", { count: n });
 }
@@ -494,6 +503,7 @@ function laneHtml(sprint) {
         <span class="ticket-id lane-id">${esc(sprint.sprintId)}</span>
         <span class="lane-name">${esc(sprint.name)}</span>
         <span class="lane-count">${workItems(tasks.filter((t) => t.sprintId === sprint.id).length)}</span>
+        ${canCreateTicket() ? `<button class="col-add lane-add" data-add-lane="${esc(sprint.id)}" title="${tl("bd.addToSprint")}" aria-label="${tl("bd.addToSprint")}">+</button>` : ""}
       </div>
       ${collapsed ? "" : laneBodyHtml(sprint.id)}
     </section>`;
@@ -523,6 +533,7 @@ function backlogLaneHtml() {
         <span class="lane-arrow">${collapsed ? "\u25B6" : "\u25BC"}</span>
         <span class="lane-name">${tl("bd.everythingElse")}</span>
         <span class="lane-count">${workItems(count)}</span>
+        ${canCreateTicket() ? `<button class="col-add lane-add" data-add-lane="" title="${tl("bd.addHere")}" aria-label="${tl("bd.addHere")}">+</button>` : ""}
       </div>
       ${collapsed ? "" : laneBodyHtml("backlog")}
     </section>`;

@@ -66,6 +66,7 @@ export default {
   "bd.colAssignee": "Assignee",
   "bd.selectTicket": "Select ticket",
   "bd.addHere": "Add ticket here",
+  "bd.addToSprint": "Add ticket to this sprint",
   "bd.due": "Due {date}",
   "bd.selected": "{count} selected",
   "bd.moveStatus": "Move to status…",
