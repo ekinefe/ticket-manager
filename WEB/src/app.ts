@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import { createAuth } from "./auth/server";
 import { ApiError } from "./shared/http";
 import { guard, readBody } from "./shared/route";
+import { EMAIL_RE } from "./shared/validate";
 import { registerSprintRoutes, createDefaultSprint, listProjectSprints, nextSprintId } from "./domains/sprints/index";
 import {
   getSessionUser,
@@ -52,6 +53,7 @@ import { clientIp, rateLimit } from "./shared/ratelimit";
 import { renderTemplate, htmlToText } from "./domains/notifications/index";
 import { getTransport } from "./domains/notifications/mail/index";
 import { registerNotificationRoutes } from "./domains/notifications/index";
+import { registerAccountRoutes } from "./domains/accounts/index";
 import { runJob } from "./cron/scheduler";
 import { and, asc, eq, ne, or, sql, gte, inArray, isNull, count, desc } from "drizzle-orm";
 import { githubEvents, githubEventTasks, projects, projectMembers, projectMemberPermissions, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications, accessAudit } from "./db/schema";
@@ -82,8 +84,6 @@ function assertTaskVisible(
   throw new ApiError(404, "Task not found");
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 const TASK_TYPES = ["TASK", "BUG"];
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 // Consecutive title/description autosaves by the same actor within this
@@ -112,83 +112,12 @@ app.use("/api/auth/sign-up/email", async (c, next) => {
 });
 
 // ---------- Password reset (public, before the Better Auth catch-all) ----------
-const passwordResetRequestLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  keyFor: (c) => `pwreq:${clientIp(c)}`,
-});
+registerAccountRoutes(app, env);
 
-app.post("/api/auth/request-password-reset", passwordResetRequestLimiter, (c) =>
-  guard(c, async () => {
-    const body = await readBody<{ email?: string }>(c);
-    const email = body.email?.trim().toLowerCase();
-    if (!email || !EMAIL_RE.test(email)) throw new ApiError(400, "A valid e-mail address is required");
-
-    // No account enumeration: the response is identical whether or not the
-    // account exists and whether or not a reset is already pending.
-    const userId = await findUserIdByEmail(env.DB, email);
-    if (userId && !(await hasPendingPasswordReset(env.DB, userId))) {
-      const { token } = await createPasswordReset(env.DB, userId);
-      const resetUrl = `${env.APP_URL}/reset-password?token=${token}`;
-      const html = renderTemplate("reset-password", {
-        name: email.split("@")[0],
-        reset_url: resetUrl,
-      });
-      const transport = await getTransport(env);
-      await transport.send({
-        to: email,
-        subject: "Reset your Ticket Manager password",
-        html,
-        text: htmlToText(html),
-      });
-    }
-    return c.json({ ok: true });
-  })
-);
-
-const passwordResetApplyLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  keyFor: (c) => `pwapply:${clientIp(c)}`,
-});
-
-app.post("/api/auth/reset-password", passwordResetApplyLimiter, (c) =>
-  guard(c, async () => {
-    const body = await readBody<{ token?: string; password?: string }>(c);
-    const userId = await validatePasswordReset(env.DB, body.token ?? "");
-    await applyPasswordReset(env.DB, userId, body.password ?? "");
-    await env.DB.update(user).set({ mustChangePassword: false, updatedAt: new Date() }).where(eq(user.id, userId));
-    return c.json({ ok: true });
-  })
-);
 
 // Authenticated self-service password change (no e-mail required).
-app.post("/api/auth/change-password", (c) =>
-  guard(c, async () => {
-    const u = await getSessionUser(c.req.raw, env);
-    const body = await readBody<{ currentPassword?: string; newPassword?: string }>(c);
-    if (!body.currentPassword) throw new ApiError(400, "Current password is required");
-    if (!body.newPassword || body.newPassword.length < 8) {
-      throw new ApiError(400, "New password must be at least 8 characters");
-    }
-    const ok = await verifyUserPassword(env.DB, u.id, body.currentPassword);
-    if (!ok) throw new ApiError(400, "Current password is incorrect");
-    await changePassword(env.DB, u.id, body.newPassword);
-    await env.DB.update(user).set({ mustChangePassword: false, updatedAt: new Date() }).where(eq(user.id, u.id));
-    return c.json({ ok: true });
-  })
-);
 
 // Saves the signed-in user's UI language (en | tr).
-app.patch("/api/me/language", (c) =>
-  guard(c, async () => {
-    const u = await getSessionUser(c.req.raw, env);
-    const body = await readBody<{ language?: string }>(c);
-    if (body.language !== "en" && body.language !== "tr") throw new ApiError(400, "Unsupported language");
-    await env.DB.update(user).set({ language: body.language, updatedAt: new Date() }).where(eq(user.id, u.id));
-    return c.json({ ok: true, language: body.language });
-  })
-);
 
 app.all("/api/auth/*", (c) => createAuth(env).handler(c.req.raw));
 

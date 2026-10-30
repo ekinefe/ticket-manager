@@ -22,3 +22,7 @@ export function requestCtx(c: Context, env: Env): Promise<Ctx> {
   }
   return p;
 }
+
+// For public routes (login flows, setup) that have no signed-in user.
+export type PublicCtx = Pick<Ctx, "env" | "db">;
+export const publicCtx = (env: Env): PublicCtx => ({ env, db: env.DB });
