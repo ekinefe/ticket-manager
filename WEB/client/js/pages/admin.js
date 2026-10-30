@@ -15,7 +15,7 @@ export async function renderAdmin(root, section = "users") {
         <a class="tab${section === "users" ? " active" : ""}" href="/admin/users" data-nav>${tl("adm.tabUsers")}</a>
         <a class="tab${section === "projects" ? " active" : ""}" href="/admin/projects" data-nav>${tl("adm.tabProjects")}</a>
         ${state.user.role === "SUPER_ADMIN" ? `<a class="tab${section === "access" ? " active" : ""}" href="/admin/access" data-nav>${tl("adm.tabAccess")}</a>` : ""}
-        <a class="tab${section === "settings" ? " active" : ""}" href="/admin/settings" data-nav>${tl("adm.tabSettings")}</a>
+        ${state.user.role === "SUPER_ADMIN" ? `<a class="tab${section === "settings" ? " active" : ""}" href="/admin/settings" data-nav>${tl("adm.tabSystem")}</a>` : ""}
       </nav>
       <div id="admin-body"><div class="spinner"></div></div>
     </div>`;
