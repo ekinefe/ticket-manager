@@ -56,6 +56,8 @@ import { getTransport } from "./domains/notifications/mail/index";
 import { registerNotificationRoutes } from "./domains/notifications/index";
 import { registerAccountRoutes } from "./domains/accounts/index";
 import { registerAdminAccessRoutes } from "./domains/access/index";
+import { registerSettingsRoutes, loadGithubSettings } from "./domains/settings/index";
+import { registerProjectRoutes } from "./domains/projects/index";
 import { runJob } from "./cron/scheduler";
 import { and, asc, eq, ne, or, sql, gte, inArray, isNull, count, desc } from "drizzle-orm";
 import { githubEvents, githubEventTasks, projects, projectMembers, projectMemberPermissions, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications, accessAudit } from "./db/schema";
@@ -145,12 +147,7 @@ const inviteLimiter = rateLimit({
   keyFor: (c) => `invite:${c.req.header("x-forwarded-for") ?? "local"}`,
 });
 
-app.get("/api/projects", (c) =>
-  guard(c, async () => {
-    const u = await getSessionUser(c.req.raw, env);
-    return c.json(await listAccessibleProjects(env.DB, u));
-  })
-);
+registerProjectRoutes(app, env);
 
 // Unauthenticated liveness probe for monitoring / reverse-proxy checks.
 app.get("/api/health", (c) => c.json({ ok: true, time: Date.now() }));
@@ -248,107 +245,11 @@ app.get("/api/search", (c) =>
   })
 );
 
-app.post("/api/projects", (c) =>
-  guard(c, async () => {
-    const u = await getSessionUser(c.req.raw, env);
-    requirePanelAccess(u);
 
-    const body = await readBody<{ name?: string; prefix?: string }>(c);
-    const name = body.name?.trim();
-    const prefix = body.prefix?.trim().toUpperCase();
-    if (!name) throw new ApiError(400, "Project name is required");
-    if (!prefix || !/^[A-Z0-9]{2,5}$/.test(prefix)) {
-      throw new ApiError(400, "Prefix must be 2-5 uppercase letters/digits (e.g. WCE)");
-    }
-
-    const id = crypto.randomUUID();
-    const [project] = await env.DB
-      .insert(projects)
-      .values({ id, name, prefix, currentTicketSequence: 0, createdAt: Date.now() })
-      .returning();
-    await env.DB.insert(projectMembers).values({ projectId: id, userId: u.id, role: "ADMIN" });
-    await createDefaultSprint({ db: env.DB }, id, prefix);
-    return c.json(project, 201);
-  })
-);
-
-app.get("/api/projects/:id", (c) =>
-  guard(c, async () => {
-    const projectId = c.req.param("id");
-    const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId);
-    const access = await getProjectAccess(env.DB, u, projectId);
-
-    const [project] = await env.DB.select().from(projects).where(eq(projects.id, projectId));
-    if (!project) throw new ApiError(404, "Project not found");
-
-    const members = await env.DB
-      .select({
-        userId: projectMembers.userId,
-        role: projectMembers.role,
-        name: user.name,
-        email: user.email,
-      })
-      .from(projectMembers)
-      .innerJoin(user, eq(user.id, projectMembers.userId))
-      .where(eq(projectMembers.projectId, projectId));
-
-    const projectSprints = await listProjectSprints({ db: env.DB }, projectId);
-
-    const myPermissions = PROJECT_PERMISSIONS.filter((p) => access.can(p));
-
-    return c.json({ ...project, members, sprints: projectSprints, myPermissions });
-  })
-);
 
 registerSprintRoutes(app, env);
 
-app.patch("/api/projects/:id", (c) =>
-  guard(c, async () => {
-    const projectId = c.req.param("id");
-    const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId, "ADMIN");
 
-    const body = await readBody<{ name?: string; prefix?: string; defaultAssigneeId?: string | null }>(c);
-    if (!body.name && !body.prefix && body.defaultAssigneeId === undefined) throw new ApiError(400, "Nothing to update");
-
-    const values: Partial<{ name: string; prefix: string; defaultAssigneeId: string | null }> = {};
-    if (body.name) values.name = body.name.trim();
-    if (body.prefix) {
-      const prefix = body.prefix.trim().toUpperCase();
-      if (!/^[A-Z0-9]{2,5}$/.test(prefix)) throw new ApiError(400, "Prefix must be 2-5 uppercase letters/digits");
-      values.prefix = prefix;
-    }
-    if (body.defaultAssigneeId !== undefined) {
-      if (body.defaultAssigneeId) {
-        const [member] = await env.DB
-          .select({ userId: projectMembers.userId })
-          .from(projectMembers)
-          .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, body.defaultAssigneeId)));
-        if (!member) throw new ApiError(400, "Default assignee must be a member of this project");
-        values.defaultAssigneeId = body.defaultAssigneeId;
-      } else {
-        values.defaultAssigneeId = null;
-      }
-    }
-
-    const [updated] = await env.DB.update(projects).set(values).where(eq(projects.id, projectId)).returning();
-    if (!updated) throw new ApiError(404, "Project not found");
-    return c.json(updated);
-  })
-);
-
-app.delete("/api/projects/:id", (c) =>
-  guard(c, async () => {
-    const projectId = c.req.param("id");
-    const u = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(u);
-
-    const deleted = await env.DB.delete(projects).where(eq(projects.id, projectId)).returning({ id: projects.id });
-    if (deleted.length === 0) throw new ApiError(404, "Project not found");
-    return c.json({ ok: true });
-  })
-);
 
 // ---------- Super-admin panel API ----------
 
@@ -376,48 +277,8 @@ registerAdminAccessRoutes(app, env);
 
 // Users x projects matrix: who has which role / permissions where.
 
-// ---------- App settings (super admin) ----------
-// Settings are stored in the DB and applied to the runtime env on save so
-// changes take effect without a server restart.
+registerSettingsRoutes(app, env);
 
-const SETTINGS_KEYS = [
-  "app_url", "better_auth_secret", "mail_transport", "mail_from", "resend_api_key",
-  "github_app_id", "github_private_key", "github_webhook_secret", "github_branch_create",
-  "mail_notify_statuses",
-] as const;
-type SettingsKey = (typeof SETTINGS_KEYS)[number];
-
-app.get("/api/admin/settings", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const rows = await env.DB.select().from(appSettings);
-    const settings: Record<string, string> = {};
-    for (const r of rows) settings[r.key] = r.value;
-    return c.json(settings);
-  })
-);
-
-app.patch("/api/admin/settings", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const body = await readBody<Record<string, string>>(c);
-    const now = Date.now();
-    for (const key of SETTINGS_KEYS) {
-      if (key in body) {
-        const value = String(body[key] ?? "").trim();
-        await env.DB
-          .insert(appSettings)
-          .values({ key, value, updatedAt: now })
-          .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: now } });
-      }
-    }
-    // Apply changes to the running env immediately.
-    await loadSettings(env);
-    return c.json({ ok: true });
-  })
-);
 
 // ---------- Reports: performance, completed work, forecast ----------
 // Covers projects where the caller can see every ticket (super admin, project
@@ -2203,31 +2064,3 @@ app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
   return app;
 }
-
-export async function loadGithubSettings(env: Env): Promise<void> {
-  const rows = await env.DB.select().from(appSettings);
-  const map = new Map(rows.map((r) => [r.key, r.value]));
-  if (map.get("github_app_id")) env.GITHUB_APP_ID = map.get("github_app_id")!;
-  if (map.get("github_private_key")) env.GITHUB_APP_PRIVATE_KEY = map.get("github_private_key")!;
-  if (map.get("github_webhook_secret")) env.GITHUB_WEBHOOK_SECRET = map.get("github_webhook_secret")!;
-  env.GITHUB_BRANCH_CREATE = map.get("github_branch_create") === "1" ? "1" : "";
-}
-
-// Read all settings from the DB and override the matching env fields.
-// Loaded once at startup (by the local or the Workers bootstrap) and again
-// whenever settings are saved via the admin panel.
-export async function loadSettings(env: Env): Promise<void> {
-  const rows = await env.DB.select().from(appSettings);
-  const map = new Map(rows.map((r) => [r.key, r.value]));
-  if (map.get("app_url")) env.APP_URL = map.get("app_url")!;
-  if (map.get("better_auth_secret")) env.BETTER_AUTH_SECRET = map.get("better_auth_secret")!;
-  if (map.get("mail_transport")) env.MAIL_TRANSPORT = map.get("mail_transport") as Env["MAIL_TRANSPORT"];
-  if (map.get("mail_from")) env.MAIL_FROM = map.get("mail_from")!;
-  if (map.get("resend_api_key")) env.RESEND_API_KEY = map.get("resend_api_key")!;
-  if (map.get("github_app_id")) env.GITHUB_APP_ID = map.get("github_app_id")!;
-  if (map.get("github_private_key")) env.GITHUB_APP_PRIVATE_KEY = map.get("github_private_key")!;
-  if (map.get("github_webhook_secret")) env.GITHUB_WEBHOOK_SECRET = map.get("github_webhook_secret")!;
-  // The toggle must be able to switch OFF, so it always follows the DB value.
-  env.GITHUB_BRANCH_CREATE = map.get("github_branch_create") === "1" ? "1" : "";
-}
-
