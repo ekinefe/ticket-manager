@@ -1,9 +1,9 @@
 import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { activityLog, invitations, tasks, user } from "../../db/schema";
 import { getDb } from "../../db/client";
-import { listSuperAdminEmails } from "../../lib/rbac";
-import { renderTemplate, htmlToText, statRow } from "../../lib/mail/templates";
-import { getTransport } from "../../lib/mail";
+import { listSuperAdminEmails } from "../../domains/access/index";
+import { renderTemplate, htmlToText, statRow } from "../../domains/notifications/index";
+import { getTransport } from "../../domains/notifications/mail/index";
 import { runOnce, weekBounds, monthBounds } from "../guard";
 
 export type SummaryPeriod = "daily" | "weekly" | "monthly";

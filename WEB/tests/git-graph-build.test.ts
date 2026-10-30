@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { collectPages, labelBranches, orderCommits, pickBranches } from "../src/lib/git-graph-build.ts";
+import { collectPages, labelBranches, orderCommits, pickBranches } from "../src/domains/github/index.ts";
 
 const c = (sha: string, message: string, ...parents: string[]) => ({ sha, parents, message, branch: null as string | null });
 

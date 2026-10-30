@@ -1,8 +1,8 @@
 import { eq, sql } from "drizzle-orm";
-import { projects } from "../db/schema";
-import type { AppDB } from "../db/client";
-import { getDb } from "../db/client";
-import { ApiError } from "./http";
+import { projects } from "../../db/schema";
+import type { AppDB } from "../../db/client";
+import { getDb } from "../../db/client";
+import { ApiError } from "../../shared/http";
 
 export async function allocateTicketId(db: AppDB, projectId: string): Promise<string> {
   const [project] = await db

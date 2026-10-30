@@ -13,7 +13,7 @@ process.env.MAIL_TRANSPORT = "file";
 const { app, env } = await import("../server/main.ts");
 const { user, account, projectMembers, projectMemberPermissions, projects, sprints } = await import("../src/db/schema.ts");
 const { getDb } = await import("../src/db/client.ts");
-const { DEFAULT_MEMBER_PERMISSIONS } = await import("../src/lib/rbac.ts");
+const { DEFAULT_MEMBER_PERMISSIONS } = await import("../src/domains/access/index.ts");
 
 export interface TestUser {
   id: string;

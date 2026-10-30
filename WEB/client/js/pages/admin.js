@@ -346,7 +346,7 @@ function userRow(u, isSuper) {
 const MEMBER_ROLES = ["MEMBER", "ADMIN"];
 
 /* ---------------- Per-project, per-member granular permissions ---------------- */
-// Mirrors PROJECT_PERMISSIONS / DEFAULT_MEMBER_PERMISSIONS in src/lib/rbac.ts.
+// Mirrors PROJECT_PERMISSIONS / DEFAULT_MEMBER_PERMISSIONS in src/domains/access/rbac.ts.
 // Project/super admins always have every permission implicitly; these only
 // apply to (and are only shown/editable for) plain MEMBER rows.
 const PERMISSION_LABELS = permLabels("perm", [

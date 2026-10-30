@@ -1,10 +1,10 @@
 import { and, eq, isNull, gt } from "drizzle-orm";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
-import { account, passwordResets, session, user } from "../db/schema";
-import type { AppDB } from "../db/client";
-import { getDb } from "../db/client";
-import { ApiError } from "./http";
-import { hashInviteToken } from "./invite";
+import { account, passwordResets, session, user } from "../../db/schema";
+import type { AppDB } from "../../db/client";
+import { getDb } from "../../db/client";
+import { ApiError } from "../../shared/http";
+import { hashInviteToken } from "../projects/index";
 
 const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
 

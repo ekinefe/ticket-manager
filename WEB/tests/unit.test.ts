@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeQuery } from "../src/lib/search.ts";
-import { canTransition, statusSlug, STATUSES, INSTANT_NOTIFY_STATUSES, parseNotifyStatuses } from "../src/lib/status.ts";
+import { normalizeQuery } from "../src/domains/tickets/index.ts";
+import { canTransition, statusSlug, STATUSES, INSTANT_NOTIFY_STATUSES, parseNotifyStatuses } from "../src/domains/tickets/index.ts";
 
 describe("normalizeQuery", () => {
   it("lowercases and strips non-alphanumerics", () => {

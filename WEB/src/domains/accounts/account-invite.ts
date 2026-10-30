@@ -1,9 +1,9 @@
 import { and, eq, gt, isNull } from "drizzle-orm";
-import { accountInvites } from "../db/schema";
-import type { AppDB } from "../db/client";
-import { getDb } from "../db/client";
-import { ApiError } from "./http";
-import { hashInviteToken, sha256Hex } from "./invite";
+import { accountInvites } from "../../db/schema";
+import type { AppDB } from "../../db/client";
+import { getDb } from "../../db/client";
+import { ApiError } from "../../shared/http";
+import { hashInviteToken, sha256Hex } from "../projects/index";
 
 export async function hasPendingAccountInvite(db: AppDB, email: string): Promise<boolean> {
   const [row] = await getDb(db)

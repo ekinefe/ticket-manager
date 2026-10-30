@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { MAIL_OUT_DIR } from "../../db/local";
+import { MAIL_OUT_DIR } from "../../../db/local";
 import type { MailMessage, MailTransport } from "./index";
 
 function sanitize(s: string): string {

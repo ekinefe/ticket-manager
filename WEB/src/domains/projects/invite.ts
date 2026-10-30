@@ -1,8 +1,8 @@
 import { and, eq, isNull, gt } from "drizzle-orm";
-import { invitations } from "../db/schema";
-import type { AppDB } from "../db/client";
-import { getDb } from "../db/client";
-import { ApiError } from "./http";
+import { invitations } from "../../db/schema";
+import type { AppDB } from "../../db/client";
+import { getDb } from "../../db/client";
+import { ApiError } from "../../shared/http";
 
 const INVITE_TTL_MS = 48 * 60 * 60 * 1000;
 

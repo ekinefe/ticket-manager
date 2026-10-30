@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { createAuth } from "./auth/server";
-import { ApiError } from "./lib/http";
+import { ApiError } from "./shared/http";
 import {
   getSessionUser,
   requireProjectRole,
@@ -20,23 +20,23 @@ import {
   type ProjectPermission,
   type ProjectAccess,
   type SessionUser,
-} from "./lib/rbac";
-import { allocateTicketId } from "./lib/ticket-id";
-import { logActivity } from "./lib/activity";
-import { REPO_RE, createBranch, fetchCommitGraph, extractTicketIds, githubConfigured, handleGithubEvent, ticketBranchName, verifyWebhookSignature } from "./lib/github";
-import { canTransition, STATUSES, type Status } from "./lib/status";
-import { buildReport, type Granularity } from "./lib/reports";
-import { planSync, buildEditInstructions, DEFAULT_SYNC_OPTIONS, type SyncOptions, type SprintTarget } from "./lib/project-sync";
-import { isStatusMailEnabled, notifyStatusChanged } from "./lib/notify";
-import { validateInvitation, markInvitationAccepted, hashInviteToken, generateInviteToken } from "./lib/invite";
-import { searchAll } from "./lib/search";
-import { sanitizeDescHtml } from "./lib/sanitize";
-import { publish, subscribe, unsubscribe } from "./lib/realtime";
+} from "./domains/access/index";
+import { allocateTicketId } from "./domains/tickets/index";
+import { logActivity } from "./domains/tickets/index";
+import { REPO_RE, createBranch, fetchCommitGraph, extractTicketIds, githubConfigured, handleGithubEvent, ticketBranchName, verifyWebhookSignature } from "./domains/github/index";
+import { canTransition, STATUSES, type Status } from "./domains/tickets/index";
+import { buildReport, type Granularity } from "./domains/reports/index";
+import { planSync, buildEditInstructions, DEFAULT_SYNC_OPTIONS, type SyncOptions, type SprintTarget } from "./domains/projects/index";
+import { isStatusMailEnabled, notifyStatusChanged } from "./domains/notifications/index";
+import { validateInvitation, markInvitationAccepted, hashInviteToken, generateInviteToken } from "./domains/projects/index";
+import { searchAll } from "./domains/tickets/index";
+import { sanitizeDescHtml } from "./shared/sanitize";
+import { publish, subscribe, unsubscribe } from "./shared/realtime";
 import {
   hasPendingAccountInvite,
   validateAccountInvite,
   markAccountInviteAccepted,
-} from "./lib/account-invite";
+} from "./domains/accounts/index";
 import {
   applyPasswordReset,
   createPasswordReset,
@@ -45,18 +45,18 @@ import {
   validatePasswordReset,
   changePassword,
   verifyUserPassword,
-} from "./lib/password-reset";
-import { clientIp, rateLimit } from "./lib/ratelimit";
-import { renderTemplate, htmlToText } from "./lib/mail/templates";
-import { getTransport } from "./lib/mail";
+} from "./domains/accounts/index";
+import { clientIp, rateLimit } from "./shared/ratelimit";
+import { renderTemplate, htmlToText } from "./domains/notifications/index";
+import { getTransport } from "./domains/notifications/mail/index";
 import { runJob } from "./cron/scheduler";
 import { and, asc, eq, ne, or, sql, gte, inArray, isNull, count, desc } from "drizzle-orm";
 import { githubEvents, githubEventTasks, projects, projectMembers, projectMemberPermissions, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications, accessAudit } from "./db/schema";
 import {
   createNotification,
   createProjectNotification,
-} from "./lib/in-app-notify";
-import { notifyMentionedUsers } from "./lib/mentions";
+} from "./domains/notifications/index";
+import { notifyMentionedUsers } from "./domains/notifications/index";
 
 // Shared runtime-agnostic Hono application. All route handlers bind to an
 // `env` object supplied at construction time (either the local bootstrap or

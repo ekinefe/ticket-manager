@@ -2,8 +2,8 @@
 // planSync() is pure: it compares the file with the project and returns what
 // WOULD change, so the UI can show a preview and the caller applies it.
 
-import { sanitizeDescHtml } from "./sanitize";
-import { STATUSES } from "./status";
+import { sanitizeDescHtml } from "../../shared/sanitize";
+import { STATUSES } from "../tickets/index";
 
 const TYPES = ["TASK", "BUG"];
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"];

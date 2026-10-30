@@ -1,6 +1,6 @@
 import { eq, and, isNull, sql } from "drizzle-orm";
-import { notifications, projectMembers, user, tasks, projects } from "../db/schema";
-import { getDb, type AppDB } from "../db/client";
+import { notifications, projectMembers, user, tasks, projects } from "../../db/schema";
+import { getDb, type AppDB } from "../../db/client";
 
 export type NotificationType =
   | "TICKET_CREATED"

@@ -1,4 +1,4 @@
-import { ApiError } from "../http";
+import { ApiError } from "../../../shared/http";
 import { sendViaResend } from "./resend";
 
 export interface MailMessage {

@@ -5,9 +5,9 @@ import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { createLocalDb, PROJECT_ROOT, DATA_DIR } from "../src/db/local";
 import { createApp, loadSettings } from "../src/app";
-import { createFsStorage } from "../src/lib/media-fs";
-import { createFileTransport } from "../src/lib/mail/file";
-import { registerFileTransport } from "../src/lib/mail";
+import { createFsStorage } from "../src/shared/media-fs";
+import { createFileTransport } from "../src/domains/notifications/mail/file";
+import { registerFileTransport } from "../src/domains/notifications/mail/index";
 import { startScheduler } from "../src/cron/scheduler";
 
 // Register the node:fs-backed ".mail-out" transport for local dev. This import

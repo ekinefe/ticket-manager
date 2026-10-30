@@ -8,7 +8,7 @@
 import { join } from "node:path";
 import { createLocalDb, DATA_DIR } from "../src/db/local";
 import { tasks } from "../src/db/schema";
-import { createFsStorage, fsMtime } from "../src/lib/media-fs";
+import { createFsStorage, fsMtime } from "../src/shared/media-fs";
 
 const GRACE_MS = 7 * 86_400_000;
 const UPLOAD_DIR = join(DATA_DIR, "uploads");
