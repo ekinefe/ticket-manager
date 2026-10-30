@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { createAuth } from "./auth/server";
 import { ApiError } from "./shared/http";
 import { guard, readBody } from "./shared/route";
-import { INTERNAL_SIGNUP_SECRET } from "./shared/signup-secret";
+import { internalSignupSecret } from "./shared/signup-secret";
 import { EMAIL_RE } from "./shared/validate";
 import { registerSprintRoutes, createDefaultSprint, listProjectSprints, nextSprintId } from "./domains/sprints/index";
 import {
@@ -103,7 +103,7 @@ const descPreview = (html: string | null | undefined): string => {
 };
 
 app.use("/api/auth/sign-up/email", async (c, next) => {
-  if (c.req.header("x-internal-signup") !== INTERNAL_SIGNUP_SECRET) {
+  if (c.req.header("x-internal-signup") !== internalSignupSecret()) {
     return c.json({ error: "Sign-up is by invitation only" }, 403);
   }
   await next();
@@ -194,7 +194,7 @@ app.post("/api/setup/complete", setupLimiter, (c) =>
     if (!password || password.length < 8) throw new ApiError(400, "Password must be at least 8 characters");
 
     const auth = createAuth(env);
-    const internalHeaders = new Headers({ "x-internal-signup": INTERNAL_SIGNUP_SECRET });
+    const internalHeaders = new Headers({ "x-internal-signup": internalSignupSecret() });
     let userId: string;
     try {
       const result = await auth.api.signUpEmail({
@@ -1626,7 +1626,7 @@ app.post("/api/invitations/accept", (c) =>
     if (!password || password.length < 8) throw new ApiError(400, "Password must be at least 8 characters");
 
     const auth = createAuth(env);
-    const internalHeaders = new Headers({ "x-internal-signup": INTERNAL_SIGNUP_SECRET });
+    const internalHeaders = new Headers({ "x-internal-signup": internalSignupSecret() });
     const signUp = async (email: string) => {
       const result = await auth.api.signUpEmail({
         headers: internalHeaders,
