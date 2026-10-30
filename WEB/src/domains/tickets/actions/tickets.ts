@@ -15,6 +15,7 @@ import { createNotification, createProjectNotification, notifyMentionedUsers } f
 import { TASK_TYPES, PRIORITIES, isValidDueDate, applyTaskUpdate, type TaskUpdateBody } from "./update";
 import type { Ctx, OptionalCtx } from "../../access/index";
 import type { Input } from "../../../shared/route";
+import type { CreateTaskBody, BulkUpdateTasksBody, BulkDeleteTasksBody, AddCommentBody, SetTaskShareBody } from "../dto";
 
 // Ticket use cases: lists, create/update/delete, bulk edits, comments, activity, sharing.
 export async function myTickets(ctx: Ctx, _input: Input) {
@@ -74,7 +75,7 @@ export async function createTask(ctx: Ctx, input: Input) {
   const u = ctx.user;
   await requireProjectPermission(ctx.db, u, projectId, "CREATE_TICKET");
 
-  const body = await input.body<{ title?: string; description?: string; status?: string; assigneeId?: string; type?: string; priority?: string; sprintId?: string | null; labels?: string[]; dueDate?: string | null }>();
+  const body = await input.body<CreateTaskBody>();
   const title = body.title?.trim();
   if (!title) throw new ApiError(400, "Title is required");
   // Members may pick the initial assignee of a NEW ticket; reassigning later is admin-only.
@@ -179,7 +180,7 @@ export async function updateTask(ctx: Ctx, input: Input) {
 // as a single-ticket PATCH.
 export async function bulkUpdateTasks(ctx: Ctx, input: Input) {
   const u = ctx.user;
-  const body = await input.body<{ taskIds?: string[]; update?: TaskUpdateBody }>();
+  const body = await input.body<BulkUpdateTasksBody>();
   const taskIds = Array.isArray(body.taskIds) ? [...new Set(body.taskIds)] : [];
   if (taskIds.length === 0) throw new ApiError(400, "taskIds is required");
   if (taskIds.length > 200) throw new ApiError(400, "Too many tickets selected (max 200)");
@@ -204,7 +205,7 @@ export async function bulkUpdateTasks(ctx: Ctx, input: Input) {
 // and reported back (never a hard failure).
 export async function bulkDeleteTasks(ctx: Ctx, input: Input) {
   const u = ctx.user;
-  const body = await input.body<{ taskIds?: string[] }>();
+  const body = await input.body<BulkDeleteTasksBody>();
   const taskIds = Array.isArray(body.taskIds) ? [...new Set(body.taskIds)] : [];
   if (taskIds.length === 0) throw new ApiError(400, "taskIds is required");
   if (taskIds.length > 200) throw new ApiError(400, "Too many tickets selected (max 200)");
@@ -284,7 +285,7 @@ export async function addComment(ctx: Ctx, input: Input) {
   const u = ctx.user;
   const access = await getProjectAccess(ctx.db, u, projectId);
 
-  const rawBody = (await input.body<{ body?: string }>()).body?.trim();
+  const rawBody = (await input.body<AddCommentBody>()).body?.trim();
   if (!rawBody) throw new ApiError(400, "Comment cannot be empty");
   if (rawBody.length > 4000) throw new ApiError(400, "Comment is too long (max 4000 characters)");
   // Comments use the same rich-text editor as ticket descriptions, so they
@@ -417,7 +418,7 @@ export async function setTaskShare(ctx: Ctx, input: Input) {
   const taskId = input.p.taskId;
   const u = ctx.user;
   await requireProjectRole(ctx.db, u, projectId, "ADMIN");
-  const body = await input.body<{ mode?: string; regenerate?: boolean }>();
+  const body = await input.body<SetTaskShareBody>();
   if (body.mode !== "OFF" && body.mode !== "ACCOUNT" && body.mode !== "LINK") {
     throw new ApiError(400, "mode must be OFF, ACCOUNT or LINK");
   }

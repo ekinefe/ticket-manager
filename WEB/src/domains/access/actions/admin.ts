@@ -9,6 +9,7 @@ import { recordAccess, recordPermissionChange, currentMemberRole } from "../audi
 import { applyPasswordReset } from "../../accounts/index";
 import type { Ctx } from "../ctx";
 import type { Input } from "../../../shared/route";
+import type { CreateUserBody, SetUserRoleBody, SetUserPasswordBody, AddUserToProjectBody, SetUserProjectPermissionsBody, SetMemberPermissionsAdminBody, AddProjectMemberBody } from "../dto";
 
 // Super-admin panel API: user accounts, project membership, access audit and matrix.
 export async function listUsers(ctx: Ctx, input: Input) {
@@ -44,7 +45,7 @@ export async function createUser(ctx: Ctx, input: Input) {
   const actor = ctx.user;
   requireSuperAdmin(actor);
 
-  const body = await input.body<{ name?: string; email?: string; password?: string; role?: string }>();
+  const body = await input.body<CreateUserBody>();
   const email = body.email?.trim().toLowerCase();
   const name = body.name?.trim();
   const password = body.password ?? "";
@@ -91,7 +92,7 @@ export async function setUserRole(ctx: Ctx, input: Input) {
   // Lockout protection: a super admin cannot change their own role.
   if (id === actor.id) throw new ApiError(400, "You cannot change your own role");
 
-  const body = await input.body<{ role?: string }>();
+  const body = await input.body<SetUserRoleBody>();
   if (body.role !== "SUPER_ADMIN" && body.role !== "ADMIN" && body.role !== "USER") throw new ApiError(400, "Invalid role");
   const [before] = await ctx.db.select({ role: user.role }).from(user).where(eq(user.id, id));
 
@@ -109,7 +110,7 @@ export async function setUserPassword(ctx: Ctx, input: Input) {
   const actor = ctx.user;
   requireSuperAdmin(actor);
   const id = input.p.id;
-  const body = await input.body<{ password?: string }>();
+  const body = await input.body<SetUserPasswordBody>();
   if (!body.password || body.password.length < 8) {
     throw new ApiError(400, "Password must be at least 8 characters");
   }
@@ -170,7 +171,7 @@ export async function addUserToProject(ctx: Ctx, input: Input) {
   const actor = ctx.user;
   requireSuperAdmin(actor);
   const id = input.p.id;
-  const body = await input.body<{ projectId?: string; role?: string }>();
+  const body = await input.body<AddUserToProjectBody>();
   if (!body.projectId) throw new ApiError(400, "projectId is required");
   const memberRole = body.role === "ADMIN" ? "ADMIN" : "MEMBER";
 
@@ -207,7 +208,7 @@ export async function setUserProjectPermissions(ctx: Ctx, input: Input) {
     throw new ApiError(400, "Project admins already have full access; permissions only apply to members");
   }
 
-  const body = await input.body<{ permissions?: string[] }>();
+  const body = await input.body<SetUserProjectPermissionsBody>();
   if (!Array.isArray(body.permissions)) throw new ApiError(400, "permissions must be an array");
   const valid = new Set<string>(PROJECT_PERMISSIONS);
   const invalid = body.permissions.filter((p) => !valid.has(p));
@@ -281,7 +282,7 @@ export async function setMemberPermissionsAdmin(ctx: Ctx, input: Input) {
     throw new ApiError(400, "Project admins already have full access; permissions only apply to members");
   }
 
-  const body = await input.body<{ permissions?: string[] }>();
+  const body = await input.body<SetMemberPermissionsAdminBody>();
   if (!Array.isArray(body.permissions)) throw new ApiError(400, "permissions must be an array");
   const valid = new Set<string>(PROJECT_PERMISSIONS);
   const invalid = body.permissions.filter((p) => !valid.has(p));
@@ -297,7 +298,7 @@ export async function addProjectMember(ctx: Ctx, input: Input) {
   const actor = ctx.user;
   requireSuperAdmin(actor);
   const projectId = input.p.id;
-  const body = await input.body<{ userId?: string; role?: string }>();
+  const body = await input.body<AddProjectMemberBody>();
   if (!body.userId) throw new ApiError(400, "userId is required");
   const memberRole = body.role === "ADMIN" ? "ADMIN" : "MEMBER";
 

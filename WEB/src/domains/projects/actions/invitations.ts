@@ -7,6 +7,7 @@ import type { Ctx } from "../../access/index";
 import type { Input } from "../../../shared/route";
 import { validateInvitation, markInvitationAccepted, hashInviteToken, generateInviteToken } from "../invite";
 import { renderTemplate, htmlToText, getTransport } from "../../notifications/index";
+import type { InviteToProjectBody } from "../dto";
 
 // Project invitations (by e-mail).
 export async function listInvitations(ctx: Ctx, input: Input) {
@@ -33,7 +34,7 @@ export async function inviteToProject(ctx: Ctx, input: Input) {
   const u = ctx.user;
   const access = await requireProjectPermission(ctx.db, u, projectId, "MANAGE_MEMBERS");
 
-  const body = await input.body<{ email?: string; role?: "ADMIN" | "MEMBER" }>();
+  const body = await input.body<InviteToProjectBody>();
   const email = body.email?.trim().toLowerCase();
   if (!email || !EMAIL_RE.test(email)) throw new ApiError(400, "Valid e-mail address is required");
   const invitedRole = body.role === "ADMIN" ? "ADMIN" : "MEMBER";

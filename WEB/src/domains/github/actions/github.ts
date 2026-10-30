@@ -6,6 +6,7 @@ import { getProjectAccess, requireProjectRole, listAccessibleProjects } from "..
 import type { Ctx, PublicCtx } from "../../access/index";
 import type { Input } from "../../../shared/route";
 import { REPO_RE, createBranch, fetchCommitGraph, extractTicketIds, githubConfigured, handleGithubEvent, ticketBranchName, verifyWebhookSignature } from "../github";
+import type { SetProjectRepoBody } from "../dto";
 
 // GitHub App integration: one private repo per project; webhook is HMAC-verified.
 export async function receiveWebhook(ctx: PublicCtx, input: Input) {
@@ -29,7 +30,7 @@ export async function setProjectRepo(ctx: Ctx, input: Input) {
   const projectId = input.p.id;
   const u = ctx.user;
   await requireProjectRole(ctx.db, u, projectId, "ADMIN");
-  const body = await input.body<{ repo?: string | null }>();
+  const body = await input.body<SetProjectRepoBody>();
   const raw = (body.repo ?? "").trim().replace(/^https?:\/\/github\.com\//i, "").replace(/\.git$/i, "").replace(/\/+$/, "");
   if (raw && !REPO_RE.test(raw)) throw new ApiError(400, 'Repository must look like "owner/name"');
   const repo = raw ? raw.toLowerCase() : null;

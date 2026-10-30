@@ -11,6 +11,7 @@ import { internalSignupSecret } from "../../../shared/signup-secret";
 import { validateInvitation, markInvitationAccepted, hashInviteToken, generateInviteToken } from "../../projects/index";
 import { renderTemplate, htmlToText, getTransport } from "../../notifications/index";
 import { hasPendingAccountInvite, validateAccountInvite, markAccountInviteAccepted } from "../account-invite";
+import type { CompleteSetupBody, AcceptInvitationBody, InviteAccountBody } from "../dto";
 
 // First-run setup (creates the initial SUPER_ADMIN, one-time) and invitation acceptance.
 export async function setupStatus(ctx: PublicCtx, _input: Input) {
@@ -28,7 +29,7 @@ export async function completeSetup(ctx: PublicCtx, input: Input) {
     .where(eq(user.role, "SUPER_ADMIN"));
   if (Number(superAdminCount) > 0) throw new ApiError(409, "Super admin already exists");
 
-  const body = await input.body<{ email?: string; name?: string; password?: string }>();
+  const body = await input.body<CompleteSetupBody>();
   const email = body.email?.trim().toLowerCase();
   const name = body.name?.trim();
   const password = body.password ?? "";
@@ -59,7 +60,7 @@ export async function completeSetup(ctx: PublicCtx, input: Input) {
 }
 
 export async function acceptInvitation(ctx: PublicCtx, input: Input) {
-  const body = await input.body<{ token?: string; name?: string; password?: string }>();
+  const body = await input.body<AcceptInvitationBody>();
   if (!body.token) throw new ApiError(400, "Missing invite token");
   const name = body.name?.trim();
   if (!name) throw new ApiError(400, "Name is required");
@@ -125,7 +126,7 @@ export async function inviteAccount(ctx: Ctx, input: Input) {
   const u = ctx.user;
   requireSuperAdmin(u);
 
-  const body = await input.body<{ email?: string }>();
+  const body = await input.body<InviteAccountBody>();
   const email = body.email?.trim().toLowerCase();
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ApiError(400, "A valid e-mail address is required");
 

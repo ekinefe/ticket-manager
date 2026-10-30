@@ -13,12 +13,19 @@ export async function guard(c: Context, fn: () => Promise<Response>): Promise<Re
   }
 }
 
+// Request bodies are always JSON objects; `null`, arrays and primitives are
+// rejected here so actions can read fields without a TypeError (-> 500).
 export async function readBody<T>(c: Context): Promise<T> {
+  let parsed: unknown;
   try {
-    return (await c.req.json()) as T;
+    parsed = await c.req.json();
   } catch {
     throw new ApiError(400, "Invalid JSON body");
   }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new ApiError(400, "Invalid JSON body");
+  }
+  return parsed as T;
 }
 
 export type Query = (key: string) => string | undefined;
