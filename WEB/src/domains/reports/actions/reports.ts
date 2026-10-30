@@ -9,7 +9,7 @@ type Query = (key: string) => string | undefined;
 // GET /api/reports: performance, completed work and forecast. Covers projects where
 // the caller can see every ticket (super admin, project admins, VIEW_ALL_TICKETS).
 export async function getReports(ctx: Ctx, query: Query) {
-    const u = ctx.user;
+  const u = ctx.user;
   const g = (query("granularity") || "weekly") as Granularity;
   if (!["daily", "weekly", "monthly"].includes(g)) throw new ApiError(400, "granularity must be daily, weekly or monthly");
   const wantedProject = (query("projectId") || "").trim();
@@ -51,7 +51,7 @@ export async function getReports(ctx: Ctx, query: Query) {
 
 // GET /api/dashboard/stats: role-based, filterable (filters are super admin only).
 export async function dashboardStats(ctx: Ctx, query: Query) {
-    const u = ctx.user;
+  const u = ctx.user;
   const isSuper = u.role === "SUPER_ADMIN";
   const isAdmin = u.role === "ADMIN" || isSuper;
 

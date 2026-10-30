@@ -30,6 +30,7 @@ export interface Input {
   query: Query;
   body: <T>() => Promise<T>;
   text: () => Promise<string>;
+  form: () => Promise<FormData>;
   header: (name: string) => string | undefined;
 }
 
@@ -38,5 +39,11 @@ export const inputOf = (c: Context): Input => ({
   query: (k) => c.req.query(k),
   body: () => readBody(c),
   text: () => c.req.text(),
+  form: () => c.req.formData(),
   header: (name) => c.req.header(name),
 });
+
+// Actions return plain data (sent as JSON) or a ready-made Response (downloads).
+export function respond(c: Context, result: unknown, status = 200): Response {
+  return result instanceof Response ? result : c.json(result as never, status as 200);
+}

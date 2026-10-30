@@ -171,6 +171,12 @@ export async function updateTask(ctx: Ctx, input: Input) {
   return withoutShareToken(updated);
 }
 
+// Bulk update: apply the same change (status/type/priority/assignee/sprint)
+// to many tickets at once, e.g. multi-select on the board or My Tickets.
+// Not project-scoped in the URL (tickets can span projects), so each one is
+// checked and applied independently; a failure on one doesn't block the rest.
+// Reuses applyTaskUpdate, so it enforces the same per-field permission rules
+// as a single-ticket PATCH.
 export async function bulkUpdateTasks(ctx: Ctx, input: Input) {
   const u = ctx.user;
   const body = await input.body<{ taskIds?: string[]; update?: TaskUpdateBody }>();
@@ -193,6 +199,9 @@ export async function bulkUpdateTasks(ctx: Ctx, input: Input) {
   return { updated, skipped };
 }
 
+// Bulk delete: permanent. Not project-scoped in the URL, so DELETE_TICKET is
+// checked per ticket's project; tickets the caller may not delete are skipped
+// and reported back (never a hard failure).
 export async function bulkDeleteTasks(ctx: Ctx, input: Input) {
   const u = ctx.user;
   const body = await input.body<{ taskIds?: string[] }>();
@@ -239,6 +248,7 @@ export async function deleteTask(ctx: Ctx, input: Input) {
   return { ok: true };
 }
 
+// Comments: every project member can read and write comments on any ticket.
 export async function listComments(ctx: Ctx, input: Input) {
   const projectId = input.p.id;
   const taskId = input.p.taskId;
@@ -326,6 +336,7 @@ export async function addComment(ctx: Ctx, input: Input) {
   return { ...row, authorName: u.name };
 }
 
+// Full change history of a single ticket, oldest first.
 export async function taskEvents(ctx: Ctx, input: Input) {
   const projectId = input.p.id;
   const taskId = input.p.taskId;
@@ -385,6 +396,10 @@ export async function taskEvents(ctx: Ctx, input: Input) {
   );
 }
 
+// Ticket sharing. Per ticket: OFF | ACCOUNT (any signed-in user) | LINK (anyone
+// with the URL). Shared viewers are strictly read-only and never see e-mail
+// addresses. Only project admins / super admin may change it; turning it OFF
+// drops the token, so the old link dies immediately.
 export async function getTaskShare(ctx: Ctx, input: Input) {
   const projectId = input.p.id;
   const u = ctx.user;

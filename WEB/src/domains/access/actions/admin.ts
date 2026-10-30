@@ -37,6 +37,9 @@ export async function listUsers(ctx: Ctx, input: Input) {
   return { data: rows, total, page, perPage };
 }
 
+// Creates an account directly (name/e-mail/password set by the admin), no
+// invite token and no e-mail sent. Mirrors setup's use of the internal sign-up
+// header, just without the "no super admin yet" gate.
 export async function createUser(ctx: Ctx, input: Input) {
   const actor = ctx.user;
   requireSuperAdmin(actor);
@@ -230,6 +233,8 @@ export async function removeUserFromProject(ctx: Ctx, input: Input) {
   return { ok: true };
 }
 
+// Project-side view of the same memberships (kept in sync by design: both
+// editors write to the project_members table).
 export async function listProjectMembers(ctx: Ctx, input: Input) {
   const actor = ctx.user;
   requireSuperAdmin(actor);
@@ -338,6 +343,7 @@ export async function listAudit(ctx: Ctx, input: Input) {
   return rows.map((r) => ({ ...r, detail: r.detail ? JSON.parse(r.detail) : null }));
 }
 
+// Users x projects matrix: who has which role / permissions where.
 export async function accessMatrix(ctx: Ctx, _input: Input) {
   const actor = ctx.user;
   requireSuperAdmin(actor);

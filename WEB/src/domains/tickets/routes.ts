@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import { optionalCtx, publicCtx, requestCtx } from "../access/index";
+import { optionalCtx, requestCtx } from "../access/index";
 import { guard, inputOf } from "../../shared/route";
 import * as a from "./actions/tickets";
 
