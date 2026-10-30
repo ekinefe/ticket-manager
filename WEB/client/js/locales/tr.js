@@ -10,5 +10,6 @@ import auth from "./tr/auth.js";
 import reports from "./tr/reports.js";
 import errors from "./tr/errors.js";
 import pdf from "./tr/pdf.js";
+import settings from "./tr/settings.js";
 
-export default { ...core, ...board, ...dashboard, ...projects, ...mytickets, ...admin, ...gitgraph, ...share, ...auth, ...reports, ...errors, ...pdf };
+export default { ...core, ...board, ...dashboard, ...projects, ...mytickets, ...admin, ...gitgraph, ...share, ...auth, ...reports, ...errors, ...pdf, ...settings };

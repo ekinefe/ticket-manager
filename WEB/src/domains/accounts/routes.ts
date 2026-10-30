@@ -28,6 +28,10 @@ export function registerAccountRoutes(app: Hono, env: Env): void {
     guard(c, async () => c.json(await a.changeOwnPassword(await requestCtx(c, env), inputOf(c))))
   );
 
+  app.patch("/api/me", (c) =>
+    guard(c, async () => c.json(await a.updateProfile(await requestCtx(c, env), inputOf(c))))
+  );
+
   app.patch("/api/me/language", (c) =>
     guard(c, async () => c.json(await a.setLanguage(await requestCtx(c, env), inputOf(c))))
   );
