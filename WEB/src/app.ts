@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import { createAuth } from "./auth/server";
 import { ApiError } from "./shared/http";
 import { guard, readBody } from "./shared/route";
+import { registerSprintRoutes, createDefaultSprint, listProjectSprints, nextSprintId } from "./domains/sprints/index";
 import {
   getSessionUser,
   requireProjectRole,
@@ -81,47 +82,6 @@ function assertTaskVisible(
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// Every project starts with "Sprint 1" (PREFIX-S1); further sprints continue
-// the sequence. The UNIQUE constraint on sprint_id is the race backstop.
-async function createDefaultSprint(db: typeof env.DB, projectId: string, prefix: string): Promise<void> {
-  await db.insert(sprints).values({
-    id: crypto.randomUUID(),
-    projectId,
-    sprintId: `${prefix}-S1`,
-    name: "Sprint 1",
-    createdAt: Date.now(),
-  }).onConflictDoNothing();
-}
-
-async function listProjectSprints(db: typeof env.DB, projectId: string) {
-  return db
-    .select({
-      id: sprints.id,
-      sprintId: sprints.sprintId,
-      name: sprints.name,
-      createdAt: sprints.createdAt,
-      ticketCount: sql<number>`(select count(*) from ${tasks} where ${tasks.sprintId} = ${sprints.id})`,
-    })
-    .from(sprints)
-    .where(eq(sprints.projectId, projectId))
-    .orderBy(asc(sprints.createdAt));
-}
-
-// Next human-visible sprint ID for a project: PREFIX-S<max+1>. Parses existing
-// IDs rather than trusting a stored counter so manual/out-of-band IDs stay safe.
-async function nextSprintId(db: typeof env.DB, projectId: string, prefix: string): Promise<string> {
-  const rows = await db
-    .select({ sprintId: sprints.sprintId })
-    .from(sprints)
-    .where(eq(sprints.projectId, projectId));
-  let max = 0;
-  for (const r of rows) {
-    const m = /-S(\d+)$/.exec(r.sprintId);
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  return `${prefix}-S${max + 1}`;
-}
 
 const TASK_TYPES = ["TASK", "BUG"];
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"];
@@ -379,7 +339,7 @@ app.post("/api/projects", (c) =>
       .values({ id, name, prefix, currentTicketSequence: 0, createdAt: Date.now() })
       .returning();
     await env.DB.insert(projectMembers).values({ projectId: id, userId: u.id, role: "ADMIN" });
-    await createDefaultSprint(env.DB, id, prefix);
+    await createDefaultSprint({ db: env.DB }, id, prefix);
     return c.json(project, 201);
   })
 );
@@ -405,7 +365,7 @@ app.get("/api/projects/:id", (c) =>
       .innerJoin(user, eq(user.id, projectMembers.userId))
       .where(eq(projectMembers.projectId, projectId));
 
-    const projectSprints = await listProjectSprints(env.DB, projectId);
+    const projectSprints = await listProjectSprints({ db: env.DB }, projectId);
 
     const myPermissions = PROJECT_PERMISSIONS.filter((p) => access.can(p));
 
@@ -413,76 +373,7 @@ app.get("/api/projects/:id", (c) =>
   })
 );
 
-// ---------- Sprints (per-project iterations) ----------
-// Only project admins may create, rename or delete sprints. A project must
-// always keep at least one sprint; deleting the last one is rejected.
-
-app.post("/api/projects/:id/sprints", (c) =>
-  guard(c, async () => {
-    const projectId = c.req.param("id");
-    const u = await getSessionUser(c.req.raw, env);
-    await requireProjectPermission(env.DB, u, projectId, "MANAGE_SPRINTS");
-
-    const body = await readBody<{ name?: string }>(c);
-    const [project] = await env.DB
-      .select({ prefix: projects.prefix })
-      .from(projects)
-      .where(eq(projects.id, projectId));
-    if (!project) throw new ApiError(404, "Project not found");
-
-    const sprintId = await nextSprintId(env.DB, projectId, project.prefix);
-    const number = Number(sprintId.split("-S")[1]);
-    const name = body.name?.trim() || `Sprint ${number}`;
-    const [created] = await env.DB
-      .insert(sprints)
-      .values({ id: crypto.randomUUID(), projectId, sprintId, name, createdAt: Date.now() })
-      .returning();
-    return c.json(created, 201);
-  })
-);
-
-app.patch("/api/projects/:id/sprints/:sid", (c) =>
-  guard(c, async () => {
-    const projectId = c.req.param("id");
-    const sid = c.req.param("sid");
-    const u = await getSessionUser(c.req.raw, env);
-    await requireProjectPermission(env.DB, u, projectId, "MANAGE_SPRINTS");
-
-    const body = await readBody<{ name?: string }>(c);
-    const name = body.name?.trim();
-    if (!name) throw new ApiError(400, "Sprint name is required");
-
-    const [updated] = await env.DB
-      .update(sprints)
-      .set({ name })
-      .where(and(eq(sprints.id, sid), eq(sprints.projectId, projectId)))
-      .returning();
-    if (!updated) throw new ApiError(404, "Sprint not found");
-    return c.json(updated);
-  })
-);
-
-app.delete("/api/projects/:id/sprints/:sid", (c) =>
-  guard(c, async () => {
-    const projectId = c.req.param("id");
-    const sid = c.req.param("sid");
-    const u = await getSessionUser(c.req.raw, env);
-    await requireProjectPermission(env.DB, u, projectId, "MANAGE_SPRINTS");
-
-    const [{ total }] = await env.DB
-      .select({ total: sql<number>`count(*)` })
-      .from(sprints)
-      .where(eq(sprints.projectId, projectId));
-    if (total <= 1) throw new ApiError(400, "A project must always have at least one sprint");
-
-    const deleted = await env.DB
-      .delete(sprints)
-      .where(and(eq(sprints.id, sid), eq(sprints.projectId, projectId)))
-      .returning({ id: sprints.id });
-    if (deleted.length === 0) throw new ApiError(404, "Sprint not found");
-    return c.json({ ok: true });
-  })
-);
+registerSprintRoutes(app, env);
 
 app.patch("/api/projects/:id", (c) =>
   guard(c, async () => {
@@ -3088,7 +2979,7 @@ app.post("/api/projects/:id/sync", (c) =>
     const now = Date.now();
     const sprintIdByName = new Map<string, string>();
     for (const name of plan.sprintsToCreate) {
-      const code = await nextSprintId(env.DB, projectId, project.prefix);
+      const code = await nextSprintId({ db: env.DB }, projectId, project.prefix);
       const id = crypto.randomUUID();
       await env.DB.insert(sprints).values({ id, projectId, sprintId: code, name, createdAt: now });
       sprintIdByName.set(name.trim().toLowerCase(), id);
