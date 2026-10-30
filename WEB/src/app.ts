@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
 import { createAuth } from "./auth/server";
 import { ApiError } from "./shared/http";
+import { guard, readBody } from "./shared/route";
 import {
   getSessionUser,
   requireProjectRole,
@@ -66,16 +67,6 @@ import { notifyMentionedUsers } from "./domains/notifications/index";
 export function createApp(env: Env): Hono {
   const app = new Hono();
 
-  async function guard(c: Context, fn: () => Promise<Response>): Promise<Response> {
-  try {
-    return await fn();
-  } catch (e) {
-    if (e instanceof ApiError) return c.json({ error: e.message }, e.status as 400);
-    console.error(e);
-    return c.json({ error: "Internal server error" }, 500);
-  }
-}
-
 // A MEMBER without VIEW_ALL_TICKETS only gets to see tickets that are theirs
 // (assigned or created by them). 404, not 403: hides that the ticket exists
 // at all, same as an unknown taskId would.
@@ -87,14 +78,6 @@ function assertTaskVisible(
   if (access.can("VIEW_ALL_TICKETS")) return;
   if (task.assigneeId === u.id || task.createdBy === u.id) return;
   throw new ApiError(404, "Task not found");
-}
-
-async function readBody<T>(c: Context): Promise<T> {
-  try {
-    return (await c.req.json()) as T;
-  } catch {
-    throw new ApiError(400, "Invalid JSON body");
-  }
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
