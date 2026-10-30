@@ -5,3 +5,4 @@ export * from "./notify";
 export * from "./mail/index";
 export * from "./mail/templates";
 export * from "./mail/resend";
+export { registerNotificationRoutes } from "./routes";

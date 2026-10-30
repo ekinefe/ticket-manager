@@ -20,3 +20,19 @@ export async function readBody<T>(c: Context): Promise<T> {
     throw new ApiError(400, "Invalid JSON body");
   }
 }
+
+export type Query = (key: string) => string | undefined;
+export type Params = Record<string, string>;
+
+// What an action receives from its route besides ctx.
+export interface Input {
+  p: Params;
+  query: Query;
+  body: <T>() => Promise<T>;
+}
+
+export const inputOf = (c: Context): Input => ({
+  p: c.req.param() as Params,
+  query: (k) => c.req.query(k),
+  body: () => readBody(c),
+});

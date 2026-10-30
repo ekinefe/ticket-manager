@@ -51,6 +51,7 @@ import {
 import { clientIp, rateLimit } from "./shared/ratelimit";
 import { renderTemplate, htmlToText } from "./domains/notifications/index";
 import { getTransport } from "./domains/notifications/mail/index";
+import { registerNotificationRoutes } from "./domains/notifications/index";
 import { runJob } from "./cron/scheduler";
 import { and, asc, eq, ne, or, sql, gte, inArray, isNull, count, desc } from "drizzle-orm";
 import { githubEvents, githubEventTasks, projects, projectMembers, projectMemberPermissions, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications, accessAudit } from "./db/schema";
@@ -2217,96 +2218,12 @@ app.post("/api/dev/cron/:job", (c) =>
 
 // ---------- Notifications ----------
 
-app.get("/api/notifications/unread-count", (c) =>
-  guard(c, async () => {
-    const u = await getSessionUser(c.req.raw, env);
-    const [{ n }] = await env.DB
-      .select({ n: sql<number>`count(*)` })
-      .from(notifications)
-      .where(and(eq(notifications.userId, u.id), isNull(notifications.readAt)));
-    return c.json({ count: n });
-  })
-);
+registerNotificationRoutes(app, env);
 
-app.get("/api/notifications", (c) =>
-  guard(c, async () => {
-    const u = await getSessionUser(c.req.raw, env);
-    const limit = Math.min(Number(c.req.query("limit") || 30), 100);
-    const offset = Number(c.req.query("offset") || 0);
 
-    const rows = await env.DB
-      .select({
-        id: notifications.id,
-        type: notifications.type,
-        taskId: notifications.taskId,
-        projectId: notifications.projectId,
-        message: notifications.message,
-        readAt: notifications.readAt,
-        createdAt: notifications.createdAt,
-        actorId: notifications.actorId,
-        actorName: user.name,
-      })
-      .from(notifications)
-      .leftJoin(user, eq(user.id, notifications.actorId))
-      .where(eq(notifications.userId, u.id))
-      .orderBy(sql`${notifications.createdAt} desc`)
-      .limit(limit)
-      .offset(offset);
 
-    const [{ total }] = await env.DB
-      .select({ total: sql<number>`count(*)` })
-      .from(notifications)
-      .where(eq(notifications.userId, u.id));
 
-    return c.json({ notifications: rows, total });
-  })
-);
 
-app.patch("/api/notifications/:id/read", (c) =>
-  guard(c, async () => {
-    const u = await getSessionUser(c.req.raw, env);
-    const id = c.req.param("id");
-    await env.DB
-      .update(notifications)
-      .set({ readAt: Date.now() })
-      .where(and(eq(notifications.id, id), eq(notifications.userId, u.id)));
-    return c.json({ ok: true });
-  })
-);
-
-app.patch("/api/notifications/:id/unread", (c) =>
-  guard(c, async () => {
-    const u = await getSessionUser(c.req.raw, env);
-    const id = c.req.param("id");
-    await env.DB
-      .update(notifications)
-      .set({ readAt: null })
-      .where(and(eq(notifications.id, id), eq(notifications.userId, u.id)));
-    return c.json({ ok: true });
-  })
-);
-
-app.patch("/api/notifications/read-all", (c) =>
-  guard(c, async () => {
-    const u = await getSessionUser(c.req.raw, env);
-    await env.DB
-      .update(notifications)
-      .set({ readAt: Date.now() })
-      .where(and(eq(notifications.userId, u.id), isNull(notifications.readAt)));
-    return c.json({ ok: true });
-  })
-);
-
-app.delete("/api/notifications/:id", (c) =>
-  guard(c, async () => {
-    const u = await getSessionUser(c.req.raw, env);
-    const id = c.req.param("id");
-    await env.DB
-      .delete(notifications)
-      .where(and(eq(notifications.id, id), eq(notifications.userId, u.id)));
-    return c.json({ ok: true });
-  })
-);
 
 // ---------- Export / Import ----------
 
