@@ -9,6 +9,7 @@ import type { Ctx } from "../../access/index";
 import type { Input } from "../../../shared/route";
 import { planSync, buildEditInstructions, DEFAULT_SYNC_OPTIONS, type SyncOptions, type SprintTarget } from "../project-sync";
 import { createDefaultSprint, nextSprintId } from "../../sprints/index";
+import type { SyncProjectBody, ImportProjectBody } from "../dto";
 
 function csvCell(v: unknown): string {
   let t = v == null ? "" : String(v);
@@ -204,7 +205,7 @@ export async function syncProject(ctx: Ctx, input: Input) {
   const access = await getProjectAccess(ctx.db, u, projectId);
   if (access.role !== "ADMIN") throw new ApiError(403, "Project admin role required");
 
-  const body = await input.body<{ data?: unknown; options?: Partial<SyncOptions> & { fields?: Partial<SyncOptions["fields"]> }; apply?: boolean }>();
+  const body = await input.body<SyncProjectBody>();
   const fileTasks = (body.data as { tasks?: unknown } | undefined)?.tasks;
   if (!Array.isArray(fileTasks)) throw new ApiError(400, "The JSON must contain a \"tasks\" list");
   if (fileTasks.length > 3000) throw new ApiError(400, "Too many tickets in one file (max 3000)");
@@ -325,21 +326,7 @@ export async function importProject(ctx: Ctx, input: Input) {
   const u = ctx.user;
   requirePanelAccess(u);
 
-  const body = await input.body<{
-    project?: { name?: string; prefix?: string };
-    sprints?: { name?: string }[];
-    tasks?: {
-      title?: string;
-      description?: string;
-      status?: string;
-      type?: string;
-      priority?: string;
-      sprint?: number | null;
-      assigneeId?: string;
-      labels?: string[];
-      dueDate?: string | null;
-    }[];
-  }>();
+  const body = await input.body<ImportProjectBody>();
 
   const projectName = body.project?.name?.trim();
   const prefix = body.project?.prefix?.trim().toUpperCase();

@@ -5,6 +5,7 @@ import { requireSuperAdmin, requirePanelAccess, requireProjectRole, getProjectAc
 import { createDefaultSprint, listProjectSprints } from "../../sprints/index";
 import type { Ctx } from "../../access/index";
 import type { Input } from "../../../shared/route";
+import type { CreateProjectBody, UpdateProjectBody } from "../dto";
 
 // Project lifecycle and the project detail view model (members, sprints, myPermissions).
 export async function listMyProjects(ctx: Ctx, _input: Input) {
@@ -16,7 +17,7 @@ export async function createProject(ctx: Ctx, input: Input) {
   const u = ctx.user;
   requirePanelAccess(u);
 
-  const body = await input.body<{ name?: string; prefix?: string }>();
+  const body = await input.body<CreateProjectBody>();
   const name = body.name?.trim();
   const prefix = body.prefix?.trim().toUpperCase();
   if (!name) throw new ApiError(400, "Project name is required");
@@ -66,7 +67,7 @@ export async function updateProject(ctx: Ctx, input: Input) {
   const u = ctx.user;
   await requireProjectRole(ctx.db, u, projectId, "ADMIN");
 
-  const body = await input.body<{ name?: string; prefix?: string; defaultAssigneeId?: string | null }>();
+  const body = await input.body<UpdateProjectBody>();
   if (!body.name && !body.prefix && body.defaultAssigneeId === undefined) throw new ApiError(400, "Nothing to update");
 
   const values: Partial<{ name: string; prefix: string; defaultAssigneeId: string | null }> = {};
