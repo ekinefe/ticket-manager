@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { createAuth } from "./auth/server";
-import { INTERNAL_SIGNUP_SECRET } from "./shared/signup-secret";
+import { internalSignupSecret } from "./shared/signup-secret";
 import { clientIp, rateLimit } from "./shared/ratelimit";
 import { registerAccountRoutes, registerOnboardingRoutes } from "./domains/accounts/index";
 import { registerAdminAccessRoutes } from "./domains/access/index";
@@ -25,7 +25,7 @@ export function createApp(env: Env): Hono {
   // The internal accept-invite flow passes the secret header when calling
   // auth.api.signUpEmail directly (bypasses HTTP, so it is unaffected anyway).
   app.use("/api/auth/sign-up/email", async (c, next) => {
-    if (c.req.header("x-internal-signup") !== INTERNAL_SIGNUP_SECRET) {
+    if (c.req.header("x-internal-signup") !== internalSignupSecret()) {
       return c.json({ error: "Sign-up is by invitation only" }, 403);
     }
     await next();

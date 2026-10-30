@@ -7,7 +7,7 @@ import { createProjectNotification } from "../../notifications/index";
 import type { Ctx, PublicCtx } from "../../access/index";
 import type { Input } from "../../../shared/route";
 import { createAuth } from "../../../auth/server";
-import { INTERNAL_SIGNUP_SECRET } from "../../../shared/signup-secret";
+import { internalSignupSecret } from "../../../shared/signup-secret";
 import { validateInvitation, markInvitationAccepted, hashInviteToken, generateInviteToken } from "../../projects/index";
 import { renderTemplate, htmlToText, getTransport } from "../../notifications/index";
 import { hasPendingAccountInvite, validateAccountInvite, markAccountInviteAccepted } from "../account-invite";
@@ -38,7 +38,7 @@ export async function completeSetup(ctx: PublicCtx, input: Input) {
   if (!password || password.length < 8) throw new ApiError(400, "Password must be at least 8 characters");
 
   const auth = createAuth(ctx.env);
-  const internalHeaders = new Headers({ "x-internal-signup": INTERNAL_SIGNUP_SECRET });
+  const internalHeaders = new Headers({ "x-internal-signup": internalSignupSecret() });
   let userId: string;
   try {
     const result = await auth.api.signUpEmail({
@@ -68,7 +68,7 @@ export async function acceptInvitation(ctx: PublicCtx, input: Input) {
   if (!password || password.length < 8) throw new ApiError(400, "Password must be at least 8 characters");
 
   const auth = createAuth(ctx.env);
-  const internalHeaders = new Headers({ "x-internal-signup": INTERNAL_SIGNUP_SECRET });
+  const internalHeaders = new Headers({ "x-internal-signup": internalSignupSecret() });
   const signUp = async (email: string) => {
     const result = await auth.api.signUpEmail({
       headers: internalHeaders,
