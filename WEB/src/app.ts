@@ -56,6 +56,7 @@ import { getTransport } from "./domains/notifications/mail/index";
 import { registerNotificationRoutes } from "./domains/notifications/index";
 import { registerAccountRoutes } from "./domains/accounts/index";
 import { registerAdminAccessRoutes } from "./domains/access/index";
+import { registerSettingsRoutes, loadGithubSettings } from "./domains/settings/index";
 import { runJob } from "./cron/scheduler";
 import { and, asc, eq, ne, or, sql, gte, inArray, isNull, count, desc } from "drizzle-orm";
 import { githubEvents, githubEventTasks, projects, projectMembers, projectMemberPermissions, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications, accessAudit } from "./db/schema";
@@ -376,48 +377,8 @@ registerAdminAccessRoutes(app, env);
 
 // Users x projects matrix: who has which role / permissions where.
 
-// ---------- App settings (super admin) ----------
-// Settings are stored in the DB and applied to the runtime env on save so
-// changes take effect without a server restart.
+registerSettingsRoutes(app, env);
 
-const SETTINGS_KEYS = [
-  "app_url", "better_auth_secret", "mail_transport", "mail_from", "resend_api_key",
-  "github_app_id", "github_private_key", "github_webhook_secret", "github_branch_create",
-  "mail_notify_statuses",
-] as const;
-type SettingsKey = (typeof SETTINGS_KEYS)[number];
-
-app.get("/api/admin/settings", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const rows = await env.DB.select().from(appSettings);
-    const settings: Record<string, string> = {};
-    for (const r of rows) settings[r.key] = r.value;
-    return c.json(settings);
-  })
-);
-
-app.patch("/api/admin/settings", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const body = await readBody<Record<string, string>>(c);
-    const now = Date.now();
-    for (const key of SETTINGS_KEYS) {
-      if (key in body) {
-        const value = String(body[key] ?? "").trim();
-        await env.DB
-          .insert(appSettings)
-          .values({ key, value, updatedAt: now })
-          .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: now } });
-      }
-    }
-    // Apply changes to the running env immediately.
-    await loadSettings(env);
-    return c.json({ ok: true });
-  })
-);
 
 // ---------- Reports: performance, completed work, forecast ----------
 // Covers projects where the caller can see every ticket (super admin, project
@@ -2203,31 +2164,3 @@ app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
   return app;
 }
-
-export async function loadGithubSettings(env: Env): Promise<void> {
-  const rows = await env.DB.select().from(appSettings);
-  const map = new Map(rows.map((r) => [r.key, r.value]));
-  if (map.get("github_app_id")) env.GITHUB_APP_ID = map.get("github_app_id")!;
-  if (map.get("github_private_key")) env.GITHUB_APP_PRIVATE_KEY = map.get("github_private_key")!;
-  if (map.get("github_webhook_secret")) env.GITHUB_WEBHOOK_SECRET = map.get("github_webhook_secret")!;
-  env.GITHUB_BRANCH_CREATE = map.get("github_branch_create") === "1" ? "1" : "";
-}
-
-// Read all settings from the DB and override the matching env fields.
-// Loaded once at startup (by the local or the Workers bootstrap) and again
-// whenever settings are saved via the admin panel.
-export async function loadSettings(env: Env): Promise<void> {
-  const rows = await env.DB.select().from(appSettings);
-  const map = new Map(rows.map((r) => [r.key, r.value]));
-  if (map.get("app_url")) env.APP_URL = map.get("app_url")!;
-  if (map.get("better_auth_secret")) env.BETTER_AUTH_SECRET = map.get("better_auth_secret")!;
-  if (map.get("mail_transport")) env.MAIL_TRANSPORT = map.get("mail_transport") as Env["MAIL_TRANSPORT"];
-  if (map.get("mail_from")) env.MAIL_FROM = map.get("mail_from")!;
-  if (map.get("resend_api_key")) env.RESEND_API_KEY = map.get("resend_api_key")!;
-  if (map.get("github_app_id")) env.GITHUB_APP_ID = map.get("github_app_id")!;
-  if (map.get("github_private_key")) env.GITHUB_APP_PRIVATE_KEY = map.get("github_private_key")!;
-  if (map.get("github_webhook_secret")) env.GITHUB_WEBHOOK_SECRET = map.get("github_webhook_secret")!;
-  // The toggle must be able to switch OFF, so it always follows the DB value.
-  env.GITHUB_BRANCH_CREATE = map.get("github_branch_create") === "1" ? "1" : "";
-}
-
