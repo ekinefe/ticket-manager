@@ -2,7 +2,7 @@ import { and, asc, eq, sql, count, desc } from "drizzle-orm";
 import { projects, projectMembers, projectMemberPermissions, user, accessAudit } from "../../../db/schema";
 import { ApiError } from "../../../shared/http";
 import { createAuth } from "../../../auth/server";
-import { INTERNAL_SIGNUP_SECRET } from "../../../shared/signup-secret";
+import { internalSignupSecret } from "../../../shared/signup-secret";
 import { EMAIL_RE } from "../../../shared/validate";
 import { requireSuperAdmin, requirePanelAccess, getMemberPermissions, setMemberPermissions, ensureDefaultMemberPermissions, PROJECT_PERMISSIONS, DEFAULT_MEMBER_PERMISSIONS, type ProjectPermission } from "../rbac";
 import { recordAccess, recordPermissionChange, currentMemberRole } from "../audit";
@@ -58,7 +58,7 @@ export async function createUser(ctx: Ctx, input: Input) {
   if (existingUser) throw new ApiError(409, "An account with this e-mail already exists");
 
   const auth = createAuth(ctx.env);
-  const internalHeaders = new Headers({ "x-internal-signup": INTERNAL_SIGNUP_SECRET });
+  const internalHeaders = new Headers({ "x-internal-signup": internalSignupSecret() });
   let userId: string;
   try {
     const result = await auth.api.signUpEmail({ headers: internalHeaders, body: { email, name, password } });
