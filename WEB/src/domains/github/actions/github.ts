@@ -100,6 +100,7 @@ export async function createTaskBranch(ctx: Ctx, input: Input) {
   return { branch, ...result };
 }
 
+// Commit tree of the project's repo (read live from GitHub through the App).
 export async function projectGraph(ctx: Ctx, input: Input) {
   const projectId = input.p.id;
   const u = ctx.user;
@@ -120,6 +121,7 @@ export async function projectGraph(ctx: Ctx, input: Input) {
   };
 }
 
+// Recent repo activity for the dashboard, limited to projects the viewer belongs to.
 export async function githubActivity(ctx: Ctx, _input: Input) {
   const u = ctx.user;
   const accessible = await listAccessibleProjects(ctx.db, u);

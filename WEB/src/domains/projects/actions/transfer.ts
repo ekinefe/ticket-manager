@@ -195,6 +195,9 @@ export async function exportProject(ctx: Ctx, input: Input) {
   };
 }
 
+// Sync an existing project from an edited JSON export. Project admins only.
+// POST {data, options, apply}: apply=false (default) returns a preview of what
+// would change; apply=true performs it.
 export async function syncProject(ctx: Ctx, input: Input) {
   const projectId = input.p.id;
   const u = ctx.user;

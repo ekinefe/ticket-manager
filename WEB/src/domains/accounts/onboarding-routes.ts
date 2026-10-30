@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import { optionalCtx, publicCtx, requestCtx } from "../access/index";
+import { publicCtx, requestCtx } from "../access/index";
 import { guard, inputOf, respond } from "../../shared/route";
 import { clientIp, rateLimit } from "../../shared/ratelimit";
 import { inviteLimiter } from "../../shared/limiters";

@@ -9,3 +9,5 @@ export * from "./visibility";
 export * from "./share-token";
 export { computePosition } from "./queries/positions";
 export { TASK_TYPES, PRIORITIES, descPreview, isValidDueDate, applyTaskUpdate, ACTIVITY_COALESCE_MS, type TaskUpdateBody } from "./actions/update";
+export { registerMediaRoutes } from "./media-routes";
+export { registerStreamRoutes } from "./stream-routes";
