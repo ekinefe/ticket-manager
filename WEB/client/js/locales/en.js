@@ -10,5 +10,6 @@ import auth from "./en/auth.js";
 import reports from "./en/reports.js";
 import errors from "./en/errors.js";
 import pdf from "./en/pdf.js";
+import settings from "./en/settings.js";
 
-export default { ...core, ...board, ...dashboard, ...projects, ...mytickets, ...admin, ...gitgraph, ...share, ...auth, ...reports, ...errors, ...pdf };
+export default { ...core, ...board, ...dashboard, ...projects, ...mytickets, ...admin, ...gitgraph, ...share, ...auth, ...reports, ...errors, ...pdf, ...settings };

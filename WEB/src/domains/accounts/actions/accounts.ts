@@ -6,7 +6,7 @@ import { renderTemplate, htmlToText, getTransport } from "../../notifications/in
 import { applyPasswordReset, createPasswordReset, findUserIdByEmail, hasPendingPasswordReset, validatePasswordReset, changePassword, verifyUserPassword } from "../password-reset";
 import type { Ctx, PublicCtx } from "../../access/index";
 import type { Input } from "../../../shared/route";
-import type { RequestPasswordResetBody, ResetPasswordBody, ChangeOwnPasswordBody, SetLanguageBody } from "../dto";
+import type { RequestPasswordResetBody, ResetPasswordBody, ChangeOwnPasswordBody, SetLanguageBody, UpdateProfileBody } from "../dto";
 
 // Self-service account actions: password reset (public), password change, UI language.
 export async function requestPasswordReset(ctx: PublicCtx, input: Input) {
@@ -55,6 +55,16 @@ export async function changeOwnPassword(ctx: Ctx, input: Input) {
   await changePassword(ctx.db, u.id, body.newPassword);
   await ctx.db.update(user).set({ mustChangePassword: false, updatedAt: new Date() }).where(eq(user.id, u.id));
   return { ok: true };
+}
+
+// The e-mail address is the login identity and stays read-only here.
+export async function updateProfile(ctx: Ctx, input: Input) {
+  const body = await input.body<UpdateProfileBody>();
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) throw new ApiError(400, "Name is required");
+  if (name.length > 80) throw new ApiError(400, "Name can be at most 80 characters");
+  await ctx.db.update(user).set({ name, updatedAt: new Date() }).where(eq(user.id, ctx.user.id));
+  return { ok: true, name };
 }
 
 export async function setLanguage(ctx: Ctx, input: Input) {
