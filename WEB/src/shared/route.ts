@@ -29,10 +29,14 @@ export interface Input {
   p: Params;
   query: Query;
   body: <T>() => Promise<T>;
+  text: () => Promise<string>;
+  header: (name: string) => string | undefined;
 }
 
 export const inputOf = (c: Context): Input => ({
   p: c.req.param() as Params,
   query: (k) => c.req.query(k),
   body: () => readBody(c),
+  text: () => c.req.text(),
+  header: (name) => c.req.header(name),
 });
