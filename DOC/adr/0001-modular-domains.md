@@ -1,6 +1,6 @@
 # ADR 0001: Modular, domain-based structure (tenant-ready)
 
-Status: proposed · Date: 2026-10-30 · Ticket: TM-83
+Status: accepted (implemented in PRs #60-#76) · Date: 2026-10-30 · Ticket: TM-83
 
 ## Context
 
@@ -26,7 +26,7 @@ WEB/src/
   cron/                   jobs call domain actions
 ```
 
-Domains: `tickets`, `projects`, `sprints`, `access`, `reports`, `accounts`, `notifications`; `workspaces` is added later.
+Domains: `tickets`, `projects`, `sprints`, `access`, `reports`, `accounts`, `notifications`, plus `github` (webhook, repo link, graph) and `settings` (app settings, cron trigger) that turned out to be their own concerns; `workspaces` is added later.
 
 ### Rules
 
@@ -56,3 +56,11 @@ Characterization tests -> skeleton + `ctx` -> sprints (pilot) -> reports -> tick
 - Good: changes stay local to a domain; tenant isolation has one place to live; new features (settings, tokens, AI) are written in the new structure.
 - Cost: a long refactor, and a period where `lib/` and `domains/` coexist. Mitigated by small PRs and the test suite (173 tests).
 - Open: Zod vs hand-written validation, and a boundary-check tool, both need a dependency decision.
+
+## As built (differences from the plan)
+
+- Route handlers were moved mechanically: each domain has `routes.ts` (thin), `actions/*.ts` (use cases taking `ctx` + an `Input` with params/query/body), `dto.ts` (request body types). Queries are only split out where reused (sprints, ticket positions); the rest still lives next to the action that uses it.
+- `ctx` is built lazily by `requestCtx(c, env)`; `publicCtx` and `optionalCtx` cover public and optional-session routes. `workspaceId` is `null` until workspaces exist.
+- Validation is hand-written (`readBody` rejects non-object JSON; actions check fields). Zod was not added (new dependency).
+- `tests/boundaries.test.ts` enforces the import rules (index-only cross-domain imports, `shared/` never imports a domain, layers one-way) with a small scanner instead of dependency-cruiser.
+- Known wart: access actions import `applyPasswordReset` from accounts while accounts routes use `requestCtx` from access (a runtime cycle through the barrels, only used inside functions). Fix when `ctx` moves to `shared/`.
