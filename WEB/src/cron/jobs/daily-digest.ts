@@ -3,7 +3,7 @@ import { activityLog, projects, tasks } from "../../db/schema";
 import { getDb } from "../../db/client";
 import { listMemberEmails } from "../../domains/access/index";
 import { renderTemplate, htmlToText, ticketRow, emptyRow } from "../../domains/notifications/index";
-import { getTransport } from "../../domains/notifications/mail/index";
+import { getTransport } from "../../domains/notifications/index";
 import { runOnce } from "../guard";
 
 export async function runDailyDigest(env: Env, dateKey: string): Promise<void> {

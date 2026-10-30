@@ -4,7 +4,7 @@ import { projects, tasks, activityLog } from "../../db/schema";
 import { getDb } from "../../db/client";
 import { listAdminEmails, listSuperAdminEmails } from "../../domains/access/index";
 import { renderTemplate, htmlToText, statRow } from "../../domains/notifications/index";
-import { getTransport } from "../../domains/notifications/mail/index";
+import { getTransport } from "../../domains/notifications/index";
 import { runOnce, weekBounds } from "../guard";
 
 export async function runWeeklyReport(env: Env, dateKey: string): Promise<void> {
