@@ -1,11 +1,11 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { githubEventTasks, githubEvents, projects, tasks } from "../db/schema";
-import { getDb } from "../db/client";
-import { logActivity } from "./activity";
-import { isStatusMailEnabled, notifyStatusChanged } from "./notify";
-import { publish } from "./realtime";
-import type { Status } from "./status";
-import { ApiError } from "./http";
+import { githubEventTasks, githubEvents, projects, tasks } from "../../db/schema";
+import { getDb } from "../../db/client";
+import { logActivity } from "../tickets/index";
+import { isStatusMailEnabled, notifyStatusChanged } from "../notifications/index";
+import { publish } from "../../shared/realtime";
+import type { Status } from "../tickets/index";
+import { ApiError } from "../../shared/http";
 import { collectPages, labelBranches, orderCommits, pickBranches } from "./git-graph-build";
 
 // ---------- Pure helpers ----------

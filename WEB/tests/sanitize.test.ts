@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { sanitizeDescHtml } from "../src/lib/sanitize.ts";
+import { sanitizeDescHtml } from "../src/shared/sanitize.ts";
 
 describe("sanitizeDescHtml (server-side)", () => {
   it("drops trailing blank lines left open by the editor", () => {

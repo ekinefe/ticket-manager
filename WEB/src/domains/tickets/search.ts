@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, like, or, sql } from "drizzle-orm";
-import type { AppDB } from "../db/client";
-import { projects, tasks, user, sprints } from "../db/schema";
-import { listAccessibleProjects, type SessionUser } from "./rbac";
+import type { AppDB } from "../../db/client";
+import { projects, tasks, user, sprints } from "../../db/schema";
+import { listAccessibleProjects, type SessionUser } from "../access/index";
 
 export function normalizeQuery(q: string): string {
   return q.toLowerCase().replace(/[^a-z0-9]+/g, "");

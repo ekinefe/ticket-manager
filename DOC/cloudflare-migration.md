@@ -91,10 +91,10 @@ Cloudflare Worker  (the existing Hono app)
   lowering or using direct-to-R2 signed uploads if needed.
 
 ### 4.4 Mail
-- `WEB/src/lib/mail/index.ts`: keep `resend` transport. Remove the `file`
+- `WEB/src/domains/notifications/mail/index.ts`: keep `resend` transport. Remove the `file`
   branch or make it local-dev-only (guarded so `writeFileSync(node:fs)` is not
   imported in the Worker bundle).
-- `WEB/src/lib/mail/resend.ts`: already HTTP-based → works on Workers.
+- `WEB/src/domains/notifications/mail/resend.ts`: already HTTP-based → works on Workers.
 
 ### 4.5 Cron
 - `WEB/src/cron/scheduler.ts` `setInterval` loop → remove from Worker.

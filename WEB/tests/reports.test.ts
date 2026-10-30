@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bucketStart, buildForecast, buildReport, type ReportTask } from "../src/lib/reports.ts";
+import { bucketStart, buildForecast, buildReport, type ReportTask } from "../src/domains/reports/index.ts";
 
 const DAY = 86_400_000;
 const T0 = Date.UTC(2026, 9, 14, 12); // Wed 2026-10-14

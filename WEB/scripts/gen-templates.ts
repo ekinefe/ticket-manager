@@ -13,5 +13,5 @@ for (const f of files) {
 }
 out += "};\n";
 
-writeFileSync(join(root, "src", "lib", "mail", "generated-templates.ts"), out);
+writeFileSync(join(root, "src", "domains", "notifications", "mail", "generated-templates.ts"), out);
 console.log(`generated-templates.ts yazildi (${files.length} sablon).`);

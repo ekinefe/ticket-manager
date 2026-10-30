@@ -1,10 +1,10 @@
 import { and, asc, count, eq, getTableColumns, inArray, isNull } from "drizzle-orm";
-import type { AppDB } from "../db/client";
-import { projectMemberPermissions, projectMembers, projects, tasks, user } from "../db/schema";
-import { getDb } from "../db/client";
-import { createAuth } from "../auth/server";
-import { ApiError } from "./http";
-import { STATUSES, type Status } from "./status";
+import type { AppDB } from "../../db/client";
+import { projectMemberPermissions, projectMembers, projects, tasks, user } from "../../db/schema";
+import { getDb } from "../../db/client";
+import { createAuth } from "../../auth/server";
+import { ApiError } from "../../shared/http";
+import { STATUSES, type Status } from "../tickets/index";
 
 export interface SessionUser {
   id: string;

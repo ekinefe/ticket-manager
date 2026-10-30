@@ -1,6 +1,6 @@
 import type { D1Database, R2Bucket } from "@cloudflare/workers-types";
 import type { AppDB } from "./db/client";
-import type { MediaStorage } from "./lib/media";
+import type { MediaStorage } from "./shared/media";
 
 declare global {
   interface Env {

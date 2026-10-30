@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { planSync, buildEditInstructions, DEFAULT_SYNC_OPTIONS, type ExistingTask } from "../src/lib/project-sync.ts";
+import { planSync, buildEditInstructions, DEFAULT_SYNC_OPTIONS, type ExistingTask } from "../src/domains/projects/index.ts";
 import { seed, cleanup, req, userCookie, PROJECT_ID } from "./helpers.ts";
 
 const task = (n: number, extra: Partial<ExistingTask> = {}): ExistingTask => ({

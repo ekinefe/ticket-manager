@@ -1,4 +1,4 @@
-import { STATUS_COLORS, STATUS_LABELS, type Status } from "../status";
+import { STATUS_COLORS, STATUS_LABELS, type Status } from "../../tickets/index";
 import { TEMPLATES } from "./generated-templates";
 
 export function renderTemplate(name: string, vars: Record<string, string>): string {

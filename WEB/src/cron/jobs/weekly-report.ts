@@ -2,9 +2,9 @@ import { and, eq, gte, lt, sql } from "drizzle-orm";
 import type { AppDB } from "../../db/client";
 import { projects, tasks, activityLog } from "../../db/schema";
 import { getDb } from "../../db/client";
-import { listAdminEmails, listSuperAdminEmails } from "../../lib/rbac";
-import { renderTemplate, htmlToText, statRow } from "../../lib/mail/templates";
-import { getTransport } from "../../lib/mail";
+import { listAdminEmails, listSuperAdminEmails } from "../../domains/access/index";
+import { renderTemplate, htmlToText, statRow } from "../../domains/notifications/index";
+import { getTransport } from "../../domains/notifications/mail/index";
 import { runOnce, weekBounds } from "../guard";
 
 export async function runWeeklyReport(env: Env, dateKey: string): Promise<void> {

@@ -1,9 +1,9 @@
 import { eq, inArray } from "drizzle-orm";
-import { appSettings, tasks, user, projects } from "../db/schema";
-import { getDb } from "../db/client";
-import { STATUS_LABELS, parseNotifyStatuses, statusSlug, type Status } from "./status";
+import { appSettings, tasks, user, projects } from "../../db/schema";
+import { getDb } from "../../db/client";
+import { STATUS_LABELS, parseNotifyStatuses, statusSlug, type Status } from "../tickets/index";
 import { renderTemplate, htmlToText } from "./mail/templates";
-import { getTransport } from "./mail";
+import { getTransport } from "./mail/index";
 
 export interface StatusChangeNotification {
   projectId: string;

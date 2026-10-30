@@ -1,7 +1,7 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
-import { activityLog } from "../db/schema";
-import { getDb } from "../db/client";
-import type { AppDB } from "../db/client";
+import { activityLog } from "../../db/schema";
+import { getDb } from "../../db/client";
+import type { AppDB } from "../../db/client";
 
 export type ActivityEventType =
   | "CREATED"

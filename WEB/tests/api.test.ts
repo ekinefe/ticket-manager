@@ -859,7 +859,7 @@ describe("admin membership endpoints (both directions)", () => {
 
 describe("invitation expiry", () => {
   it("rejects expired invitation tokens with 410", async () => {
-    const { hashInviteToken } = await import("../src/lib/invite.ts");
+    const { hashInviteToken } = await import("../src/domains/projects/index.ts");
     const { getDb } = await import("../src/db/client.ts");
     const { invitations } = await import("../src/db/schema.ts");
     const token = "expired-token-" + crypto.randomUUID();

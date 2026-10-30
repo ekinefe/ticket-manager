@@ -1,5 +1,5 @@
-import { user } from "../db/schema";
-import { getDb, type AppDB } from "../db/client";
+import { user } from "../../db/schema";
+import { getDb, type AppDB } from "../../db/client";
 import { createNotification, type NotificationType } from "./in-app-notify";
 
 const MENTION_ID_RE = /@\[([^\]]+)\]\(([^)]+)\)/g;

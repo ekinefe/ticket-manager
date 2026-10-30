@@ -2,7 +2,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { seed, cleanup, req, userCookie, env, app, PROJECT_ID, PREFIX } from "./helpers.ts";
-import { extractTicketIds } from "../src/lib/github.ts";
+import { extractTicketIds } from "../src/domains/github/index.ts";
 const { getDb } = await import("../src/db/client.ts");
 const { tasks } = await import("../src/db/schema.ts");
 

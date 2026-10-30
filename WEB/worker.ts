@@ -1,7 +1,7 @@
 import type { D1Database, R2Bucket, ExecutionContext, Fetcher } from "@cloudflare/workers-types";
 import { createApp } from "./src/app";
 import { createD1Db } from "./src/db/d1";
-import { createR2Storage, createDisabledStorage } from "./src/lib/media";
+import { createR2Storage, createDisabledStorage } from "./src/shared/media";
 import { runJob } from "./src/cron/scheduler";
 
 // Raw bindings wrangler injects from wrangler.toml ([d1_databases] DB,
