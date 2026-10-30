@@ -26,3 +26,10 @@ export function requestCtx(c: Context, env: Env): Promise<Ctx> {
 // For public routes (login flows, setup) that have no signed-in user.
 export type PublicCtx = Pick<Ctx, "env" | "db">;
 export const publicCtx = (env: Env): PublicCtx => ({ env, db: env.DB });
+
+// For routes that work with or without a session (e.g. shared ticket links).
+export type OptionalCtx = PublicCtx & { user: SessionUser | null };
+export async function optionalCtx(c: Context, env: Env): Promise<OptionalCtx> {
+  const user = await getSessionUser(c.req.raw, env).catch(() => null);
+  return { env, db: env.DB, user };
+}

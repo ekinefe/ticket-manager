@@ -36,7 +36,7 @@ export function parseNotifyStatuses(raw: string | null | undefined): ReadonlySet
   return new Set(raw.split(",").map((s) => s.trim()).filter(isStatus));
 }
 
-function isStatus(v: unknown): v is Status {
+export function isStatus(v: unknown): v is Status {
   return typeof v === "string" && (STATUSES as readonly string[]).includes(v);
 }
 
