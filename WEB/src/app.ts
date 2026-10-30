@@ -57,6 +57,7 @@ import { registerNotificationRoutes } from "./domains/notifications/index";
 import { registerAccountRoutes } from "./domains/accounts/index";
 import { registerAdminAccessRoutes } from "./domains/access/index";
 import { registerSettingsRoutes, loadGithubSettings } from "./domains/settings/index";
+import { registerProjectRoutes } from "./domains/projects/index";
 import { runJob } from "./cron/scheduler";
 import { and, asc, eq, ne, or, sql, gte, inArray, isNull, count, desc } from "drizzle-orm";
 import { githubEvents, githubEventTasks, projects, projectMembers, projectMemberPermissions, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications, accessAudit } from "./db/schema";
@@ -146,12 +147,7 @@ const inviteLimiter = rateLimit({
   keyFor: (c) => `invite:${c.req.header("x-forwarded-for") ?? "local"}`,
 });
 
-app.get("/api/projects", (c) =>
-  guard(c, async () => {
-    const u = await getSessionUser(c.req.raw, env);
-    return c.json(await listAccessibleProjects(env.DB, u));
-  })
-);
+registerProjectRoutes(app, env);
 
 // Unauthenticated liveness probe for monitoring / reverse-proxy checks.
 app.get("/api/health", (c) => c.json({ ok: true, time: Date.now() }));
@@ -249,107 +245,11 @@ app.get("/api/search", (c) =>
   })
 );
 
-app.post("/api/projects", (c) =>
-  guard(c, async () => {
-    const u = await getSessionUser(c.req.raw, env);
-    requirePanelAccess(u);
 
-    const body = await readBody<{ name?: string; prefix?: string }>(c);
-    const name = body.name?.trim();
-    const prefix = body.prefix?.trim().toUpperCase();
-    if (!name) throw new ApiError(400, "Project name is required");
-    if (!prefix || !/^[A-Z0-9]{2,5}$/.test(prefix)) {
-      throw new ApiError(400, "Prefix must be 2-5 uppercase letters/digits (e.g. WCE)");
-    }
-
-    const id = crypto.randomUUID();
-    const [project] = await env.DB
-      .insert(projects)
-      .values({ id, name, prefix, currentTicketSequence: 0, createdAt: Date.now() })
-      .returning();
-    await env.DB.insert(projectMembers).values({ projectId: id, userId: u.id, role: "ADMIN" });
-    await createDefaultSprint({ db: env.DB }, id, prefix);
-    return c.json(project, 201);
-  })
-);
-
-app.get("/api/projects/:id", (c) =>
-  guard(c, async () => {
-    const projectId = c.req.param("id");
-    const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId);
-    const access = await getProjectAccess(env.DB, u, projectId);
-
-    const [project] = await env.DB.select().from(projects).where(eq(projects.id, projectId));
-    if (!project) throw new ApiError(404, "Project not found");
-
-    const members = await env.DB
-      .select({
-        userId: projectMembers.userId,
-        role: projectMembers.role,
-        name: user.name,
-        email: user.email,
-      })
-      .from(projectMembers)
-      .innerJoin(user, eq(user.id, projectMembers.userId))
-      .where(eq(projectMembers.projectId, projectId));
-
-    const projectSprints = await listProjectSprints({ db: env.DB }, projectId);
-
-    const myPermissions = PROJECT_PERMISSIONS.filter((p) => access.can(p));
-
-    return c.json({ ...project, members, sprints: projectSprints, myPermissions });
-  })
-);
 
 registerSprintRoutes(app, env);
 
-app.patch("/api/projects/:id", (c) =>
-  guard(c, async () => {
-    const projectId = c.req.param("id");
-    const u = await getSessionUser(c.req.raw, env);
-    await requireProjectRole(env.DB, u, projectId, "ADMIN");
 
-    const body = await readBody<{ name?: string; prefix?: string; defaultAssigneeId?: string | null }>(c);
-    if (!body.name && !body.prefix && body.defaultAssigneeId === undefined) throw new ApiError(400, "Nothing to update");
-
-    const values: Partial<{ name: string; prefix: string; defaultAssigneeId: string | null }> = {};
-    if (body.name) values.name = body.name.trim();
-    if (body.prefix) {
-      const prefix = body.prefix.trim().toUpperCase();
-      if (!/^[A-Z0-9]{2,5}$/.test(prefix)) throw new ApiError(400, "Prefix must be 2-5 uppercase letters/digits");
-      values.prefix = prefix;
-    }
-    if (body.defaultAssigneeId !== undefined) {
-      if (body.defaultAssigneeId) {
-        const [member] = await env.DB
-          .select({ userId: projectMembers.userId })
-          .from(projectMembers)
-          .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, body.defaultAssigneeId)));
-        if (!member) throw new ApiError(400, "Default assignee must be a member of this project");
-        values.defaultAssigneeId = body.defaultAssigneeId;
-      } else {
-        values.defaultAssigneeId = null;
-      }
-    }
-
-    const [updated] = await env.DB.update(projects).set(values).where(eq(projects.id, projectId)).returning();
-    if (!updated) throw new ApiError(404, "Project not found");
-    return c.json(updated);
-  })
-);
-
-app.delete("/api/projects/:id", (c) =>
-  guard(c, async () => {
-    const projectId = c.req.param("id");
-    const u = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(u);
-
-    const deleted = await env.DB.delete(projects).where(eq(projects.id, projectId)).returning({ id: projects.id });
-    if (deleted.length === 0) throw new ApiError(404, "Project not found");
-    return c.json({ ok: true });
-  })
-);
 
 // ---------- Super-admin panel API ----------
 
