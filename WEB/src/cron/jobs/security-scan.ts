@@ -3,7 +3,7 @@ import { securityFindings } from "../../db/schema";
 import { getDb } from "../../db/client";
 import { listSuperAdminEmails } from "../../domains/access/index";
 import { renderTemplate, htmlToText, escapeHtml, emptyRow } from "../../domains/notifications/index";
-import { getTransport } from "../../domains/notifications/mail/index";
+import { getTransport } from "../../domains/notifications/index";
 import { runOnce } from "../guard";
 
 const OSV_BATCH_URL = "https://api.osv.dev/v1/querybatch";

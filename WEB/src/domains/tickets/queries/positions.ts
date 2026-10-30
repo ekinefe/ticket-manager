@@ -1,7 +1,7 @@
 import { and, asc, eq, ne } from "drizzle-orm";
 import { tasks } from "../../../db/schema";
 import type { Status } from "../status";
-import type { Ctx } from "../../access/ctx";
+import type { Ctx } from "../../access/index";
 
 export async function computePosition(ctx: Pick<Ctx, "db">, projectId: string, status: Status, beforeTaskId: string | undefined, movedTaskId: string): Promise<number> {
   const siblings = await ctx.db
