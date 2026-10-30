@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import { createAuth } from "./auth/server";
 import { ApiError } from "./shared/http";
 import { guard, readBody } from "./shared/route";
+import { INTERNAL_SIGNUP_SECRET } from "./shared/signup-secret";
 import { EMAIL_RE } from "./shared/validate";
 import { registerSprintRoutes, createDefaultSprint, listProjectSprints, nextSprintId } from "./domains/sprints/index";
 import {
@@ -54,6 +55,7 @@ import { renderTemplate, htmlToText } from "./domains/notifications/index";
 import { getTransport } from "./domains/notifications/mail/index";
 import { registerNotificationRoutes } from "./domains/notifications/index";
 import { registerAccountRoutes } from "./domains/accounts/index";
+import { registerAdminAccessRoutes } from "./domains/access/index";
 import { runJob } from "./cron/scheduler";
 import { and, asc, eq, ne, or, sql, gte, inArray, isNull, count, desc } from "drizzle-orm";
 import { githubEvents, githubEventTasks, projects, projectMembers, projectMemberPermissions, tasks, user, invitations, activityLog, taskComments, accountInvites, sprints, appSettings, notifications, accessAudit } from "./db/schema";
@@ -100,10 +102,6 @@ const descPreview = (html: string | null | undefined): string => {
   return text.length > 160 ? `${text.slice(0, 159)}…` : text;
 };
 
-// Public sign-up is closed: accounts are created only through invitations.
-// The internal accept-invite flow passes this secret header when calling
-// auth.api.signUpEmail directly (bypasses HTTP, so it is unaffected anyway).
-const INTERNAL_SIGNUP_SECRET = crypto.randomUUID();
 app.use("/api/auth/sign-up/email", async (c, next) => {
   if (c.req.header("x-internal-signup") !== INTERNAL_SIGNUP_SECRET) {
     return c.json({ error: "Sign-up is by invitation only" }, 403);
@@ -354,435 +352,29 @@ app.delete("/api/projects/:id", (c) =>
 
 // ---------- Super-admin panel API ----------
 
-app.get("/api/admin/users", (c) =>
-  guard(c, async () => {
-    const u = await getSessionUser(c.req.raw, env);
-    requirePanelAccess(u);
-
-    // Optional pagination: without ?page the full array is returned
-    // (backwards compatible with the admin UI).
-    const page = Number(c.req.query("page") ?? 0);
-    const perPage = Math.min(Number(c.req.query("perPage") ?? 25), 100);
-    if (!page || page < 1) {
-      const rows = await env.DB
-        .select({ id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt })
-        .from(user)
-        .orderBy(asc(user.name));
-      return c.json(rows);
-    }
-
-    const [{ total }] = await env.DB.select({ total: sql<number>`count(*)` }).from(user);
-    const rows = await env.DB
-      .select({ id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt })
-      .from(user)
-      .orderBy(asc(user.name))
-      .limit(perPage)
-      .offset((page - 1) * perPage);
-    return c.json({ data: rows, total, page, perPage });
-  })
-);
+registerAdminAccessRoutes(app, env);
 
 // Creates an account directly (name/e-mail/password set by the admin), no
 // invite token and no e-mail sent. Mirrors /api/setup/complete's use of the
 // internal sign-up header, just without the "no super admin yet" gate.
-app.post("/api/admin/users", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
 
-    const body = await readBody<{ name?: string; email?: string; password?: string; role?: string }>(c);
-    const email = body.email?.trim().toLowerCase();
-    const name = body.name?.trim();
-    const password = body.password ?? "";
-    if (!email || !EMAIL_RE.test(email)) throw new ApiError(400, "A valid e-mail address is required");
-    if (!name) throw new ApiError(400, "Name is required");
-    if (!password || password.length < 8) throw new ApiError(400, "Password must be at least 8 characters");
-    const role = body.role ?? "USER";
-    if (role !== "SUPER_ADMIN" && role !== "ADMIN" && role !== "USER") throw new ApiError(400, "Invalid role");
 
-    const [existingUser] = await env.DB.select({ id: user.id }).from(user).where(eq(user.email, email));
-    if (existingUser) throw new ApiError(409, "An account with this e-mail already exists");
 
-    const auth = createAuth(env);
-    const internalHeaders = new Headers({ "x-internal-signup": INTERNAL_SIGNUP_SECRET });
-    let userId: string;
-    try {
-      const result = await auth.api.signUpEmail({ headers: internalHeaders, body: { email, name, password } });
-      userId = result.user.id;
-    } catch (e) {
-      // The e-mail-uniqueness case is already handled above, so a failure
-      // here is an unexpected error (bad DB state, etc.) — surface it
-      // instead of a hardcoded, likely-wrong guess.
-      console.error("admin user creation failed:", e);
-      throw new ApiError(500, `Could not create account: ${e instanceof Error ? e.message : "unknown error"}`);
-    }
 
-    // Admin-set password: force a change on first login.
-    await env.DB
-      .update(user)
-      .set({ mustChangePassword: true, ...(role !== "USER" ? { role } : {}), updatedAt: new Date() })
-      .where(eq(user.id, userId));
 
-    const [created] = await env.DB
-      .select({ id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt })
-      .from(user)
-      .where(eq(user.id, userId));
-    return c.json(created, 201);
-  })
-);
 
-app.patch("/api/admin/users/:id", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const id = c.req.param("id");
-    // Lockout protection: a super admin cannot change their own role.
-    if (id === actor.id) throw new ApiError(400, "You cannot change your own role");
 
-    const body = await readBody<{ role?: string }>(c);
-    if (body.role !== "SUPER_ADMIN" && body.role !== "ADMIN" && body.role !== "USER") throw new ApiError(400, "Invalid role");
-    const [before] = await env.DB.select({ role: user.role }).from(user).where(eq(user.id, id));
-
-    const [updated] = await env.DB
-      .update(user)
-      .set({ role: body.role, updatedAt: new Date() })
-      .where(eq(user.id, id))
-      .returning({ id: user.id, email: user.email, role: user.role });
-    if (!updated) throw new ApiError(404, "User not found");
-    if (before?.role !== updated.role) await recordAccess(actor, { action: "ROLE_CHANGED", targetUserId: id, detail: { from: before?.role, to: updated.role } });
-    return c.json(updated);
-  })
-);
-
-app.post("/api/admin/users/:id/password", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const id = c.req.param("id");
-    const body = await readBody<{ password?: string }>(c);
-    if (!body.password || body.password.length < 8) {
-      throw new ApiError(400, "Password must be at least 8 characters");
-    }
-    // Reset the target's password and revoke their sessions (forces re-login).
-    await applyPasswordReset(env.DB, id, body.password);
-    // Admin-set password: force a change on next login.
-    await env.DB.update(user).set({ mustChangePassword: true, updatedAt: new Date() }).where(eq(user.id, id));
-    return c.json({ ok: true });
-  })
-);
-
-app.delete("/api/admin/users/:id", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const id = c.req.param("id");
-    // Lockout protection: a super admin cannot delete their own account.
-    if (id === actor.id) throw new ApiError(400, "You cannot delete your own account");
-
-    await recordAccess(actor, { action: "ACCOUNT_DELETED", targetUserId: id });
-    // Sessions and memberships cascade; tickets fall back to "Unassigned".
-    const deleted = await env.DB
-      .delete(user)
-      .where(eq(user.id, id))
-      .returning({ id: user.id, email: user.email });
-    if (deleted.length === 0) throw new ApiError(404, "User not found");
-    return c.json({ ok: true });
-  })
-);
-
-app.get("/api/admin/users/:id", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const id = c.req.param("id");
-    const [u] = await env.DB
-      .select({ id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt })
-      .from(user)
-      .where(eq(user.id, id));
-    if (!u) throw new ApiError(404, "User not found");
-    const memberships = await env.DB
-      .select({ projectId: projectMembers.projectId, role: projectMembers.role })
-      .from(projectMembers)
-      .where(eq(projectMembers.userId, id));
-    const permRows = await env.DB
-      .select({ projectId: projectMemberPermissions.projectId, permission: projectMemberPermissions.permission })
-      .from(projectMemberPermissions)
-      .where(eq(projectMemberPermissions.userId, id));
-    const permsByProject = new Map<string, string[]>();
-    for (const r of permRows) permsByProject.set(r.projectId, [...(permsByProject.get(r.projectId) ?? []), r.permission]);
-    return c.json({
-      ...u,
-      projects: memberships.map((m) => ({
-        ...m,
-        permissions: m.role === "ADMIN" ? [...PROJECT_PERMISSIONS] : permsByProject.get(m.projectId) ?? [],
-      })),
-      availablePermissions: PROJECT_PERMISSIONS,
-    });
-  })
-);
-
-app.post("/api/admin/users/:id/projects", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const id = c.req.param("id");
-    const body = await readBody<{ projectId?: string; role?: string }>(c);
-    if (!body.projectId) throw new ApiError(400, "projectId is required");
-    const memberRole = body.role === "ADMIN" ? "ADMIN" : "MEMBER";
-
-    const [target] = await env.DB.select({ id: user.id }).from(user).where(eq(user.id, id));
-    if (!target) throw new ApiError(404, "User not found");
-    const previousRole = await currentMemberRole(body.projectId, id);
-
-    await env.DB
-      .insert(projectMembers)
-      .values({ projectId: body.projectId, userId: id, role: memberRole })
-      .onConflictDoUpdate({
-        target: [projectMembers.projectId, projectMembers.userId],
-        set: { role: memberRole },
-      });
-    await ensureDefaultMemberPermissions(env.DB, body.projectId, id, memberRole);
-    if (previousRole !== memberRole) {
-      await recordAccess(actor, { action: previousRole ? "MEMBER_ROLE_CHANGED" : "MEMBER_ADDED", targetUserId: id, projectId: body.projectId, detail: { from: previousRole, to: memberRole } });
-    }
-    return c.json({ ok: true });
-  })
-);
-
-app.patch("/api/admin/users/:id/projects/:projectId/permissions", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const id = c.req.param("id");
-    const projectId = c.req.param("projectId");
-
-    const [membership] = await env.DB
-      .select({ role: projectMembers.role })
-      .from(projectMembers)
-      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, id)));
-    if (!membership) throw new ApiError(404, "This user is not a member of this project");
-    if (membership.role === "ADMIN") {
-      throw new ApiError(400, "Project admins already have full access; permissions only apply to members");
-    }
-
-    const body = await readBody<{ permissions?: string[] }>(c);
-    if (!Array.isArray(body.permissions)) throw new ApiError(400, "permissions must be an array");
-    const valid = new Set<string>(PROJECT_PERMISSIONS);
-    const invalid = body.permissions.filter((p) => !valid.has(p));
-    if (invalid.length > 0) throw new ApiError(400, `Unknown permission(s): ${invalid.join(", ")}`);
-
-    const beforePerms = await getMemberPermissions(env.DB, projectId, id);
-    await setMemberPermissions(env.DB, projectId, id, body.permissions as ProjectPermission[]);
-    await recordPermissionChange(actor, id, projectId, beforePerms, body.permissions);
-    return c.json({ ok: true, permissions: body.permissions });
-  })
-);
-
-app.delete("/api/admin/users/:id/projects/:projectId", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const userId = c.req.param("id");
-    const projectId = c.req.param("projectId");
-    const hadRole = await currentMemberRole(projectId, userId);
-    if (hadRole) await recordAccess(actor, { action: "MEMBER_REMOVED", targetUserId: userId, projectId, detail: { from: hadRole } });
-    await env.DB.delete(projectMembers).where(and(eq(projectMembers.userId, userId), eq(projectMembers.projectId, projectId)));
-    await env.DB.delete(projectMemberPermissions).where(and(eq(projectMemberPermissions.userId, userId), eq(projectMemberPermissions.projectId, projectId)));
-    // A removed member can no longer be the project's default assignee.
-    await env.DB.update(projects).set({ defaultAssigneeId: null }).where(and(eq(projects.id, projectId), eq(projects.defaultAssigneeId, userId)));
-    return c.json({ ok: true });
-  })
-);
 
 // Project-side view of the same memberships (kept in sync by design: both
 // editors write to the project_members table).
-app.get("/api/admin/projects/:id/members", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const projectId = c.req.param("id");
-    const [project] = await env.DB.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
-    if (!project) throw new ApiError(404, "Project not found");
-    const members = await env.DB
-      .select({
-        userId: projectMembers.userId,
-        role: projectMembers.role,
-        name: user.name,
-        email: user.email,
-        globalRole: user.role,
-      })
-      .from(projectMembers)
-      .innerJoin(user, eq(user.id, projectMembers.userId))
-      .where(eq(projectMembers.projectId, projectId));
 
-    const permRows = await env.DB
-      .select({ userId: projectMemberPermissions.userId, permission: projectMemberPermissions.permission })
-      .from(projectMemberPermissions)
-      .where(eq(projectMemberPermissions.projectId, projectId));
-    const permsByUser = new Map<string, string[]>();
-    for (const r of permRows) permsByUser.set(r.userId, [...(permsByUser.get(r.userId) ?? []), r.permission]);
 
-    return c.json({
-      members: members.map((m) => ({ ...m, permissions: m.role === "ADMIN" ? [...PROJECT_PERMISSIONS] : permsByUser.get(m.userId) ?? [] })),
-      availablePermissions: PROJECT_PERMISSIONS,
-    });
-  })
-);
 
-app.patch("/api/admin/projects/:id/members/:userId/permissions", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const projectId = c.req.param("id");
-    const userId = c.req.param("userId");
-
-    const [membership] = await env.DB
-      .select({ role: projectMembers.role })
-      .from(projectMembers)
-      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)));
-    if (!membership) throw new ApiError(404, "This user is not a member of this project");
-    if (membership.role === "ADMIN") {
-      throw new ApiError(400, "Project admins already have full access; permissions only apply to members");
-    }
-
-    const body = await readBody<{ permissions?: string[] }>(c);
-    if (!Array.isArray(body.permissions)) throw new ApiError(400, "permissions must be an array");
-    const valid = new Set<string>(PROJECT_PERMISSIONS);
-    const invalid = body.permissions.filter((p) => !valid.has(p));
-    if (invalid.length > 0) throw new ApiError(400, `Unknown permission(s): ${invalid.join(", ")}`);
-
-    const beforePerms = await getMemberPermissions(env.DB, projectId, userId);
-    await setMemberPermissions(env.DB, projectId, userId, body.permissions as ProjectPermission[]);
-    await recordPermissionChange(actor, userId, projectId, beforePerms, body.permissions);
-    return c.json({ ok: true, permissions: body.permissions });
-  })
-);
-
-app.post("/api/admin/projects/:id/members", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const projectId = c.req.param("id");
-    const body = await readBody<{ userId?: string; role?: string }>(c);
-    if (!body.userId) throw new ApiError(400, "userId is required");
-    const memberRole = body.role === "ADMIN" ? "ADMIN" : "MEMBER";
-
-    const [project] = await env.DB.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
-    if (!project) throw new ApiError(404, "Project not found");
-    const [target] = await env.DB.select({ id: user.id }).from(user).where(eq(user.id, body.userId));
-    if (!target) throw new ApiError(404, "User not found");
-    const previousRole = await currentMemberRole(projectId, body.userId);
-
-    await env.DB
-      .insert(projectMembers)
-      .values({ projectId, userId: body.userId, role: memberRole })
-      .onConflictDoUpdate({
-        target: [projectMembers.projectId, projectMembers.userId],
-        set: { role: memberRole },
-      });
-    await ensureDefaultMemberPermissions(env.DB, projectId, body.userId, memberRole);
-    if (previousRole !== memberRole) {
-      await recordAccess(actor, { action: previousRole ? "MEMBER_ROLE_CHANGED" : "MEMBER_ADDED", targetUserId: body.userId, projectId, detail: { from: previousRole, to: memberRole } });
-    }
-    return c.json({ ok: true });
-  })
-);
-
-app.delete("/api/admin/projects/:id/members/:userId", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const projectId = c.req.param("id");
-    const userId = c.req.param("userId");
-    const hadRole = await currentMemberRole(projectId, userId);
-    if (hadRole) await recordAccess(actor, { action: "MEMBER_REMOVED", targetUserId: userId, projectId, detail: { from: hadRole } });
-    await env.DB.delete(projectMembers).where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)));
-    await env.DB.delete(projectMemberPermissions).where(and(eq(projectMemberPermissions.projectId, projectId), eq(projectMemberPermissions.userId, userId)));
-    // A removed member can no longer be the project's default assignee.
-    await env.DB.update(projects).set({ defaultAssigneeId: null }).where(and(eq(projects.id, projectId), eq(projects.defaultAssigneeId, userId)));
-    return c.json({ ok: true });
-  })
-);
 
 // ---------- Access audit + overview (super admin) ----------
 
-type AccessAction = "ROLE_CHANGED" | "MEMBER_ADDED" | "MEMBER_ROLE_CHANGED" | "MEMBER_REMOVED" | "PERMISSIONS_CHANGED" | "ACCOUNT_DELETED";
-
-// Best-effort: an audit failure must never block the access change itself.
-async function recordAccess(
-  actor: SessionUser,
-  e: { action: AccessAction; targetUserId: string; projectId?: string; detail?: Record<string, unknown> }
-): Promise<void> {
-  try {
-    const [target] = await env.DB.select({ name: user.name }).from(user).where(eq(user.id, e.targetUserId));
-    const [proj] = e.projectId
-      ? await env.DB.select({ prefix: projects.prefix }).from(projects).where(eq(projects.id, e.projectId))
-      : [];
-    await env.DB.insert(accessAudit).values({
-      id: crypto.randomUUID(),
-      actorId: actor.id,
-      actorName: actor.name,
-      action: e.action,
-      targetUserId: e.targetUserId,
-      targetName: target?.name ?? null,
-      projectId: e.projectId ?? null,
-      projectPrefix: proj?.prefix ?? null,
-      detail: e.detail ? JSON.stringify(e.detail) : null,
-      createdAt: Date.now(),
-    });
-  } catch (err) {
-    console.error("access audit failed:", err);
-  }
-}
-
-// Only log when the set actually changed (the admin UI re-sends it on every save).
-async function recordPermissionChange(actor: SessionUser, userId: string, projectId: string, before: string[], after: string[]): Promise<void> {
-  const b = [...before].sort().join(",");
-  const a = [...after].sort().join(",");
-  if (a === b) return;
-  await recordAccess(actor, { action: "PERMISSIONS_CHANGED", targetUserId: userId, projectId, detail: { from: [...before].sort(), to: [...after].sort() } });
-}
-
-async function currentMemberRole(projectId: string, userId: string): Promise<string | null> {
-  const [m] = await env.DB
-    .select({ role: projectMembers.role })
-    .from(projectMembers)
-    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)));
-  return m?.role ?? null;
-}
-
-app.get("/api/admin/audit", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const limit = Math.min(Math.max(Number(c.req.query("limit")) || 100, 1), 500);
-    const rows = await env.DB.select().from(accessAudit).orderBy(desc(accessAudit.createdAt)).limit(limit);
-    return c.json(rows.map((r) => ({ ...r, detail: r.detail ? JSON.parse(r.detail) : null })));
-  })
-);
 
 // Users x projects matrix: who has which role / permissions where.
-app.get("/api/admin/access", (c) =>
-  guard(c, async () => {
-    const actor = await getSessionUser(c.req.raw, env);
-    requireSuperAdmin(actor);
-    const [users, projectRows, members, perms] = await Promise.all([
-      env.DB.select({ id: user.id, name: user.name, email: user.email, role: user.role }).from(user).orderBy(asc(user.name)),
-      env.DB.select({ id: projects.id, name: projects.name, prefix: projects.prefix }).from(projects).orderBy(asc(projects.name)),
-      env.DB.select({ userId: projectMembers.userId, projectId: projectMembers.projectId, role: projectMembers.role }).from(projectMembers),
-      env.DB.select().from(projectMemberPermissions),
-    ]);
-    const permMap = new Map<string, string[]>();
-    for (const p of perms) {
-      const k = `${p.projectId}:${p.userId}`;
-      permMap.set(k, [...(permMap.get(k) ?? []), p.permission]);
-    }
-    return c.json({
-      users, projects: projectRows,
-      memberships: members.map((m) => ({ ...m, permissions: m.role === "ADMIN" ? [...PROJECT_PERMISSIONS] : (permMap.get(`${m.projectId}:${m.userId}`) ?? []) })),
-    });
-  })
-);
 
 // ---------- App settings (super admin) ----------
 // Settings are stored in the DB and applied to the runtime env on save so
