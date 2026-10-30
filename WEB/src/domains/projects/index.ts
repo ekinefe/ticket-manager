@@ -2,3 +2,5 @@
 export * from "./invite";
 export * from "./project-sync";
 export { registerProjectRoutes } from "./routes";
+export { registerInvitationRoutes } from "./invitation-routes";
+export { registerTransferRoutes } from "./transfer-routes";
