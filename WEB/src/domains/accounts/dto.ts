@@ -6,6 +6,8 @@ export interface ResetPasswordBody { token?: string; password?: string }
 
 export interface ChangeOwnPasswordBody { currentPassword?: string; newPassword?: string }
 
+export interface UpdateProfileBody { name?: string }
+
 export interface SetLanguageBody { language?: string }
 
 export interface CompleteSetupBody { email?: string; name?: string; password?: string }

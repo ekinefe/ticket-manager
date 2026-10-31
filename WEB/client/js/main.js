@@ -6,6 +6,7 @@ import { renderProjects } from "./pages/projects.js";
 import { renderBoard, renderMembersTab, renderSprintsTab } from "./pages/board.js";
 import { renderAcceptInvite } from "./pages/accept-invite.js";
 import { renderAdmin } from "./pages/admin.js";
+import { renderSettings } from "./pages/settings.js";
 import { renderGitGraph } from "./pages/git-graph.js";
 import { renderShare } from "./pages/share.js";
 import { renderMyTickets, renderAllTickets, renderUnassigned } from "./pages/my-tickets.js";
@@ -84,6 +85,7 @@ function topbarHtml() {
           ${roleChip(u.role)}
         </div>
         <label class="um-row"><span>${t("common.language")}</span>${langSwitcherHtml()}</label>
+        <button class="um-item" id="settings-btn" type="button" role="menuitem">${t("set.menu")}</button>
         <button class="um-item" id="signout-btn" type="button" role="menuitem">${t("common.signOut")}</button>
       </div>
     </div>`;
@@ -166,6 +168,7 @@ function crumbsHtml(path) {
   else if (path === "/all-tickets") parts.push([t("nav.allTickets")]);
   else if (path === "/unassigned") parts.push([t("nav.unassigned")]);
   else if (path === "/projects") parts.push([t("nav.projects")]);
+  else if (path === "/settings") parts.push([t("set.title")]);
   else if ((m = path.match(/^\/projects\/([^/]+)(?:\/(members|sprints|graph))?$/))) {
     const id = decodeURIComponent(m[1]);
     const base = `/projects/${encodeURIComponent(id)}`;
@@ -513,6 +516,7 @@ async function route() {
   topbar.innerHTML = topbarHtml();
   bindGlobalSearch(topbar);
   topbar.querySelector("#signout-btn").addEventListener("click", signOut);
+  topbar.querySelector("#settings-btn").addEventListener("click", () => navigate("/settings"));
   bindLangSwitcher(topbar, { signedIn: true });
   bindUserMenu(topbar);
   topbar.querySelector("#quick-create").addEventListener("click", () => openQuickCreate(path));
@@ -566,6 +570,8 @@ async function route() {
     await renderGitGraph(page, decodeURIComponent(m[1]));
   } else if ((m = path.match(/^\/projects\/([^/]+)\/sprints$/))) {
     await renderSprintsTab(page, decodeURIComponent(m[1]));
+  } else if (path === "/settings") {
+    await renderSettings(page);
   } else if (path === "/admin" || path === "/admin/users") {
     await renderAdmin(page, "users");
   } else if (path === "/admin/projects") {

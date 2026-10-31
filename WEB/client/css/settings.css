@@ -1,0 +1,11 @@
+/* /settings: one card per section (profile, security, ...) */
+.settings-page { max-width: 640px; }
+.settings-card {
+  background: var(--surface-raised, var(--card)); border: 1px solid var(--border); border-radius: 12px;
+  padding: 18px 20px; margin-bottom: 16px;
+}
+.settings-card h2 { margin: 0 0 4px; font-size: 16px; }
+.settings-card .hint { margin: 0 0 14px; font-size: 12.5px; color: var(--text-dim); }
+.settings-card .field-hint { display: block; margin-top: 4px; font-size: 12px; color: var(--text-dim); font-weight: 400; }
+.settings-card input[readonly] { opacity: .7; cursor: not-allowed; }
+.settings-actions { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
