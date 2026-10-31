@@ -12,7 +12,7 @@ export default {
   "adm.title": "Admin Panel",
   "adm.tabUsers": "Users",
   "adm.tabProjects": "Projects",
-  "adm.tabSettings": "Settings",
+  "adm.tabSystem": "System",
   "adm.noAccess": "You do not have permission to view this page.",
   "adm.noUsers": "No users yet.",
   "adm.clickUser": "Click a user to manage their role and projects.",

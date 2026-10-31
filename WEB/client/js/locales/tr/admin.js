@@ -12,7 +12,7 @@ export default {
   "adm.title": "Yönetim Paneli",
   "adm.tabUsers": "Kullanıcılar",
   "adm.tabProjects": "Projeler",
-  "adm.tabSettings": "Ayarlar",
+  "adm.tabSystem": "Sistem",
   "adm.noAccess": "Bu sayfayı görüntüleme yetkin yok.",
   "adm.noUsers": "Henüz kullanıcı yok.",
   "adm.clickUser": "Rolünü ve projelerini yönetmek için bir kullanıcıya tıkla.",
