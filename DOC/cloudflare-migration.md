@@ -203,26 +203,22 @@ Branch layout for deploys:
 
 ### Remaining — human/account steps (require `wrangler login`)
 
-1. Create preview D1 + R2; paste ids into `env.preview`:
-   - `npx wrangler d1 create ticket-manager-preview`
-   - `npx wrangler r2 bucket create ticket-manager-uploads-preview`
-2. Create prod D1 + R2; paste ids into `env.production`:
+> Superseded: the two-environment layout (`--env preview` / `--env production`)
+> was removed. There is one Worker, `ticket-manager`, and `wrangler.toml` has no
+> `[env.*]` sections, so no command below takes `--env`.
+
+1. Create the D1 database and R2 bucket; paste the ids into `wrangler.toml`:
    - `npx wrangler d1 create ticket-manager-prod`
    - `npx wrangler r2 bucket create ticket-manager-uploads-prod`
-3. Secrets (per env):
-   - `npx wrangler secret put BETTER_AUTH_SECRET --env preview`
-   - `npx wrangler secret put BETTER_AUTH_SECRET --env production`
-   - `npx wrangler secret put RESEND_API_KEY --env preview`
-   - `npx wrangler secret put RESEND_API_KEY --env production`
-4. Apply the 9 migrations to BOTH D1 databases:
-   - `npx wrangler d1 execute ticket-manager-preview --file migrations/0001_init.sql`
-   - (repeat for 0002..0009, then same for `ticket-manager-prod`)
-5. Connect GitHub in the dashboard to BOTH environment Workers
-   (`ticket-manager` = production, `ticket-manager-pre` = preview); set branch
-   controls and deploy commands with `--env production` / `--env preview` (see
-   the Workers Builds "Advanced Setups" docs).
-6. Deploy: `npx wrangler deploy --env preview` and
-   `npx wrangler deploy --env production`.
+2. Secrets:
+   - `npx wrangler secret put BETTER_AUTH_SECRET`
+   - Set `RESEND_API_KEY` from the app (Admin → System), not from the shell.
+3. Apply the migrations in `migrations/` to the D1 database:
+   - `npx wrangler d1 migrations apply ticket-manager-prod --remote`
+4. Connect GitHub in the dashboard to the `ticket-manager` Worker. Production
+   deploys from the `production` branch with `npx wrangler deploy` (no `--env`);
+   other branches use `npx wrangler versions upload`.
+5. Deploy manually if needed: `npx wrangler deploy`.
 
 Root directory: when connecting the repo, use root directory `WEB/` so wrangler
 runs from the folder that owns `wrangler.toml` / `worker.ts` / `migrations/`.
