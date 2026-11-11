@@ -64,14 +64,39 @@ function projectRow(p, isSuper) {
     </tr>`;
 }
 
+/* ---------------- Project key check ---------------- */
+
+const KEY_RE = /^[A-Z0-9]{2,5}$/;
+
+// What to tell the person about the key they typed: a problem (red), a heads-up (neutral), or nothing.
+// `others` are the projects that are NOT the one being edited, so a project may keep its own key.
+function keyFeedback(key, others, current) {
+  if (!key) return { ok: false, text: tl("adm.keyRequired"), kind: "err" };
+  if (!KEY_RE.test(key)) return { ok: false, text: tl("adm.keyFormat"), kind: "err" };
+  const taken = others.find((o) => (o.prefix || "").toUpperCase() === key);
+  if (taken) return { ok: false, text: tl("adm.keyTaken", { key, name: taken.name }), kind: "err" };
+  if (current && key !== current.prefix) {
+    return { ok: true, text: tl("adm.keyRename", { count: Number(current.ticketCount ?? 0), from: `${current.prefix}-12`, to: `${key}-12` }), kind: "note" };
+  }
+  return { ok: true, text: "", kind: "note" };
+}
+
+function showKeyFeedback(el, fb) {
+  el.textContent = fb.text;
+  el.style.display = fb.text ? "" : "none";
+  el.style.color = fb.kind === "err" ? "var(--danger, #e5484d)" : "var(--text-dim)";
+  el.setAttribute("role", fb.kind === "err" ? "alert" : "status");
+}
+
 /* ---------------- Project access (members) modal ---------------- */
 
 export async function openProjectAccessModal(p, reload) {
-  let data, users;
+  let data, users, allProjects;
   try {
-    [data, users] = await Promise.all([
+    [data, users, allProjects] = await Promise.all([
       api.get(`/admin/projects/${p.id}/members`),
       api.get("/admin/users"),
+      loadProjects(true),
     ]);
   } catch (err) {
     toast(err.message, "err");
@@ -84,11 +109,18 @@ export async function openProjectAccessModal(p, reload) {
     title: tl("adm.paTitle"),
     wide: true,
     body: `
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-        <span class="prefix-chip">${esc(p.prefix)}</span>
-        <strong>${esc(p.name)}</strong>
-        <span style="margin-left:auto;color:var(--text-dim);font-size:12.5px">${tl(data.members.length === 1 ? "adm.member.one" : "adm.member.many", { count: data.members.length })}</span>
+      <div style="display:flex;gap:10px;align-items:flex-end">
+        <div class="field" style="flex:1;margin-bottom:0">
+          <label for="pm-name">${tl("adm.name")}</label>
+          <input type="text" id="pm-name" value="${esc(p.name)}" maxlength="80" autocomplete="off" />
+        </div>
+        <div class="field" style="width:110px;margin-bottom:0">
+          <label for="pm-key">${tl("adm.colPrefix")}</label>
+          <input type="text" id="pm-key" value="${esc(p.prefix)}" maxlength="5" autocomplete="off" style="text-transform:uppercase" />
+        </div>
       </div>
+      <div id="pm-key-msg" style="display:none;font-size:12.5px;margin:6px 0 0"></div>
+      <div style="margin:8px 0 16px;color:var(--text-dim);font-size:12.5px;text-align:right">${tl(data.members.length === 1 ? "adm.member.one" : "adm.member.many", { count: data.members.length })}</div>
       <div style="color:var(--text-dim);font-size:12px;margin-bottom:8px">
         ${tl("adm.paHint")}
       </div>
@@ -156,10 +188,33 @@ export async function openProjectAccessModal(p, reload) {
 
       modalEl.querySelector("#pm-cancel").addEventListener("click", close);
 
+      const nameInput = modalEl.querySelector("#pm-name");
+      const keyInput = modalEl.querySelector("#pm-key");
+      const keyMsg = modalEl.querySelector("#pm-key-msg");
+      const saveButton = modalEl.querySelector("#pm-save");
+      const others = allProjects.filter((o) => o.id !== p.id);
+      const checkForm = () => {
+        const fb = keyFeedback(keyInput.value.trim().toUpperCase(), others, p);
+        showKeyFeedback(keyMsg, fb);
+        saveButton.disabled = !fb.ok || !nameInput.value.trim();
+      };
+      keyInput.addEventListener("input", () => { keyInput.value = keyInput.value.toUpperCase(); checkForm(); });
+      nameInput.addEventListener("input", checkForm);
+
       modalEl.querySelector("#pm-save").addEventListener("click", async () => {
         const saveBtn = modalEl.querySelector("#pm-save");
         saveBtn.disabled = true;
         try {
+          const newName = nameInput.value.trim();
+          const newKey = keyInput.value.trim().toUpperCase();
+          const identity = {};
+          if (newName !== p.name) identity.name = newName;
+          if (newKey !== p.prefix) identity.prefix = newKey;
+          if (Object.keys(identity).length) {
+            await api.patch(`/projects/${p.id}`, identity);
+            Object.assign(p, identity);
+            state.projectsCache = null;
+          }
           const newDefaultAssignee = modalEl.querySelector("#pm-default-assignee").value;
           if (newDefaultAssignee !== (p.defaultAssigneeId || "")) {
             await api.patch(`/projects/${p.id}`, { defaultAssigneeId: newDefaultAssignee || null });
@@ -209,6 +264,7 @@ function openProjectModal(body) {
         <label for="np-prefix">${tl("adm.colPrefix")}</label>
         <input type="text" id="np-prefix" placeholder="e.g. WCE" maxlength="5" />
         <div style="color:var(--text-dim);font-size:12px;margin-top:4px">${tl("adm.npPrefixNote", { example: "WCE-1, WCE-2" })}</div>
+        <div id="np-key-msg" style="display:none;font-size:12.5px;margin-top:6px"></div>
       </div>
       <div class="modal-actions">
         <span></span>
@@ -220,6 +276,16 @@ function openProjectModal(body) {
     onMount(modalEl, close) {
       modalEl.querySelector("#np-cancel").addEventListener("click", close);
       const save = modalEl.querySelector("#np-save");
+      const existing = state.projectsCache || [];
+      const prefixInput = modalEl.querySelector("#np-prefix");
+      prefixInput.addEventListener("input", () => {
+        prefixInput.value = prefixInput.value.toUpperCase();
+        const key = prefixInput.value.trim();
+        // while it is still being typed (empty or short) only a taken key is worth shouting about
+        const fb = key ? keyFeedback(key, existing, null) : { ok: true, text: "", kind: "note" };
+        showKeyFeedback(modalEl.querySelector("#np-key-msg"), key.length < 2 && fb.ok ? { ok: true, text: "", kind: "note" } : fb);
+        save.disabled = !!key && !fb.ok;
+      });
       save.addEventListener("click", async () => {
         const payload = {
           name: modalEl.querySelector("#np-name").value.trim(),
