@@ -26,6 +26,9 @@
 }
 .um-item:hover { background: var(--accent-soft); }
 .topbar .lang-select { margin: 0; }
+/* Native option lists ignore the page's text colour on a dark theme: paint them explicitly. */
+select, select option { background-color: var(--surface-raised, var(--card)); color: var(--text); }
+select option:checked { background-color: var(--accent-soft, var(--border)); color: var(--text); }
 
 .crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12.5px; color: var(--text-dim); padding: 2px 0 10px; }
 .crumbs:empty { display: none; }
