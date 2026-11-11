@@ -1,5 +1,5 @@
-import { and, eq, ne } from "drizzle-orm";
-import { projects, projectMembers, user, sprints } from "../../../db/schema";
+import { and, eq, ne, notLike, sql } from "drizzle-orm";
+import { projects, projectMembers, user, sprints, tasks } from "../../../db/schema";
 import { ApiError } from "../../../shared/http";
 import { requireSuperAdmin, requirePanelAccess, requireProjectRole, getProjectAccess, listAccessibleProjects, PROJECT_PERMISSIONS } from "../../access/index";
 import { createDefaultSprint, listProjectSprints } from "../../sprints/index";
@@ -74,6 +74,21 @@ export async function getProject(ctx: Ctx, input: Input) {
   return { ...project, members, sprints: projectSprints, myPermissions };
 }
 
+// Every ticket id and sprint code of a project starts with its key (PLN-12, PLN-S1). When the key changes they
+// are all renamed, number kept (PLN-12 -> PLC-12), so no ticket keeps naming a key the project no longer has.
+// It looks at what each row starts with instead of at the old key, so saving the same key again also finishes
+// a rename that was cut short (the statements are separate: neither D1 nor the local adapter runs them as one).
+async function renameToKey(ctx: Ctx, projectId: string, prefix: string) {
+  await ctx.db
+    .update(tasks)
+    .set({ ticketId: sql`${prefix} || substr(${tasks.ticketId}, instr(${tasks.ticketId}, '-'))` })
+    .where(and(eq(tasks.projectId, projectId), notLike(tasks.ticketId, `${prefix}-%`)));
+  await ctx.db
+    .update(sprints)
+    .set({ sprintId: sql`${prefix} || substr(${sprints.sprintId}, instr(${sprints.sprintId}, '-'))` })
+    .where(and(eq(sprints.projectId, projectId), notLike(sprints.sprintId, `${prefix}-%`)));
+}
+
 export async function updateProject(ctx: Ctx, input: Input) {
   const projectId = input.p.id;
   const u = ctx.user;
@@ -105,6 +120,7 @@ export async function updateProject(ctx: Ctx, input: Input) {
 
   const [updated] = await ctx.db.update(projects).set(values).where(eq(projects.id, projectId)).returning();
   if (!updated) throw new ApiError(404, "Project not found");
+  if (values.prefix) await renameToKey(ctx, projectId, values.prefix);
   return updated;
 }
 
