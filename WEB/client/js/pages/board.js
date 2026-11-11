@@ -293,6 +293,7 @@ function headHtml(activeTab) {
     <div class="proj-head">
       <div class="proj-title-row">
         <h1>${esc(project.name)}</h1>
+        ${myRole === "ADMIN" ? `<button class="btn ghost sm" id="rename-project-btn" title="${tl("bd.renameProject")}">✎</button>` : ""}
         <span class="prefix-chip">${esc(project.prefix)}</span>
         ${myRole === "ADMIN" ? `<span class="role-chip role-admin">${tl("bd.youAdmin")}</span>` : ""}
       </div>
@@ -305,7 +306,46 @@ function headHtml(activeTab) {
     </div>`;
 }
 
+function openProjectRenameModal() {
+  openModal({
+    title: tl("bd.renameProject"),
+    body: `
+      <div class="field">
+        <label for="pr-name">${tl("bd.name")}</label>
+        <input type="text" id="pr-name" value="${esc(project.name)}" />
+        <div style="color:var(--text-dim);font-size:12px;margin-top:4px">${tl("bd.projectKeyFixed", { id: `<span class="ticket-id">${esc(project.prefix)}</span>` })}</div>
+      </div>
+      <div class="modal-actions">
+        <span></span>
+        <span class="right">
+          <button class="btn ghost" id="pr-cancel">${tl("bd.cancel")}</button>
+          <button class="btn" id="pr-save">${tl("bd.save")}</button>
+        </span>
+      </div>`,
+    onMount(modalEl, close) {
+      modalEl.querySelector("#pr-cancel").addEventListener("click", close);
+      const save = modalEl.querySelector("#pr-save");
+      save.addEventListener("click", async () => {
+        const name = modalEl.querySelector("#pr-name").value.trim();
+        if (!name) { toast(tl("bd.nameRequired"), "err"); return; }
+        save.disabled = true;
+        try {
+          await api.patch(`/projects/${project.id}`, { name });
+          project.name = name;
+          document.querySelector(".proj-title-row h1").textContent = name;
+          toast(tl("bd.projectRenamed"), "ok");
+          close();
+        } catch (err) {
+          toast(err.message, "err");
+          save.disabled = false;
+        }
+      });
+    },
+  });
+}
+
 function bindTabs() {
+  document.getElementById("rename-project-btn")?.addEventListener("click", openProjectRenameModal);
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
       const tab = btn.dataset.tab;
