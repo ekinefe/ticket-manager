@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { projects, projectMembers, user, sprints } from "../../../db/schema";
 import { ApiError } from "../../../shared/http";
 import { requireSuperAdmin, requirePanelAccess, requireProjectRole, getProjectAccess, listAccessibleProjects, PROJECT_PERMISSIONS } from "../../access/index";
@@ -8,6 +8,17 @@ import type { Input } from "../../../shared/route";
 import type { CreateProjectBody, UpdateProjectBody } from "../dto";
 
 // Project lifecycle and the project detail view model (members, sprints, myPermissions).
+
+// A key (prefix) names every ticket id (PLN-12), so two projects must never share one. The database
+// enforces it too (UNIQUE), but its raw error is not something to show a person.
+async function assertKeyFree(ctx: Ctx, prefix: string, exceptProjectId?: string) {
+  const [taken] = await ctx.db
+    .select({ id: projects.id, name: projects.name })
+    .from(projects)
+    .where(exceptProjectId ? and(eq(projects.prefix, prefix), ne(projects.id, exceptProjectId)) : eq(projects.prefix, prefix));
+  if (taken) throw new ApiError(409, `The key ${prefix} is already used by the project "${taken.name}". Pick another key.`);
+}
+
 export async function listMyProjects(ctx: Ctx, _input: Input) {
   const u = ctx.user;
   return await listAccessibleProjects(ctx.db, u);
@@ -25,6 +36,7 @@ export async function createProject(ctx: Ctx, input: Input) {
     throw new ApiError(400, "Prefix must be 2-5 uppercase letters/digits (e.g. WCE)");
   }
 
+  await assertKeyFree(ctx, prefix);
   const id = crypto.randomUUID();
   const [project] = await ctx.db
     .insert(projects)
@@ -75,6 +87,7 @@ export async function updateProject(ctx: Ctx, input: Input) {
   if (body.prefix) {
     const prefix = body.prefix.trim().toUpperCase();
     if (!/^[A-Z0-9]{2,5}$/.test(prefix)) throw new ApiError(400, "Prefix must be 2-5 uppercase letters/digits");
+    await assertKeyFree(ctx, prefix, projectId);
     values.prefix = prefix;
   }
   if (body.defaultAssigneeId !== undefined) {
